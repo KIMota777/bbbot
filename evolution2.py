@@ -28,6 +28,7 @@ import time
 
 import backtest_rsi_grid as bg
 import evolution as ev  # fetch, rolling_extremes, calc_atr_pct, percentile
+import gridlib          # геометрия сетки и подвижных SL/TP (общая с ботом)
 
 random.seed(43)
 
@@ -81,10 +82,46 @@ def prep(candles):
                 atr=ev.calc_atr_pct(candles, n=BARS_PER_DAY))
 
 
+ATR_REF_BARS = gridlib.ATR_REF_BARS   # общая с ботом (см. gridlib)
+
+
 def run5(candles, pre, g, entry_filter=None, events=None):
     """entry_filter(side, i) -> side|None — внешний фильтр входов (F&G, BTC...).
-    events: если передан список — в него пишутся сделки (вход/сетка/выход)."""
+    events: если передан список — в него пишутся сделки (вход/сетка/выход).
+
+    Гены подвижной сетки и подвижных SL/TP (v10) читаются через get с
+    OFF-значениями gridlib.OFF10: любой прежний геном без этих ключей даёт
+    РОВНО прежний результат. Это свойство закреплено тестом test_gridlib.py.
+    """
     closes, atr = pre["closes"], pre["atr"]
+    g_mode = g.get("grid_mode", gridlib.OFF10["grid_mode"])
+    g_span = g.get("grid_span", gridlib.OFF10["grid_span"])
+    g_spread = g.get("grid_spread", gridlib.OFF10["grid_spread"])
+    g_atr_k = g.get("grid_atr_k", gridlib.OFF10["grid_atr_k"])
+    g_w_atr_k = g.get("grid_w_atr_k", gridlib.OFF10["grid_w_atr_k"])
+    g_retune = g.get("grid_retune", gridlib.OFF10["grid_retune"])
+    tp_atr_k = g.get("tp_atr_k", gridlib.OFF10["tp_atr_k"])
+    # Постоянная имитация новостного канала (news_stress.py). Истории новостей
+    # за 3.2 года нет, поэтому отобрать эти коэффициенты нельзя — но можно
+    # измерить ВЕРХНЮЮ ГРАНИЦУ вреда: включить канал на полную и посмотреть,
+    # во что обходится стратегии, если фон будет держаться максимальным всегда.
+    # 1.0 и 0.0 = канал выключен = прежнее поведение.
+    news_tp_mult = g.get("news_tp_mult", 1.0)
+    news_sl_frac = g.get("news_sl_frac", 0.0)
+    trail_k = g.get("trail_k", gridlib.OFF10["trail_k"])
+    trail_start = g.get("trail_start", gridlib.OFF10["trail_start"])
+    # «норма» ATR нужна только тем генам, что на неё смотрят: не тратим время
+    # на конфигах, где адаптация выключена (а это все прежние волны отбора).
+    # ВАЖНО перечислить здесь ВСЕ такие гены: если ген забыть, atr_ref
+    # останется None, vol_factor вернёт 1.0 и ген будет молча мёртв — генетика
+    # станет искать в пространстве, где часть измерений ни на что не влияет.
+    if g_atr_k or tp_atr_k or g_w_atr_k:
+        atr_ref = pre.get("atr_ref")
+        if atr_ref is None:
+            atr_ref = gridlib.rolling_mean(atr, ATR_REF_BARS)
+            pre["atr_ref"] = atr_ref
+    else:
+        atr_ref = None
     rsi = pre["rsi"][RSI_SET[g["rsi_idx"]]]
     rlow, rhigh = ev.rolling_extremes(candles, g["window"])
     rsi_os, rsi_ob = g["rsi_os"], 100 - g["rsi_os"]
@@ -114,7 +151,8 @@ def run5(candles, pre, g, entry_filter=None, events=None):
         q = sum(f[1] for f in p["fills"])
         avg = sum(fp * fq for fp, fq in p["fills"]) / q
         if liq:
-            mused = sum(m_k[k] for k in range(len(p["fills"])))
+            mk = p.get("m_k", m_k)
+            mused = sum(mk[k] for k in range(len(p["fills"])))
             pnl = -mused * MM - p["fees"]
         else:
             px = exit_price * (1 - sgn * SLIP) if taker_exit else exit_price
@@ -135,7 +173,7 @@ def run5(candles, pre, g, entry_filter=None, events=None):
             # funding за свечу удержания
             pos["fees"] += q_pre * c * FUND_8H / BARS_8H
             stop = pos["stop"]
-            tp_pre = avg_pre * (1 + sgn * g["tp"])
+            tp_pre = avg_pre * (1 + sgn * pos["tp_eff"])
 
             adverse = (l <= stop) if sgn == 1 else (h >= stop)
             # тейк проверяем по средней ДО новых доливок этой свечи (консервативно)
@@ -157,7 +195,8 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                         break
                 q = sum(f[1] for f in pos["fills"])
                 avg = sum(fp * fq for fp, fq in pos["fills"]) / q
-                mused = sum(m_k[k] for k in range(len(pos["fills"])))
+                mk_pos = pos.get("m_k", m_k)
+                mused = sum(mk_pos[k] for k in range(len(pos["fills"])))
                 p_liq = avg - sgn * (mused * MM) / q
                 liq_first = (p_liq >= stop) if sgn == 1 else (p_liq <= stop)
                 liq_hit = (l <= p_liq) if sgn == 1 else (h >= p_liq)
@@ -186,13 +225,43 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                 if g["be_move"] and not pos["be_done"]:
                     q = sum(f[1] for f in pos["fills"])
                     avg = sum(fp * fq for fp, fq in pos["fills"]) / q
-                    trig = avg * (1 + sgn * g["tp"] * 0.5)
+                    trig = avg * (1 + sgn * pos["tp_eff"] * 0.5)
                     if (h >= trig) if sgn == 1 else (l <= trig):
                         be = avg * (1 + sgn * 0.0015)  # безубыток + комиссии
                         better = (be > pos["stop"]) if sgn == 1 else (be < pos["stop"])
                         if better:
                             pos["stop"] = be
                         pos["be_done"] = True
+                # подвижный стоп. Ход считаем по ЗАКРЫТИЯМ, а не по хаям, и
+                # результат ограничиваем закрытием текущего бара: живой бот
+                # видит только закрытые свечи и физически не может выставить
+                # стоп по цене внутрибарового хвоста. Без этих двух ограничений
+                # бэктест рисует прибыль из воздуха — см. gridlib.trail_stop.
+                if trail_k and pos:
+                    pos["best"] = max(pos["best"], c) if sgn == 1 \
+                        else min(pos["best"], c)
+                    q = sum(f[1] for f in pos["fills"])
+                    avg = sum(fp * fq for fp, fq in pos["fills"]) / q
+                    pos["stop"] = gridlib.trail_stop(
+                        avg, pos["best"], pos["stop"], sgn,
+                        avg * pos["tp_eff"], trail_k, trail_start, bound=c)
+                # подвижная сетка: неисполненные колена пересчитываются от
+                # СЕГОДНЯШНЕГО стопа (он едет вместе с границей диапазона)
+                if g_retune and pos and pos["adds"]:
+                    n_left = len(pos["adds"])
+                    k0 = g["levels"] - n_left
+                    # множитель волатильности берём ТЕКУЩИЙ, а не входной:
+                    # иначе при grid_mode=0 цены колен не зависят ни от чего
+                    # изменившегося, и перевыставление — пустая операция
+                    vol_now = gridlib.vol_factor(
+                        atr[i], atr_ref[i] if atr_ref else None, g_atr_k)
+                    fresh = gridlib.retune_prices(
+                        pos["entry_px"], pos["stop"], sgn, n_left, g["levels"],
+                        g["step"], g_mode, g_span, g_spread, vol_now,
+                        [a[0] for a in pos["adds"]], g_retune)
+                    mk_pos = pos.get("m_k", m_k)
+                    pos["adds"] = [(p, mk_pos[k0 + j] * LEV / p)
+                                   for j, p in enumerate(fresh)]
                 # таймаут
                 if pos and i - pos["opened_i"] > g["max_bars"]:
                     r = rsi[i]
@@ -233,16 +302,37 @@ def run5(candles, pre, g, entry_filter=None, events=None):
             continue
         sgn = 1 if side == "L" else -1
         px = c * (1 + sgn * SLIP)
-        q0 = m_k[0] * LEV / px
         stop = (rlow[i] * (1 - g["sweep"]) if side == "L"
                 else rhigh[i] * (1 + g["sweep"]))
-        adds = []
-        ap = px
-        for k in range(1, g["levels"]):
-            ap = ap * (1 - sgn * g["step"])
-            adds.append((ap, m_k[k] * LEV / ap))
+        # множители волатильности фиксируются на входе (по данным ЭТОГО бара)
+        # и дальше не пересчитываются — иначе тейк ездил бы задним числом
+        vol_k = gridlib.vol_factor(atr[i], atr_ref[i] if atr_ref else None,
+                                   g_atr_k)
+        # веса колен тоже могут дышать с волатильностью. Сумма маржи цикла при
+        # этом не меняется (веса нормируются), поэтому потолок риска цикла и
+        # цена ликвидации к раскладке инвариантны — меняется только то, какая
+        # часть маржи приходится на первое колено, а какая на последнее.
+        mk_pos = m_k
+        if g_w_atr_k:
+            w = gridlib.leg_weights(
+                g["mult"], g["levels"], atr[i],
+                atr_ref[i] if atr_ref else None, g_w_atr_k)
+            mk_pos = [MARGIN * x for x in w]
+        tp_eff = g["tp"] * gridlib.tp_factor(
+            atr[i], atr_ref[i] if atr_ref else None, tp_atr_k) * news_tp_mult
+        prices = gridlib.grid_prices(px, stop, sgn, g["levels"], g["step"],
+                                     g_mode, g_span, g_spread, vol_k)
+        q0 = mk_pos[0] * LEV / px
+        adds = [(ap, mk_pos[k + 1] * LEV / ap) for k, ap in enumerate(prices)]
+        # Стоп поджимается ПОСЛЕ построения сетки — так же, как в живом боте:
+        # там колена строятся от «сырого» стопа (pos["stop"]), а новостное
+        # поджатие применяется при чтении в stop_price().
+        if news_sl_frac:
+            stop = stop + (px - stop) * news_sl_frac
         pos = dict(side=side, fills=[(px, q0)], stop=stop, adds=adds,
-                   opened_i=i, fees=q0 * px * TAKER, be_done=False)
+                   opened_i=i, fees=q0 * px * TAKER, be_done=False,
+                   tp_eff=tp_eff, vol_k=vol_k, entry_px=px, best=px,
+                   m_k=mk_pos)
         if events is not None:
             events.append(dict(t=ts, type="entry", side=side, price=px))
 

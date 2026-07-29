@@ -27,6 +27,7 @@ import evolution4 as e4
 import evolution5 as e5
 import evolution6 as e6
 import ext_data as xd
+import gridlib
 import patterns as pt
 
 LEVS = [5, 8, 10, 12, 15]
@@ -93,12 +94,20 @@ def cfg_to_genome(p, mode):
     """Параметры бота из config.SYMBOL_PARAMS -> геном движка (make_filter7).
     Недостающие ключи = фильтр выключен. Дефолты direction/regime_gate — те
     же правила, что в bot_rsi.py (используется и там, и на сайте, и в
-    скриптах помесячной/годовой статистики — единый источник истины)."""
+    скриптах помесячной/годовой статистики — единый источник истины).
+
+    Гены подвижной сетки (v10) переносятся сюда же: иначе сайт и отчёты
+    рисовали бы бота со старой сеткой, пока живой торгует новой. Ключи
+    новостной реакции (news_*) НЕ переносятся сознательно — движок не умеет
+    воспроизводить историю новостей, поэтому при ненулевых коэффициентах
+    бэктест перестаёт описывать бота. Это расхождение не молчаливое:
+    news_divergence() ниже возвращает список таких монет, а bot_rsi.py
+    предупреждает о нём в логе при старте.
+    """
     direction = p.get("direction")
     if direction is None:
         direction = {"B": 0, "L": 1, "S": 2}.get(p.get("dir", "B"), 0)
-    return dict(
-        rsi_idx=nearest_idx(p.get("rsi_period", 14), e2.RSI_SET),
+    g = dict(
         rsi_os=p["rsi_os"],
         zone_l=p.get("zone_l", p.get("zone", 0.25)),
         zone_s=p.get("zone_s", p.get("zone", 0.25)),
@@ -123,7 +132,30 @@ def cfg_to_genome(p, mode):
         aroon_short_min=p.get("aroon_short_min", 0),
         direction=direction,
         regime_gate=p.get("regime_gate", 1 if mode == "bear" else 0),
-        pattern_gate=p.get("pattern_gate", 0))
+        pattern_gate=p.get("pattern_gate", 0),
+        rsi_idx=nearest_idx(p.get("rsi_period", 14), e2.RSI_SET))
+    for k, v in gridlib.OFF10.items():
+        g[k] = p.get(k, v)
+    return g
+
+
+NEWS_KEYS = ("news_tp_k", "news_sl_k", "news_heat_max", "news_index_min")
+
+
+def news_divergence(params=None):
+    """Монеты, у которых новостная реакция включена, а бэктест её не видит.
+
+    Пустой список = бэктест, сайт и отчёты описывают ровно тех ботов, что
+    торгуют. Непустой = цифры на сайте относятся к другой стратегии, и это
+    надо знать до того, как принимать по ним решения.
+    """
+    import config
+    out = []
+    for sym, modes in (params or config.SYMBOL_PARAMS).items():
+        for mode, p in modes.items():
+            if p and any(p.get(k, 0) for k in NEWS_KEYS):
+                out.append(f"{sym}/{mode}")
+    return out
 
 
 def build_aux_full(sym, candles, pct5):

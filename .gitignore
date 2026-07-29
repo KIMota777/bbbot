@@ -10,6 +10,10 @@ webapp/cache_*.json
 *.log
 webapp/srv*.log
 
+# новостной фон: локальное состояние, наполняется Claude через MCP
+news_state.json
+webapp/data/signals.json
+
 # временные выводы смоук-тестов
 o_*.txt
 e_*.txt
@@ -34,3 +38,6 @@ __pycache__/
 # но на всякий случай:
 .env
 *.key
+
+# локальное python-окружение (macOS)
+.venv/

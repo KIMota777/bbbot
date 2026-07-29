@@ -1,0 +1,564 @@
+{
+  "DOGEUSDT": {
+    "genes": {
+      "grid_mode": 0,
+      "grid_span": 0.95,
+      "grid_spread": 0.8390501874850113,
+      "grid_atr_k": 0.25009430060946114,
+      "grid_w_atr_k": 0.06027860737821984,
+      "grid_retune": 0,
+      "tp_atr_k": 0.6554348667391215,
+      "trail_k": 0.0,
+      "trail_start": 0.45724712241215043
+    },
+    "adopt": false,
+    "reject_reasons": [
+      "один из экзаменов просел ниже базы",
+      "итог 3.2г +111.80% < базового +133.49%",
+      "просадка 21.19% > 19.64%"
+    ],
+    "base_oos": 3.793,
+    "cand_oos": 4.4801,
+    "base_folds": [
+      4.2538,
+      4.1807,
+      2.9446
+    ],
+    "cand_folds": [
+      8.7704,
+      4.6802,
+      -0.0102
+    ],
+    "base_full": {
+      "ret": 133.49,
+      "dd": 18.7,
+      "trades": 1279,
+      "wr": 96.2,
+      "loss_share": 3.75,
+      "med": 4.325,
+      "ruined": false
+    },
+    "cand_full": {
+      "ret": 111.8,
+      "dd": 21.19,
+      "trades": 1286,
+      "wr": 96.7,
+      "loss_share": 3.34,
+      "med": 3.803,
+      "ruined": false
+    },
+    "lev": 10,
+    "ladder": [
+      {
+        "ret": 66.75,
+        "dd": 10.06,
+        "trades": 1279,
+        "wr": 96.2,
+        "loss_share": 3.75,
+        "med": 2.163,
+        "ruined": false,
+        "lev": 5
+      },
+      {
+        "ret": 106.79,
+        "dd": 15.4,
+        "trades": 1279,
+        "wr": 96.2,
+        "loss_share": 3.75,
+        "med": 3.46,
+        "ruined": false,
+        "lev": 8
+      },
+      {
+        "ret": 133.49,
+        "dd": 18.7,
+        "trades": 1279,
+        "wr": 96.2,
+        "loss_share": 3.75,
+        "med": 4.325,
+        "ruined": false,
+        "lev": 10
+      },
+      {
+        "ret": 160.19,
+        "dd": 21.82,
+        "trades": 1279,
+        "wr": 96.2,
+        "loss_share": 3.75,
+        "med": 5.19,
+        "ruined": false,
+        "lev": 12
+      },
+      {
+        "ret": 200.24,
+        "dd": 26.19,
+        "trades": 1279,
+        "wr": 96.2,
+        "loss_share": 3.75,
+        "med": 6.488,
+        "ruined": false,
+        "lev": 15
+      }
+    ],
+    "rec_lev": 10,
+    "chosen": {
+      "grid_mode": 0,
+      "grid_span": 0.6,
+      "grid_spread": 1.0,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 0.0,
+      "grid_retune": 0,
+      "tp_atr_k": 0.0,
+      "trail_k": 0.0,
+      "trail_start": 0.5
+    }
+  },
+  "LTCUSDT": {
+    "genes": {
+      "grid_mode": 0,
+      "grid_span": 0.6,
+      "grid_spread": 1.0,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 0.0,
+      "grid_retune": 0,
+      "tp_atr_k": 0.0,
+      "trail_k": 0.0,
+      "trail_start": 0.5
+    },
+    "adopt": false,
+    "reject_reasons": [
+      "отрыв по OOS +0.000 <= 0.5"
+    ],
+    "base_oos": 4.4483,
+    "cand_oos": 4.4483,
+    "base_folds": [
+      5.2991,
+      5.9321,
+      2.1139
+    ],
+    "cand_folds": [
+      5.2991,
+      5.9321,
+      2.1139
+    ],
+    "base_full": {
+      "ret": 112.72,
+      "dd": 17.0,
+      "trades": 1308,
+      "wr": 96.0,
+      "loss_share": 3.98,
+      "med": 3.809,
+      "ruined": false
+    },
+    "cand_full": {
+      "ret": 112.72,
+      "dd": 17.0,
+      "trades": 1308,
+      "wr": 96.0,
+      "loss_share": 3.98,
+      "med": 3.809,
+      "ruined": false
+    },
+    "lev": 5,
+    "ladder": [
+      {
+        "ret": 112.72,
+        "dd": 17.0,
+        "trades": 1308,
+        "wr": 96.0,
+        "loss_share": 3.98,
+        "med": 3.809,
+        "ruined": false,
+        "lev": 5
+      },
+      {
+        "ret": 180.36,
+        "dd": 25.24,
+        "trades": 1308,
+        "wr": 96.0,
+        "loss_share": 3.98,
+        "med": 6.095,
+        "ruined": false,
+        "lev": 8
+      },
+      {
+        "ret": 226.96,
+        "dd": 30.11,
+        "trades": 1308,
+        "wr": 96.0,
+        "loss_share": 3.98,
+        "med": 7.618,
+        "ruined": false,
+        "lev": 10
+      },
+      {
+        "ret": 279.31,
+        "dd": 34.55,
+        "trades": 1308,
+        "wr": 96.0,
+        "loss_share": 3.98,
+        "med": 9.142,
+        "ruined": false,
+        "lev": 12
+      },
+      {
+        "ret": 363.92,
+        "dd": 40.53,
+        "trades": 1308,
+        "wr": 96.0,
+        "loss_share": 3.98,
+        "med": 11.428,
+        "ruined": false,
+        "lev": 15
+      }
+    ],
+    "rec_lev": 5,
+    "chosen": {
+      "grid_mode": 0,
+      "grid_span": 0.6,
+      "grid_spread": 1.0,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 0.0,
+      "grid_retune": 0,
+      "tp_atr_k": 0.0,
+      "trail_k": 0.0,
+      "trail_start": 0.5
+    }
+  },
+  "BTCUSDT": {
+    "genes": {
+      "grid_mode": 0,
+      "grid_span": 0.37766372012001437,
+      "grid_spread": 0.7303937406888261,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 1.0,
+      "grid_retune": 1,
+      "tp_atr_k": 0.2899967723904552,
+      "trail_k": 0.5175036120635569,
+      "trail_start": 0.4718964357283651
+    },
+    "adopt": false,
+    "reject_reasons": [
+      "отрыв по OOS +0.317 <= 0.5"
+    ],
+    "base_oos": 0.1084,
+    "cand_oos": 0.4255,
+    "base_folds": [
+      0.0078,
+      0.0,
+      0.3175
+    ],
+    "cand_folds": [
+      0.7086,
+      0.0,
+      0.5678
+    ],
+    "base_full": {
+      "ret": 148.25,
+      "dd": 9.46,
+      "trades": 59,
+      "wr": 71.2,
+      "loss_share": 28.81,
+      "med": 0.031,
+      "ruined": false
+    },
+    "cand_full": {
+      "ret": 163.34,
+      "dd": 8.11,
+      "trades": 59,
+      "wr": 78.0,
+      "loss_share": 22.03,
+      "med": 1.758,
+      "ruined": false
+    },
+    "lev": 15,
+    "ladder": [
+      {
+        "ret": 49.42,
+        "dd": 5.35,
+        "trades": 59,
+        "wr": 71.2,
+        "loss_share": 28.81,
+        "med": 0.01,
+        "ruined": false,
+        "lev": 5
+      },
+      {
+        "ret": 79.07,
+        "dd": 7.08,
+        "trades": 59,
+        "wr": 71.2,
+        "loss_share": 28.81,
+        "med": 0.017,
+        "ruined": false,
+        "lev": 8
+      },
+      {
+        "ret": 98.83,
+        "dd": 7.94,
+        "trades": 59,
+        "wr": 71.2,
+        "loss_share": 28.81,
+        "med": 0.021,
+        "ruined": false,
+        "lev": 10
+      },
+      {
+        "ret": 118.6,
+        "dd": 8.63,
+        "trades": 59,
+        "wr": 71.2,
+        "loss_share": 28.81,
+        "med": 0.025,
+        "ruined": false,
+        "lev": 12
+      },
+      {
+        "ret": 148.25,
+        "dd": 9.46,
+        "trades": 59,
+        "wr": 71.2,
+        "loss_share": 28.81,
+        "med": 0.031,
+        "ruined": false,
+        "lev": 15
+      }
+    ],
+    "rec_lev": 15,
+    "chosen": {
+      "grid_mode": 0,
+      "grid_span": 0.6,
+      "grid_spread": 1.0,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 0.0,
+      "grid_retune": 0,
+      "tp_atr_k": 0.0,
+      "trail_k": 0.0,
+      "trail_start": 0.5
+    }
+  },
+  "ETHUSDT": {
+    "genes": {
+      "grid_mode": 0,
+      "grid_span": 0.6,
+      "grid_spread": 1.0,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 0.0,
+      "grid_retune": 0,
+      "tp_atr_k": 0.0,
+      "trail_k": 0.0,
+      "trail_start": 0.5
+    },
+    "adopt": false,
+    "reject_reasons": [
+      "отрыв по OOS +0.000 <= 0.5"
+    ],
+    "base_oos": 1.1603,
+    "cand_oos": 1.1603,
+    "base_folds": [
+      0.6416,
+      1.2604,
+      1.5789
+    ],
+    "cand_folds": [
+      0.6416,
+      1.2604,
+      1.5789
+    ],
+    "base_full": {
+      "ret": 24.08,
+      "dd": 21.77,
+      "trades": 239,
+      "wr": 86.6,
+      "loss_share": 13.39,
+      "med": 1.186,
+      "ruined": false
+    },
+    "cand_full": {
+      "ret": 24.08,
+      "dd": 21.77,
+      "trades": 239,
+      "wr": 86.6,
+      "loss_share": 13.39,
+      "med": 1.186,
+      "ruined": false
+    },
+    "lev": 5,
+    "ladder": [
+      {
+        "ret": 24.08,
+        "dd": 21.77,
+        "trades": 239,
+        "wr": 86.6,
+        "loss_share": 13.39,
+        "med": 1.186,
+        "ruined": false,
+        "lev": 5
+      },
+      {
+        "ret": 38.52,
+        "dd": 34.27,
+        "trades": 239,
+        "wr": 86.6,
+        "loss_share": 13.39,
+        "med": 1.897,
+        "ruined": false,
+        "lev": 8
+      },
+      {
+        "ret": 48.15,
+        "dd": 42.38,
+        "trades": 239,
+        "wr": 86.6,
+        "loss_share": 13.39,
+        "med": 2.372,
+        "ruined": false,
+        "lev": 10
+      },
+      {
+        "ret": 57.79,
+        "dd": 50.32,
+        "trades": 239,
+        "wr": 86.6,
+        "loss_share": 13.39,
+        "med": 2.846,
+        "ruined": false,
+        "lev": 12
+      },
+      {
+        "ret": 77.6,
+        "dd": 56.97,
+        "trades": 239,
+        "wr": 86.6,
+        "loss_share": 13.39,
+        "med": 3.557,
+        "ruined": false,
+        "lev": 15
+      }
+    ],
+    "rec_lev": 5,
+    "chosen": {
+      "grid_mode": 0,
+      "grid_span": 0.6,
+      "grid_spread": 1.0,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 0.0,
+      "grid_retune": 0,
+      "tp_atr_k": 0.0,
+      "trail_k": 0.0,
+      "trail_start": 0.5
+    }
+  },
+  "SOLUSDT": {
+    "genes": {
+      "grid_mode": 0,
+      "grid_span": 0.6,
+      "grid_spread": 1.0,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 0.0,
+      "grid_retune": 0,
+      "tp_atr_k": 0.0,
+      "trail_k": 0.0,
+      "trail_start": 0.5
+    },
+    "adopt": false,
+    "reject_reasons": [
+      "отрыв по OOS +0.000 <= 0.5"
+    ],
+    "base_oos": 1.7069,
+    "cand_oos": 1.7069,
+    "base_folds": [
+      4.0106,
+      3.734,
+      -2.6238
+    ],
+    "cand_folds": [
+      4.0106,
+      3.734,
+      -2.6238
+    ],
+    "base_full": {
+      "ret": 44.01,
+      "dd": 18.64,
+      "trades": 1242,
+      "wr": 98.1,
+      "loss_share": 1.85,
+      "med": 3.075,
+      "ruined": false
+    },
+    "cand_full": {
+      "ret": 44.01,
+      "dd": 18.64,
+      "trades": 1242,
+      "wr": 98.1,
+      "loss_share": 1.85,
+      "med": 3.075,
+      "ruined": false
+    },
+    "lev": 5,
+    "ladder": [
+      {
+        "ret": 44.01,
+        "dd": 18.64,
+        "trades": 1242,
+        "wr": 98.1,
+        "loss_share": 1.85,
+        "med": 3.075,
+        "ruined": false,
+        "lev": 5
+      },
+      {
+        "ret": 70.42,
+        "dd": 26.27,
+        "trades": 1242,
+        "wr": 98.1,
+        "loss_share": 1.85,
+        "med": 4.92,
+        "ruined": false,
+        "lev": 8
+      },
+      {
+        "ret": 88.02,
+        "dd": 30.42,
+        "trades": 1242,
+        "wr": 98.1,
+        "loss_share": 1.85,
+        "med": 6.151,
+        "ruined": false,
+        "lev": 10
+      },
+      {
+        "ret": 107.65,
+        "dd": 34.0,
+        "trades": 1242,
+        "wr": 98.1,
+        "loss_share": 1.85,
+        "med": 7.381,
+        "ruined": false,
+        "lev": 12
+      },
+      {
+        "ret": 150.09,
+        "dd": 34.08,
+        "trades": 1242,
+        "wr": 98.1,
+        "loss_share": 1.85,
+        "med": 9.226,
+        "ruined": false,
+        "lev": 15
+      }
+    ],
+    "rec_lev": 5,
+    "chosen": {
+      "grid_mode": 0,
+      "grid_span": 0.6,
+      "grid_spread": 1.0,
+      "grid_atr_k": 0.0,
+      "grid_w_atr_k": 0.0,
+      "grid_retune": 0,
+      "tp_atr_k": 0.0,
+      "trail_k": 0.0,
+      "trail_start": 0.5
+    }
+  }
+}

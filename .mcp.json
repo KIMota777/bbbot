@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "bbbot-news": {
+      "command": ".venv/bin/python",
+      "args": ["news_mcp.py"],
+      "env": {}
+    }
+  }
+}

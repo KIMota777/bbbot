@@ -41,6 +41,20 @@
   .empty { background:var(--card); border:1px solid var(--line); border-radius:12px;
     padding:28px; text-align:center; color:var(--muted); }
   .empty a { color:var(--accent); }
+  .news { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:14px 18px; margin-bottom:22px; }
+  .news h2 { font-size:14px; margin:0 0 4px; font-weight:700; }
+  .news .why { color:var(--muted); font-size:12.5px; margin:0 0 10px; }
+  .news .why a { color:var(--accent); }
+  .nrow { display:flex; gap:18px; flex-wrap:wrap; }
+  .ncell { display:flex; align-items:baseline; gap:6px; font-size:13px;
+    background:#171a1f; border:1px solid var(--line); border-radius:8px;
+    padding:6px 11px; }
+  .ncell b { font-weight:700; }
+  .ncell .neu { color:var(--muted); }
+  .ncell .pos { color:var(--up); }
+  .ncell .neg { color:var(--down); }
+  .ncell .hot { color:var(--accent); }
 </style>
 </head>
 <body>
@@ -49,6 +63,34 @@
   <h1>🤖 Торговые боты Bybit</h1>
   <p class="sub">RSI + сетка + уровни ликвидности · 15m · пять отобранных ботов — по одному на монету (BTC, LTC, ETH, DOGE, SOL)</p>
   {% if dry_run %}<div class="banner">⚠ Все боты в режиме DRY_RUN — сделки виртуальные, реальные ордера не отправляются (config.py → DRY_RUN)</div>{% endif %}
+  {% if news.rows %}
+  <div class="news">
+    <h2>📰 Новостной фон</h2>
+    <p class="why">
+      {% if news.any_active %}
+        Реакция на новости ВКЛЮЧЕНА — фон влияет на тейк, стоп и разрешение входа.
+        Внимание: бэктест и цифры на этом сайте новости не учитывают.
+      {% elif news.any_news %}
+        Фон собран, но на сделки не влияет: коэффициенты news_* в config.py нулевые.
+      {% else %}
+        Фон пуст — боты работают без новостей. Наполняется через MCP-сервер
+        (<a href="https://github.com/KIMota777/bbbot/blob/main/docs/MCP_SETUP.md">как подключить</a>).
+      {% endif %}
+      index: −1 всё негативно … +1 всё позитивно. heat: насколько сейчас шумно.
+    </p>
+    <div class="nrow">
+      {% for r in news.rows %}
+      <div class="ncell">
+        <b>{{ r.coin }}</b>
+        <span class="{% if r.index > 0.05 %}pos{% elif r.index < -0.05 %}neg{% else %}neu{% endif %}">
+          {{ '%+.2f'|format(r.index) }}</span>
+        <span class="{% if r.heat > 0.5 %}hot{% else %}neu{% endif %}">heat {{ '%.2f'|format(r.heat) }}</span>
+        <span class="neu">{% if r.stale %}протух{% else %}{{ r.n }} нов.{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% if not has_final %}
   <div class="empty">Финальный отбор ещё не завершён.<br>
     Пока доступны боты предыдущих волн — смотри <a href="/archive">архив</a>.</div>

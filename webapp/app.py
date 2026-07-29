@@ -252,11 +252,36 @@ def archive_bot_list():
     return list_bots(ARCHIVE_MODES)
 
 
+def news_panel():
+    """Новостной фон для главной: что сейчас видят боты и влияет ли это.
+
+    Показываем даже когда фон выключен: «фон есть, но ни на что не влияет» —
+    это важное состояние, о котором лучше знать явно, чем догадываться.
+    """
+    import news_state
+    try:
+        rows = []
+        for sym in config.SYMBOL_PARAMS:
+            if sym not in news_state.BETA:
+                continue
+            bg = news_state.background(sym)
+            p = config.SYMBOL_PARAMS[sym].get("final") or {}
+            rows.append(dict(
+                coin=sym.replace("USDT", ""), index=bg["index"],
+                heat=bg["heat"], n=bg["n"], stale=bg["stale"],
+                active=bool(p.get("news_tp_k") or p.get("news_sl_k") or
+                            p.get("news_heat_max") or p.get("news_index_min"))))
+        return dict(rows=rows, any_active=any(r["active"] for r in rows),
+                    any_news=any(r["n"] for r in rows))
+    except Exception:
+        return dict(rows=[], any_active=False, any_news=False)
+
+
 @app.route("/")
 def index():
     finals = final_bot_list()
     return render_template("index.html", bots=finals, dry_run=config.DRY_RUN,
-                           has_final=bool(finals))
+                           has_final=bool(finals), news=news_panel())
 
 
 @app.route("/archive")
