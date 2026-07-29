@@ -1,0 +1,374 @@
+{
+  "range_long": {
+    "genome": {
+      "rsi_idx": 0,
+      "window": 133,
+      "zone": 0.24926460915488438,
+      "rsi_os": 20,
+      "buf_atr": 0.8149868123422379,
+      "stop_cap": 0.025948045513904852,
+      "poke_atr": 0.8569393623488015,
+      "age": 7,
+      "drop_frac": 0.12366344686529497,
+      "drop_days": 2,
+      "hold_days": 6,
+      "cooldown": 18
+    },
+    "oos_mean": 1.893299771920584,
+    "oos_folds": [
+      0.0,
+      5.679899315761752,
+      0.0
+    ],
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 54.1,
+        "dd": 11.0,
+        "n": 15,
+        "wr": 53.3,
+        "avg_hold_h": 44.1,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 22,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 81.2,
+        "dd": 15.8,
+        "n": 15,
+        "wr": 53.3,
+        "avg_hold_h": 44.1,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 22,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 108.3,
+        "dd": 20.2,
+        "n": 15,
+        "wr": 53.3,
+        "avg_hold_h": 44.1,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 22,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 20,
+    "caution": false
+  },
+  "range_short": {
+    "genome": {
+      "rsi_idx": 1,
+      "window": 119,
+      "zone": 0.07165166675635752,
+      "rsi_os": 20,
+      "buf_atr": 0.4818635158991117,
+      "stop_cap": 0.018021441628681637,
+      "poke_atr": 0.3628560646536851,
+      "age": 8,
+      "drop_frac": 0.047782894297092926,
+      "drop_days": 2,
+      "hold_days": 4,
+      "cooldown": 11
+    },
+    "oos_mean": 0.0,
+    "oos_folds": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": -4.7,
+        "dd": 12.2,
+        "n": 12,
+        "wr": 25.0,
+        "avg_hold_h": 18.8,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 8,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": -7.1,
+        "dd": 17.6,
+        "n": 12,
+        "wr": 25.0,
+        "avg_hold_h": 18.8,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 8,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": -9.4,
+        "dd": 22.6,
+        "n": 12,
+        "wr": 25.0,
+        "avg_hold_h": 18.8,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 8,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 10,
+    "caution": true
+  },
+  "sweep_long": {
+    "genome": {
+      "rsi_idx": 2,
+      "window": 87,
+      "zone": 0.06380788324780721,
+      "rsi_os": 26,
+      "buf_atr": 0.2515429924966987,
+      "stop_cap": 0.026247836789431395,
+      "poke_atr": 0.6750218639833869,
+      "age": 18,
+      "drop_frac": 0.12704222083996936,
+      "drop_days": 1,
+      "hold_days": 6,
+      "cooldown": 1
+    },
+    "oos_mean": -0.10167517383509998,
+    "oos_folds": [
+      0.0,
+      0.0,
+      -0.30502552150529993
+    ],
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": -42.8,
+        "dd": 48.2,
+        "n": 15,
+        "wr": 13.3,
+        "avg_hold_h": 48.8,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 0,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": -64.3,
+        "dd": 72.2,
+        "n": 15,
+        "wr": 13.3,
+        "avg_hold_h": 48.8,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 0,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": -77.7,
+        "dd": 77.7,
+        "n": 9,
+        "wr": 0.0,
+        "avg_hold_h": 50.2,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 0,
+        "ruined": true
+      }
+    ],
+    "rec_lev": 10,
+    "caution": true
+  },
+  "sweep_short": {
+    "genome": {
+      "rsi_idx": 1,
+      "window": 114,
+      "zone": 0.08211388743360885,
+      "rsi_os": 31,
+      "buf_atr": 0.23615318700516058,
+      "stop_cap": 0.023210943778197143,
+      "poke_atr": 0.5631399716406217,
+      "age": 25,
+      "drop_frac": 0.10579784368266397,
+      "drop_days": 3,
+      "hold_days": 6,
+      "cooldown": 6
+    },
+    "oos_mean": 0.0,
+    "oos_folds": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 1.0,
+        "dd": 22.9,
+        "n": 19,
+        "wr": 31.6,
+        "avg_hold_h": 36.2,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 11,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 1.5,
+        "dd": 34.4,
+        "n": 19,
+        "wr": 31.6,
+        "avg_hold_h": 36.2,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 11,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 2.0,
+        "dd": 45.8,
+        "n": 19,
+        "wr": 31.6,
+        "avg_hold_h": 36.2,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 11,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 10,
+    "caution": true
+  },
+  "dump_long": {
+    "genome": {
+      "rsi_idx": 0,
+      "window": 130,
+      "zone": 0.07808661116083103,
+      "rsi_os": 27,
+      "buf_atr": 0.4135321599770768,
+      "stop_cap": 0.025385270747250013,
+      "poke_atr": 0.6269564953856703,
+      "age": 12,
+      "drop_frac": 0.044423682866936806,
+      "drop_days": 3,
+      "hold_days": 5,
+      "cooldown": 17
+    },
+    "oos_mean": -4.911145288372604,
+    "oos_folds": [
+      -7.3378597541189094,
+      0.0,
+      -7.3955761109989036
+    ],
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 6.2,
+        "dd": 17.6,
+        "n": 17,
+        "wr": 35.3,
+        "avg_hold_h": 29.1,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 16,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 9.3,
+        "dd": 24.1,
+        "n": 17,
+        "wr": 35.3,
+        "avg_hold_h": 29.1,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 16,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 12.4,
+        "dd": 29.5,
+        "n": 17,
+        "wr": 35.3,
+        "avg_hold_h": 29.1,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 16,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 15,
+    "caution": false
+  },
+  "pump_short": {
+    "genome": {
+      "rsi_idx": 0,
+      "window": 137,
+      "zone": 0.10211359137673091,
+      "rsi_os": 40,
+      "buf_atr": 0.6004150346008998,
+      "stop_cap": 0.03126983048635902,
+      "poke_atr": 0.24481261501538226,
+      "age": 10,
+      "drop_frac": 0.04721832000780965,
+      "drop_days": 2,
+      "hold_days": 4,
+      "cooldown": 7
+    },
+    "oos_mean": 3.020136403294766,
+    "oos_folds": [
+      13.536894306506232,
+      -4.476485096621934,
+      0.0
+    ],
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 96.9,
+        "dd": 14.3,
+        "n": 44,
+        "wr": 43.2,
+        "avg_hold_h": 55.9,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 43,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 145.4,
+        "dd": 17.8,
+        "n": 44,
+        "wr": 43.2,
+        "avg_hold_h": 55.9,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 43,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 193.8,
+        "dd": 21.4,
+        "n": 44,
+        "wr": 43.2,
+        "avg_hold_h": 55.9,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 43,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 20,
+    "caution": false
+  }
+}

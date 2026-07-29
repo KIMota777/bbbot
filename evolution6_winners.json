@@ -1,0 +1,387 @@
+{
+  "DOGEUSDT": {
+    "base_oos": 2.301373786618983,
+    "cand_oos": 3.0720447529095676,
+    "adopt": true,
+    "genome": {
+      "rsi_idx": 0,
+      "rsi_os": 37,
+      "zone_l": 0.21386015720032686,
+      "zone_s": 0.55,
+      "window": 150,
+      "step": 0.005697445621592639,
+      "levels": 3,
+      "mult": 2.0,
+      "tp": 0.008104989034727728,
+      "sweep": 0.035,
+      "max_bars": 43,
+      "cooldown": 19,
+      "knife": 2.7923702762281417,
+      "be_move": 1,
+      "fund_long_max": 0.021243114056230444,
+      "fund_short_min": -0.05094939599517895,
+      "oi_gate": 2,
+      "spx_long_min": -6.0,
+      "dxy_long_max": 0.7987810500733507,
+      "gold_long_max": 1.0741187238060343,
+      "ema_mode": 0,
+      "ema_n_idx": 2,
+      "ma_mode": 0,
+      "masf_idx": 1,
+      "masl_idx": 1,
+      "aroon_idx": 1,
+      "aroon_long_min": 35,
+      "aroon_short_min": 0
+    },
+    "ladder": [
+      {
+        "lev": 5,
+        "ret": 72.3,
+        "med": 3.22,
+        "dd": 10.0,
+        "ruined": false
+      },
+      {
+        "lev": 8,
+        "ret": 115.7,
+        "med": 5.16,
+        "dd": 15.2,
+        "ruined": false
+      },
+      {
+        "lev": 10,
+        "ret": 144.6,
+        "med": 6.45,
+        "dd": 18.5,
+        "ruined": false
+      },
+      {
+        "lev": 12,
+        "ret": 173.5,
+        "med": 7.74,
+        "dd": 21.5,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 216.9,
+        "med": 9.67,
+        "dd": 25.7,
+        "ruined": false
+      }
+    ],
+    "regime_share": {
+      "0": 29,
+      "1": 37,
+      "2": 34
+    }
+  },
+  "LTCUSDT": {
+    "base_oos": 2.2471084398838133,
+    "cand_oos": 3.050066643252901,
+    "adopt": true,
+    "genome": {
+      "rsi_idx": 0,
+      "rsi_os": 39,
+      "zone_l": 0.5057225984850868,
+      "zone_s": 0.5258712210155702,
+      "window": 718,
+      "step": 0.013754062328465773,
+      "levels": 2,
+      "mult": 1.7368932483021098,
+      "tp": 0.008,
+      "sweep": 0.034437743552253555,
+      "max_bars": 189,
+      "cooldown": 0,
+      "knife": 2.3560275371947745,
+      "be_move": 1,
+      "fund_long_max": 0.0014790881836727748,
+      "fund_short_min": 0.009715820253309075,
+      "oi_gate": 1,
+      "spx_long_min": -0.8125561082245939,
+      "dxy_long_max": 2.5551234480082803,
+      "gold_long_max": 5.168674424922417,
+      "ema_mode": 0,
+      "ema_n_idx": 2,
+      "ma_mode": 0,
+      "masf_idx": 1,
+      "masl_idx": 1,
+      "aroon_idx": 1,
+      "aroon_long_min": 0,
+      "aroon_short_min": 0
+    },
+    "ladder": [
+      {
+        "lev": 5,
+        "ret": 56.9,
+        "med": 3.69,
+        "dd": 17.2,
+        "ruined": false
+      },
+      {
+        "lev": 8,
+        "ret": 91.1,
+        "med": 5.9,
+        "dd": 25.3,
+        "ruined": false
+      },
+      {
+        "lev": 10,
+        "ret": 115.8,
+        "med": 7.38,
+        "dd": 30.0,
+        "ruined": false
+      },
+      {
+        "lev": 12,
+        "ret": 143.7,
+        "med": 8.86,
+        "dd": 34.2,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 187.7,
+        "med": 11.07,
+        "dd": 39.8,
+        "ruined": false
+      }
+    ],
+    "regime_share": {
+      "0": 21,
+      "1": 48,
+      "2": 31
+    }
+  },
+  "BTCUSDT": {
+    "base_oos": -0.20190442757382243,
+    "cand_oos": 0.42040575383042394,
+    "adopt": true,
+    "genome": {
+      "rsi_idx": 0,
+      "rsi_os": 30,
+      "zone_l": 0.44023792511791826,
+      "zone_s": 0.3554767525439013,
+      "window": 307,
+      "step": 0.004,
+      "levels": 3,
+      "mult": 2.0,
+      "tp": 0.03780108023142177,
+      "sweep": 0.021500611006418473,
+      "max_bars": 163,
+      "cooldown": 11,
+      "knife": 1.8871290622727284,
+      "be_move": 1,
+      "fund_long_max": 0.05975227393209795,
+      "fund_short_min": -0.011097202329430497,
+      "oi_gate": 1,
+      "spx_long_min": -2.4074265740336647,
+      "dxy_long_max": 1.9025186330441684,
+      "gold_long_max": 3.2622011307406567,
+      "ema_mode": 0,
+      "ema_n_idx": 2,
+      "ma_mode": 1,
+      "masf_idx": 1,
+      "masl_idx": 2,
+      "aroon_idx": 2,
+      "aroon_long_min": 10,
+      "aroon_short_min": 12
+    },
+    "ladder": [
+      {
+        "lev": 5,
+        "ret": 46.7,
+        "med": 1.68,
+        "dd": 5.4,
+        "ruined": false
+      },
+      {
+        "lev": 8,
+        "ret": 74.8,
+        "med": 2.69,
+        "dd": 7.2,
+        "ruined": false
+      },
+      {
+        "lev": 10,
+        "ret": 93.4,
+        "med": 3.36,
+        "dd": 8.6,
+        "ruined": false
+      },
+      {
+        "lev": 12,
+        "ret": 112.1,
+        "med": 4.03,
+        "dd": 10.2,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 140.2,
+        "med": 5.04,
+        "dd": 12.6,
+        "ruined": false
+      }
+    ],
+    "regime_share": {
+      "0": 33,
+      "1": 47,
+      "2": 20
+    }
+  },
+  "ETHUSDT": {
+    "base_oos": 1.8779746066315457,
+    "cand_oos": 1.875631252061874,
+    "adopt": false,
+    "genome": {
+      "rsi_idx": 2,
+      "rsi_os": 25,
+      "zone_l": 0.5,
+      "zone_s": 0.41,
+      "window": 724,
+      "step": 0.007,
+      "levels": 3,
+      "mult": 1.6,
+      "tp": 0.01,
+      "sweep": 0.025,
+      "max_bars": 139,
+      "cooldown": 48,
+      "knife": 3.5,
+      "be_move": 0,
+      "fund_long_max": 0.06,
+      "fund_short_min": -0.06,
+      "oi_gate": 0,
+      "spx_long_min": -6.0,
+      "dxy_long_max": 4.0,
+      "gold_long_max": 6.0,
+      "ema_mode": 0,
+      "ma_mode": 0,
+      "aroon_long_min": 0,
+      "aroon_short_min": 0,
+      "ema_n_idx": 2,
+      "masf_idx": 1,
+      "masl_idx": 1,
+      "aroon_idx": 1
+    },
+    "ladder": [
+      {
+        "lev": 5,
+        "ret": 17.5,
+        "med": 2.13,
+        "dd": 24.8,
+        "ruined": false
+      },
+      {
+        "lev": 8,
+        "ret": 27.9,
+        "med": 3.41,
+        "dd": 38.4,
+        "ruined": false
+      },
+      {
+        "lev": 10,
+        "ret": 34.9,
+        "med": 4.27,
+        "dd": 47.0,
+        "ruined": false
+      },
+      {
+        "lev": 12,
+        "ret": 41.9,
+        "med": 5.12,
+        "dd": 55.3,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 57.7,
+        "med": 6.4,
+        "dd": 62.5,
+        "ruined": false
+      }
+    ],
+    "regime_share": {
+      "0": 29,
+      "1": 42,
+      "2": 29
+    }
+  },
+  "SOLUSDT": {
+    "base_oos": 0.37056812392462835,
+    "cand_oos": 1.7548754440333019,
+    "adopt": true,
+    "genome": {
+      "rsi_idx": 1,
+      "rsi_os": 38,
+      "zone_l": 0.493738029696694,
+      "zone_s": 0.37684571447241727,
+      "window": 189,
+      "step": 0.013217098858900073,
+      "levels": 2,
+      "mult": 1.4443363309745947,
+      "tp": 0.008,
+      "sweep": 0.035,
+      "max_bars": 288,
+      "cooldown": 16,
+      "knife": 3.5,
+      "be_move": 1,
+      "fund_long_max": 0.05359834270564063,
+      "fund_short_min": 0.022861795378691555,
+      "oi_gate": 0,
+      "spx_long_min": -3.0093646518521693,
+      "dxy_long_max": 4.0,
+      "gold_long_max": 3.279432197846471,
+      "ema_mode": 0,
+      "ema_n_idx": 2,
+      "ma_mode": 0,
+      "masf_idx": 1,
+      "masl_idx": 1,
+      "aroon_idx": 1,
+      "aroon_long_min": 91,
+      "aroon_short_min": 36
+    },
+    "ladder": [
+      {
+        "lev": 5,
+        "ret": 31.3,
+        "med": 3.05,
+        "dd": 17.0,
+        "ruined": false
+      },
+      {
+        "lev": 8,
+        "ret": 50.1,
+        "med": 4.88,
+        "dd": 24.4,
+        "ruined": false
+      },
+      {
+        "lev": 10,
+        "ret": 62.6,
+        "med": 6.1,
+        "dd": 28.5,
+        "ruined": false
+      },
+      {
+        "lev": 12,
+        "ret": 75.2,
+        "med": 7.33,
+        "dd": 32.2,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 94.9,
+        "med": 9.16,
+        "dd": 36.3,
+        "ruined": false
+      }
+    ],
+    "regime_share": {
+      "0": 35,
+      "1": 37,
+      "2": 28
+    }
+  }
+}

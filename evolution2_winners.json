@@ -1,0 +1,107 @@
+{
+  "DOGEUSDT": {
+    "baseline_oos": 9.149064136823208,
+    "candidate_oos": 6.848635688306152,
+    "adopt": false,
+    "genome": {
+      "rsi_idx": 0,
+      "rsi_os": 30,
+      "zone_l": 0.2962498992641022,
+      "zone_s": 0.55,
+      "window": 292,
+      "step": 0.004,
+      "levels": 4,
+      "mult": 1.104538649522589,
+      "tp": 0.008,
+      "sweep": 0.035,
+      "max_bars": 84,
+      "cooldown": 0,
+      "knife": 2.7779677168484733,
+      "be_move": 1
+    }
+  },
+  "LTCUSDT": {
+    "baseline_oos": 7.466295035233261,
+    "candidate_oos": 0.3272879091916335,
+    "adopt": false,
+    "genome": {
+      "rsi_idx": 2,
+      "rsi_os": 22,
+      "zone_l": 0.5308035242649124,
+      "zone_s": 0.49152406694629464,
+      "window": 322,
+      "step": 0.019349533950056525,
+      "levels": 2,
+      "mult": 2.0,
+      "tp": 0.021843921814031126,
+      "sweep": 0.034333424205928095,
+      "max_bars": 161,
+      "cooldown": 10,
+      "knife": 3.5,
+      "be_move": 0
+    }
+  },
+  "BTCUSDT": {
+    "baseline_oos": -1.6143805401337463,
+    "candidate_oos": 1.4623879013789134,
+    "adopt": true,
+    "genome": {
+      "rsi_idx": 2,
+      "rsi_os": 23,
+      "zone_l": 0.3996675525171938,
+      "zone_s": 0.183984117205149,
+      "window": 877,
+      "step": 0.004401945158200868,
+      "levels": 2,
+      "mult": 2.0,
+      "tp": 0.02129899803400744,
+      "sweep": 0.0197684174002023,
+      "max_bars": 243,
+      "cooldown": 30,
+      "knife": 3.5,
+      "be_move": 0
+    }
+  },
+  "ETHUSDT": {
+    "baseline_oos": 0.9090634065221476,
+    "candidate_oos": 2.263402172252794,
+    "adopt": true,
+    "genome": {
+      "rsi_idx": 2,
+      "rsi_os": 25,
+      "zone_l": 0.5019864805412629,
+      "zone_s": 0.4095323592784572,
+      "window": 724,
+      "step": 0.006614055564738171,
+      "levels": 3,
+      "mult": 1.6215763912851069,
+      "tp": 0.009776280100652613,
+      "sweep": 0.024845025219301816,
+      "max_bars": 139,
+      "cooldown": 48,
+      "knife": 3.5,
+      "be_move": 0
+    }
+  },
+  "SOLUSDT": {
+    "baseline_oos": 2.0658653677990775,
+    "candidate_oos": 1.1531712030633647,
+    "adopt": false,
+    "genome": {
+      "rsi_idx": 1,
+      "rsi_os": 29,
+      "zone_l": 0.5170525573664125,
+      "zone_s": 0.24335105949771257,
+      "window": 361,
+      "step": 0.008469552238802873,
+      "levels": 2,
+      "mult": 1.9894595663235497,
+      "tp": 0.008985977366214164,
+      "sweep": 0.03496586463527534,
+      "max_bars": 28,
+      "cooldown": 0,
+      "knife": 1.8201138235112178,
+      "be_move": 1
+    }
+  }
+}

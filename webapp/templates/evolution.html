@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Эволюция ботов v1→v8</title>
+<style>
+  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
+    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
+  body { background:var(--bg); color:var(--ink); margin:0;
+    font:15px/1.55 "Segoe UI", system-ui, sans-serif; padding:32px 18px 60px; }
+  .wrap { max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:26px; }
+  nav { display:flex; gap:16px; }
+  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
+  nav a.active { color:var(--accent); }
+  nav a:hover { color:var(--ink); }
+  h1 { font-size:26px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 6px; max-width:76ch; }
+  .note { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:8px; padding:12px 16px; font-size:13.5px; max-width:76ch; color:var(--muted); }
+  .coin-block { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; }
+  .coin-block h2 { margin:0 0 4px; font-size:19px; }
+  .coin-block .period { color:var(--muted); font-size:12.5px; margin:0 0 16px; }
+  .waves { display:flex; flex-direction:column; gap:2px; }
+  .wave { display:grid; grid-template-columns:150px 1fr 90px 60px 60px; gap:10px;
+    align-items:center; padding:9px 10px; border-radius:6px; font-size:13px; }
+  .wave:nth-child(odd) { background:#1f232a; }
+  .wave .key { font-weight:700; color:var(--accent); font-size:12px; }
+  .wave .desc { color:var(--muted); font-size:12px; }
+  .wave .ret { font-family:Consolas,monospace; font-weight:700; text-align:right;
+    font-variant-numeric:tabular-nums; }
+  .wave .dd { color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; }
+  .wave .lev { color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; }
+  .pnl-pos { color:var(--up); } .pnl-neg { color:var(--down); }
+  .bar-wrap { grid-column:1/-1; height:6px; background:#0e1013; border-radius:3px; overflow:hidden;
+    margin-top:2px; }
+  .bar { height:100%; border-radius:3px; }
+  .head { display:grid; grid-template-columns:150px 1fr 90px 60px 60px; gap:10px;
+    padding:0 10px 6px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .head span:not(:first-child) { text-align:right; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/">Боты</a><a href="/signals">Сигналы BTC</a><a href="/pnl">PnL-график</a><a class="active" href="/evolution">Эволюция</a><a href="/archive">Архив</a></nav>
+  <div>
+    <h1>📈 Эволюция ботов: v1 → v8</h1>
+    <p class="sub">Один и тот же период (3.2 года, честный движок) прогнан через все поколения конфигов каждой монеты — видно, что реально улучшало стратегию, а что было подгонкой под короткое окно.</p>
+  </div>
+  <div class="note">
+    ⚠ <b>Про кажущиеся «падения» между v6 и v7.</b> В v6 плечо выбиралось на глаз; в v7 — объективным правилом (макс. плечо с просадкой ≤20% на 3.2г). Из-за этого у части монет доход v6→v7 менялся не потому, что стратегия стала хуже/лучше, а из-за смены плеча. Сравнивай по колонке «плечо», не только по доходу.
+  </div>
+
+  {% for sym, coin in coins.items() %}
+  {% set d = timeline.get(sym) %}
+  {% if d and d.waves %}
+  <div class="coin-block">
+    <h2>{{ coin }}</h2>
+    <p class="period">{{ d.period }}</p>
+    <div class="head"><span>Волна</span><span>Что изменилось</span><span>Доход 3.2г</span><span>DD</span><span>Плечо</span></div>
+    <div class="waves">
+      {% set max_abs = d.waves | map(attribute='ret') | map('abs') | max %}
+      {% for w in d.waves %}
+      <div class="wave">
+        <span class="key">{{ w.key }}{% if w.get('adopted') == false %} (не принят){% endif %}</span>
+        <span class="desc">{{ w.label }} — {{ w.desc }}</span>
+        <span class="ret {{ 'pnl-pos' if w.ret >= 0 else 'pnl-neg' }}">{{ '%+.1f'|format(w.ret) }}%{% if w.ruined %} 💀{% endif %}</span>
+        <span class="dd">{{ w.dd }}%</span>
+        <span class="lev">x{{ w.lev or 5 }}</span>
+        <div class="bar-wrap"><div class="bar" style="width:{{ (w.ret|abs / max_abs * 100) if max_abs else 0 }}%; background:{{ 'var(--up)' if w.ret >= 0 else 'var(--down)' }}"></div></div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+
+  {% if not timeline %}
+  <div class="note">Данные эволюции ещё не собраны — запусти <code>python build_timeline.py</code>.</div>
+  {% endif %}
+</div>
+</body>
+</html>

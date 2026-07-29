@@ -1,0 +1,36 @@
+# кэши рыночных данных (скачиваются заново при первом запуске скриптов)
+history_*.json
+funding_*.json
+oi_*.json
+daily_pct5.json
+fng_history.json
+webapp/cache_*.json
+
+# логи ботов/помощника/сервера
+*.log
+webapp/srv*.log
+
+# временные выводы смоук-тестов
+o_*.txt
+e_*.txt
+o1.txt
+o2.txt
+o3.txt
+e1.txt
+e2.txt
+e3.txt
+adv_o.txt
+adv_e.txt
+out.txt
+err.txt
+out2.txt
+err2.txt
+
+# python
+__pycache__/
+*.pyc
+
+# ключи никогда не хранятся в файлах (только переменные окружения),
+# но на всякий случай:
+.env
+*.key

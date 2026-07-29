@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Архив ботов</title>
+<style>
+  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
+    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
+  body { background:var(--bg); color:var(--ink); margin:0;
+    font:15px/1.5 "Segoe UI", system-ui, sans-serif; padding:32px 18px 60px; }
+  .wrap { max-width:1060px; margin:0 auto; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 24px; max-width:70ch; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
+  a.card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:16px 18px; text-decoration:none; color:var(--ink); display:flex;
+    flex-direction:column; gap:10px; transition:border-color .15s; opacity:.88; }
+  a.card:hover { border-color:var(--accent); opacity:1; }
+  .top { display:flex; flex-direction:column; gap:8px; }
+  .name { font-weight:700; font-size:16px; line-height:1.35; text-wrap:balance; }
+  .badges { display:flex; gap:6px; flex-wrap:wrap; }
+  .b { font-size:11px; border-radius:99px; padding:3px 10px; font-weight:600;
+    white-space:nowrap; line-height:1.4; }
+  .b.mode-normal { background:#22303f; color:#7fb3e0; }
+  .b.mode-bear { background:#3a2430; color:#e08bb0; }
+  .b.mode-turbo { background:#3a2e15; color:var(--accent); }
+  .b.ver { background:#1e2a3a; color:#8fb8e8; }
+  .b.lev { background:var(--line); color:var(--muted); }
+  .b.on { background:#1d3a2c; color:var(--up); }
+  .b.off { background:var(--line); color:var(--muted); }
+  .stats { color:var(--muted); font-size:13px; }
+  nav { display:flex; gap:16px; margin-bottom:20px; }
+  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
+  nav a.active { color:var(--accent); }
+  nav a:hover { color:var(--ink); }
+  h2 { font-size:15px; color:var(--muted); margin:28px 0 12px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.04em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/">Боты</a><a href="/signals">Сигналы BTC</a><a href="/pnl">PnL-график</a><a href="/evolution">Эволюция</a><a class="active" href="/archive">Архив</a></nav>
+  <h1>🗄 Архив</h1>
+  <p class="sub">Все конфиги предыдущих волн отбора (v2–v6): обычные, медвежьи-специалисты и турбо-эксперименты. На главной странице теперь только 5 финальных ботов — по одному на монету. Здесь — всё, что было проверено, но не стало основным ботом, плюс сами медвежьи/турбо-варианты для справки.</p>
+
+  <h2>Обычные (v2/v4/v5, торговали во всех режимах рынка)</h2>
+  <div class="grid">
+    {% for b in bots if b.mode == "normal" %}
+    <a class="card" href="/bot/{{ b.symbol }}/{{ b.mode }}">
+      <div class="top">
+        <span class="name">{{ b.title }}</span>
+        <span class="badges">
+          <span class="b ver">{{ b.ver }}</span>
+          <span class="b mode-{{ b.mode }}">{{ b.mode_name }}</span>
+          <span class="b lev">x{{ b.lev }}</span>
+          <span class="b lev">{{ b.tf_label }}</span>
+          <span class="b {{ 'on' if b.active else 'off' }}">{{ '● работает' if b.active else '○ выключен' }}</span>
+        </span>
+      </div>
+      <div class="stats">{{ b.stats }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <h2>Медвежьи специалисты (v6, торгуют только в bear/боковике)</h2>
+  <div class="grid">
+    {% for b in bots if b.mode == "bear" %}
+    <a class="card" href="/bot/{{ b.symbol }}/{{ b.mode }}">
+      <div class="top">
+        <span class="name">{{ b.title }}</span>
+        <span class="badges">
+          <span class="b ver">{{ b.ver }}</span>
+          <span class="b mode-{{ b.mode }}">{{ b.mode_name }}</span>
+          <span class="b lev">x{{ b.lev }}</span>
+          <span class="b lev">{{ b.tf_label }}</span>
+          <span class="b {{ 'on' if b.active else 'off' }}">{{ '● работает' if b.active else '○ выключен' }}</span>
+        </span>
+      </div>
+      <div class="stats">{{ b.stats }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <h2>Турбо-эксперименты (x20, короткий стоп)</h2>
+  <div class="grid">
+    {% for b in bots if b.mode == "turbo" %}
+    <a class="card" href="/bot/{{ b.symbol }}/{{ b.mode }}">
+      <div class="top">
+        <span class="name">{{ b.title }}</span>
+        <span class="badges">
+          <span class="b ver">{{ b.ver }}</span>
+          <span class="b mode-{{ b.mode }}">{{ b.mode_name }}</span>
+          <span class="b lev">x{{ b.lev }}</span>
+          <span class="b lev">{{ b.tf_label }}</span>
+          <span class="b {{ 'on' if b.active else 'off' }}">{{ '● работает' if b.active else '○ выключен' }}</span>
+        </span>
+      </div>
+      <div class="stats">{{ b.stats }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+</body>
+</html>

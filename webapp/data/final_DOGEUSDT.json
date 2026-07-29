@@ -1,0 +1,350 @@
+{
+  "symbol": "DOGEUSDT",
+  "lev": 10,
+  "interval": "15",
+  "period_start": "2023-05-30",
+  "period_end": "2026-07-23",
+  "overall": {
+    "ret": 144.6,
+    "trades": 1276,
+    "wr": 96.2,
+    "dd": 18.5,
+    "med": 4.8,
+    "p25": 0.0,
+    "pos_share": 74,
+    "ruined": false
+  },
+  "years": [
+    {
+      "period": "2023-07..2024-07",
+      "ret": 56.8,
+      "trades": 474,
+      "wr": 93.5,
+      "dd": 16.6,
+      "ruined": false
+    },
+    {
+      "period": "2024-07..2025-07",
+      "ret": 47.6,
+      "trades": 403,
+      "wr": 98.5,
+      "dd": 8.1,
+      "ruined": false
+    },
+    {
+      "period": "2025-07..2026-07",
+      "ret": 43.3,
+      "trades": 287,
+      "wr": 97.9,
+      "dd": 5.1,
+      "ruined": false
+    }
+  ],
+  "months": [
+    {
+      "start": "2023-05-30",
+      "end": "2023-06-29",
+      "ret_usdt": 1.731,
+      "ret_pct": 8.65,
+      "trades": 54,
+      "wins": 50
+    },
+    {
+      "start": "2023-06-29",
+      "end": "2023-07-29",
+      "ret_usdt": -2.286,
+      "ret_pct": -11.43,
+      "trades": 60,
+      "wins": 58
+    },
+    {
+      "start": "2023-07-29",
+      "end": "2023-08-28",
+      "ret_usdt": 2.392,
+      "ret_pct": 11.96,
+      "trades": 55,
+      "wins": 52
+    },
+    {
+      "start": "2023-08-28",
+      "end": "2023-09-27",
+      "ret_usdt": 2.114,
+      "ret_pct": 10.57,
+      "trades": 53,
+      "wins": 46
+    },
+    {
+      "start": "2023-09-27",
+      "end": "2023-10-27",
+      "ret_usdt": -3.737,
+      "ret_pct": -18.68,
+      "trades": 41,
+      "wins": 33
+    },
+    {
+      "start": "2023-10-27",
+      "end": "2023-11-26",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2023-11-26",
+      "end": "2023-12-26",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2023-12-26",
+      "end": "2024-01-25",
+      "ret_usdt": 1.289,
+      "ret_pct": 6.45,
+      "trades": 37,
+      "wins": 37
+    },
+    {
+      "start": "2024-01-25",
+      "end": "2024-02-24",
+      "ret_usdt": 1.874,
+      "ret_pct": 9.37,
+      "trades": 57,
+      "wins": 50
+    },
+    {
+      "start": "2024-02-24",
+      "end": "2024-03-25",
+      "ret_usdt": -0.254,
+      "ret_pct": -1.27,
+      "trades": 2,
+      "wins": 1
+    },
+    {
+      "start": "2024-03-25",
+      "end": "2024-04-24",
+      "ret_usdt": 1.518,
+      "ret_pct": 7.59,
+      "trades": 29,
+      "wins": 29
+    },
+    {
+      "start": "2024-04-24",
+      "end": "2024-05-24",
+      "ret_usdt": 1.747,
+      "ret_pct": 8.73,
+      "trades": 78,
+      "wins": 76
+    },
+    {
+      "start": "2024-05-24",
+      "end": "2024-06-23",
+      "ret_usdt": 2.001,
+      "ret_pct": 10.0,
+      "trades": 35,
+      "wins": 34
+    },
+    {
+      "start": "2024-06-23",
+      "end": "2024-07-23",
+      "ret_usdt": 2.213,
+      "ret_pct": 11.06,
+      "trades": 79,
+      "wins": 77
+    },
+    {
+      "start": "2024-07-23",
+      "end": "2024-08-22",
+      "ret_usdt": 2.265,
+      "ret_pct": 11.33,
+      "trades": 88,
+      "wins": 87
+    },
+    {
+      "start": "2024-08-22",
+      "end": "2024-09-21",
+      "ret_usdt": 1.452,
+      "ret_pct": 7.26,
+      "trades": 74,
+      "wins": 72
+    },
+    {
+      "start": "2024-09-21",
+      "end": "2024-10-21",
+      "ret_usdt": -0.542,
+      "ret_pct": -2.71,
+      "trades": 25,
+      "wins": 24
+    },
+    {
+      "start": "2024-10-21",
+      "end": "2024-11-20",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2024-11-20",
+      "end": "2024-12-20",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2024-12-20",
+      "end": "2025-01-19",
+      "ret_usdt": 1.482,
+      "ret_pct": 7.41,
+      "trades": 29,
+      "wins": 29
+    },
+    {
+      "start": "2025-01-19",
+      "end": "2025-02-18",
+      "ret_usdt": 1.325,
+      "ret_pct": 6.62,
+      "trades": 35,
+      "wins": 35
+    },
+    {
+      "start": "2025-02-18",
+      "end": "2025-03-20",
+      "ret_usdt": -0.165,
+      "ret_pct": -0.82,
+      "trades": 44,
+      "wins": 43
+    },
+    {
+      "start": "2025-03-20",
+      "end": "2025-04-19",
+      "ret_usdt": 1.562,
+      "ret_pct": 7.81,
+      "trades": 44,
+      "wins": 44
+    },
+    {
+      "start": "2025-04-19",
+      "end": "2025-05-19",
+      "ret_usdt": 0.694,
+      "ret_pct": 3.47,
+      "trades": 25,
+      "wins": 24
+    },
+    {
+      "start": "2025-05-19",
+      "end": "2025-06-18",
+      "ret_usdt": 0.43,
+      "ret_pct": 2.15,
+      "trades": 17,
+      "wins": 17
+    },
+    {
+      "start": "2025-06-18",
+      "end": "2025-07-18",
+      "ret_usdt": 1.148,
+      "ret_pct": 5.74,
+      "trades": 28,
+      "wins": 28
+    },
+    {
+      "start": "2025-07-18",
+      "end": "2025-08-17",
+      "ret_usdt": 0.001,
+      "ret_pct": 0.01,
+      "trades": 2,
+      "wins": 2
+    },
+    {
+      "start": "2025-08-17",
+      "end": "2025-09-16",
+      "ret_usdt": 1.03,
+      "ret_pct": 5.15,
+      "trades": 19,
+      "wins": 19
+    },
+    {
+      "start": "2025-09-16",
+      "end": "2025-10-16",
+      "ret_usdt": 0.84,
+      "ret_pct": 4.2,
+      "trades": 18,
+      "wins": 18
+    },
+    {
+      "start": "2025-10-16",
+      "end": "2025-11-15",
+      "ret_usdt": 1.125,
+      "ret_pct": 5.63,
+      "trades": 32,
+      "wins": 31
+    },
+    {
+      "start": "2025-11-15",
+      "end": "2025-12-15",
+      "ret_usdt": 0.89,
+      "ret_pct": 4.45,
+      "trades": 30,
+      "wins": 30
+    },
+    {
+      "start": "2025-12-15",
+      "end": "2026-01-14",
+      "ret_usdt": 0.048,
+      "ret_pct": 0.24,
+      "trades": 22,
+      "wins": 21
+    },
+    {
+      "start": "2026-01-14",
+      "end": "2026-02-13",
+      "ret_usdt": 1.236,
+      "ret_pct": 6.18,
+      "trades": 33,
+      "wins": 33
+    },
+    {
+      "start": "2026-02-13",
+      "end": "2026-03-15",
+      "ret_usdt": 0.599,
+      "ret_pct": 2.99,
+      "trades": 18,
+      "wins": 18
+    },
+    {
+      "start": "2026-03-15",
+      "end": "2026-04-14",
+      "ret_usdt": -0.61,
+      "ret_pct": -3.05,
+      "trades": 20,
+      "wins": 18
+    },
+    {
+      "start": "2026-04-14",
+      "end": "2026-05-14",
+      "ret_usdt": 0.429,
+      "ret_pct": 2.14,
+      "trades": 14,
+      "wins": 14
+    },
+    {
+      "start": "2026-05-14",
+      "end": "2026-06-13",
+      "ret_usdt": 1.949,
+      "ret_pct": 9.75,
+      "trades": 32,
+      "wins": 32
+    },
+    {
+      "start": "2026-06-13",
+      "end": "2026-07-13",
+      "ret_usdt": 0.52,
+      "ret_pct": 2.6,
+      "trades": 37,
+      "wins": 35
+    }
+  ],
+  "generated_at": "2026-07-27 01:29"
+}

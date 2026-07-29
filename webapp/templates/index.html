@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Боты Bybit</title>
+<style>
+  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
+    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
+  body { background:var(--bg); color:var(--ink); margin:0;
+    font:15px/1.5 "Segoe UI", system-ui, sans-serif; padding:32px 18px 60px; }
+  .wrap { max-width:1060px; margin:0 auto; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  .banner { background:#2a2313; border:1px solid #5a4a1a; color:var(--accent);
+    border-radius:8px; padding:10px 14px; margin-bottom:22px; font-size:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
+  a.card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:16px 18px; text-decoration:none; color:var(--ink); display:flex;
+    flex-direction:column; gap:10px; transition:border-color .15s; }
+  a.card:hover { border-color:var(--accent); }
+  .top { display:flex; flex-direction:column; gap:8px; }
+  .name { font-weight:700; font-size:16px; line-height:1.35; text-wrap:balance; }
+  .badges { display:flex; gap:6px; flex-wrap:wrap; }
+  .b { font-size:11px; border-radius:99px; padding:3px 10px; font-weight:600;
+    white-space:nowrap; line-height:1.4; }
+  .b.mode-normal { background:#22303f; color:#7fb3e0; }
+  .b.mode-bear { background:#3a2430; color:#e08bb0; }
+  .b.mode-turbo { background:#3a2e15; color:var(--accent); }
+  .b.mode-final { background:#1d3a2c; color:var(--up); }
+  .b.ver { background:#1e2a3a; color:#8fb8e8; }
+  .b.lev { background:var(--line); color:var(--muted); }
+  .b.on { background:#1d3a2c; color:var(--up); }
+  .b.off { background:var(--line); color:var(--muted); }
+  .stats { color:var(--muted); font-size:13px; }
+  .muted-note { font-size:11px; opacity:.7; }
+  nav { display:flex; gap:16px; margin-bottom:20px; }
+  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
+  nav a.active { color:var(--accent); }
+  nav a:hover { color:var(--ink); }
+  .empty { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:28px; text-align:center; color:var(--muted); }
+  .empty a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a class="active" href="/">Боты</a><a href="/signals">Сигналы BTC</a><a href="/pnl">PnL-график</a><a href="/evolution">Эволюция</a><a href="/archive">Архив</a></nav>
+  <h1>🤖 Торговые боты Bybit</h1>
+  <p class="sub">RSI + сетка + уровни ликвидности · 15m · пять отобранных ботов — по одному на монету (BTC, LTC, ETH, DOGE, SOL)</p>
+  {% if dry_run %}<div class="banner">⚠ Все боты в режиме DRY_RUN — сделки виртуальные, реальные ордера не отправляются (config.py → DRY_RUN)</div>{% endif %}
+  {% if not has_final %}
+  <div class="empty">Финальный отбор ещё не завершён.<br>
+    Пока доступны боты предыдущих волн — смотри <a href="/archive">архив</a>.</div>
+  {% endif %}
+  <div class="grid">
+    {% for b in bots %}
+    <a class="card" href="/bot/{{ b.symbol }}/{{ b.mode }}">
+      <div class="top">
+        <span class="name">{{ b.title }}</span>
+        <span class="badges">
+          <span class="b ver">{{ b.ver }}</span>
+          <span class="b mode-{{ b.mode }}">{{ b.mode_name }}</span>
+          <span class="b lev">x{{ b.lev }}</span>
+          <span class="b lev">{{ b.tf_label }}</span>
+          <span class="b {{ 'on' if b.active else 'off' }}">{{ '● работает' if b.active else '○ выключен' }}</span>
+        </span>
+      </div>
+      <div class="stats">{{ b.stats }}<br><span class="muted-note">без реинвеста (фикс-маржа отбора)</span></div>
+      {% if b.reinvest %}<div class="stats" style="color:var(--accent)">{{ b.reinvest }}</div>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+</body>
+</html>

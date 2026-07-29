@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
+    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
+  body { background:var(--bg); color:var(--ink); margin:0;
+    font:15px/1.55 "Segoe UI", system-ui, sans-serif; padding:28px 18px 60px; }
+  .wrap { max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:18px; }
+  nav { display:flex; gap:16px; }
+  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
+  nav a:hover { color:var(--ink); }
+  h1 { font-size:24px; margin:2px 0 0; }
+  .b { font-size:11px; border-radius:99px; padding:3px 10px; font-weight:600;
+    white-space:nowrap; display:inline-block; }
+  .b.long { background:#1d3a2c; color:var(--up); }
+  .b.short { background:#3a2430; color:#e08bb0; }
+  .b.lev { background:var(--line); color:var(--muted); }
+  .stats { color:var(--accent); font-size:13.5px; font-weight:600; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  #chart { height:480px; }
+  h3 { margin:0 0 8px; font-size:15px; }
+  .muted { color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td,th { padding:6px 9px; border-bottom:1px solid var(--line); text-align:right;
+    font-variant-numeric:tabular-nums; white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  td:first-child, th:first-child { text-align:left; }
+  tr:last-child td { border-bottom:none; }
+  .pos { color:var(--up); } .neg { color:var(--down); }
+  .scroll { overflow-x:auto; max-height:420px; overflow-y:auto; }
+  .mini { height:190px; }
+  .kpi { display:flex; gap:22px; margin-bottom:10px; flex-wrap:wrap; }
+  .kpi div b { font-size:19px; }
+  .kpi div span { color:var(--muted); font-size:12px; display:block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <nav><a href="/signals">← Сигналы BTC</a><a href="/pnl">PnL-график</a><a href="/">Боты</a></nav>
+    <h1>{{ title }}</h1>
+    <div style="margin-top:6px">
+      <span class="b {{ 'long' if name.endswith('long') else 'short' }}">{{ 'LONG' if name.endswith('long') else 'SHORT' }}</span>
+      <span class="b lev">x{{ rec.get('rec_lev', 15) }} · R:R 1:3 · сигнал на 4ч, исполнение на 15м</span>
+    </div>
+    <p class="stats">Бэктест 3.2г: {{ st.get('ret','?') }}% | {{ st.get('n','?') }} сделок | WR {{ st.get('wr','?') }}% | DD {{ st.get('dd','?') }}% | ср. удержание {{ st.get('avg_hold_h','?') }}ч</p>
+  </div>
+
+  <div class="card">
+    <h3>BTC/USDT 4ч — все входы и выходы сетапа за 3.2 года <span class="muted" id="cnt"></span></h3>
+    <div id="chart"></div>
+    <p class="muted" style="font-size:12px">▲/▼ — вход · ● — выход (зелёный тейк, красный стоп, серый таймаут; подпись — итог в R). Жёлтая метка — активный сигнал, если есть. Зум колёсиком, прокрутка перетаскиванием.</p>
+  </div>
+
+  <div class="card" id="analyticsCard" style="display:none">
+    <h3>📊 Аналитика за 3.2 года <span class="muted">(реинвест от $50, маржа 25% капитала)</span></h3>
+    <div class="kpi" id="an_tiles"></div>
+    <h3 style="margin-top:14px">Капитал, $ <span class="muted" id="an_final"></span></h3>
+    <div class="mini" id="eqChart"></div>
+    <h3 style="margin-top:14px">Просадка от пика, %</h3>
+    <div class="mini" id="ddChart"></div>
+    <h3 style="margin-top:14px">Доходность по месяцам, %</h3>
+    <div class="mini" id="moChart"></div>
+    <div class="kpi" id="an_tiles2" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <h3>Сделки бэктеста (последние сверху)</h3>
+    <div class="scroll">
+      <table id="trades"><tr><th>Вход</th><th>Напр.</th><th>Цена входа</th><th>Стоп</th><th>Тейк</th><th>Исход</th><th>R</th><th>Удерж, ч</th></tr></table>
+    </div>
+  </div>
+</div>
+
+<script>
+const NAME = "{{ name }}";
+const el = document.getElementById("chart");
+const chart = LightweightCharts.createChart(el, {
+  layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
+  grid: { vertLines: { color: "#22252b" }, horzLines: { color: "#22252b" } },
+  timeScale: { timeVisible: true, secondsVisible: false },
+  height: 480, autoSize: true,
+});
+const series = chart.addCandlestickSeries({
+  upColor: "#46C186", downColor: "#E06B5E",
+  wickUpColor: "#46C186", wickDownColor: "#E06B5E", borderVisible: false,
+});
+
+const BAR = 4 * 3600;
+const snap = t => Math.floor(t / BAR) * BAR;
+
+async function load() {
+  const d = await (await fetch(`/api/signal_chart/${NAME}`)).json();
+  series.setData(d.candles);
+  document.getElementById("cnt").textContent = `(${d.trades.length} сделок)`;
+
+  const markers = [];
+  for (const t of d.trades) {
+    const long = t.side === "L" || t.side === "LONG";
+    markers.push({ time: snap(t.entry_ts), position: long ? "belowBar" : "aboveBar",
+      color: long ? "#46C186" : "#E06B5E",
+      shape: long ? "arrowUp" : "arrowDown", text: "вход" });
+    const col = t.reason === "tp" ? "#46C186" :
+                t.reason === "stop" ? "#E06B5E" :
+                t.reason === "liq" ? "#ff3030" : "#9A9DA6";
+    markers.push({ time: snap(t.exit_ts), position: "aboveBar", color: col,
+      shape: "circle",
+      text: (t.reason === "tp" ? "тейк " : t.reason === "stop" ? "стоп " :
+             t.reason === "liq" ? "ЛИКВ " : "таймаут ") +
+            (t.r >= 0 ? "+" : "") + t.r + "R" });
+  }
+  if (d.active) {
+    markers.push({ time: snap(Math.floor(d.active.bar_ts / 1000)),
+      position: d.active.side === "LONG" ? "belowBar" : "aboveBar",
+      color: "#E3A83E", shape: d.active.side === "LONG" ? "arrowUp" : "arrowDown",
+      text: "АКТИВЕН: вход " + d.active.entry });
+  }
+  markers.sort((a, b) => a.time - b.time);
+  series.setMarkers(markers);
+  chart.timeScale().fitContent();
+
+  const tbl = document.getElementById("trades");
+  tbl.innerHTML = "<tr><th>Вход</th><th>Напр.</th><th>Цена входа</th><th>Стоп</th><th>Тейк</th><th>Исход</th><th>R</th><th>Удерж, ч</th></tr>" +
+    d.trades.slice().reverse().map(t => {
+      const cls = t.r > 0 ? "pos" : "neg";
+      const outcome = t.reason === "tp" ? "ТЕЙК" : t.reason === "stop" ? "СТОП" :
+                      t.reason === "liq" ? "ЛИКВИДАЦИЯ" : "ТАЙМАУТ";
+      return `<tr><td>${new Date(t.entry_ts * 1000).toLocaleString("ru")}</td>
+        <td>${t.side === "L" ? "LONG" : "SHORT"}</td>
+        <td>${t.entry}</td><td>${t.stop}</td><td>${t.tp}</td>
+        <td class="${t.reason === "tp" ? "pos" : t.reason === "stop" ? "neg" : ""}">${outcome}</td>
+        <td class="${cls}">${t.r >= 0 ? "+" : ""}${t.r}</td>
+        <td>${t.hold_h}</td></tr>`;
+    }).join("");
+}
+load();
+
+function miniChart(id) {
+  const c = LightweightCharts.createChart(document.getElementById(id), {
+    layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
+    grid: { vertLines: { color: "#22252b" }, horzLines: { color: "#22252b" } },
+    timeScale: { timeVisible: false }, height: 190, autoSize: true,
+    rightPriceScale: { scaleMargins: { top: 0.12, bottom: 0.08 } },
+  });
+  return c;
+}
+
+async function loadAnalytics() {
+  const d = await (await fetch(`/api/analytics/sig_${NAME}`)).json();
+  if (!d.available) return;
+  document.getElementById("analyticsCard").style.display = "";
+  const s = d.stats;
+  document.getElementById("an_final").textContent =
+    `$50 → $${s.final_usd} (${s.final_pct >= 0 ? "+" : ""}${s.final_pct}%)`;
+
+  const tile = (v, l, cls) =>
+    `<div><b class="${cls || ""}">${v}</b><span>${l}</span></div>`;
+  document.getElementById("an_tiles").innerHTML =
+    tile("$" + s.final_usd, "итог из $50", s.final_pct >= 0 ? "pos" : "neg") +
+    tile(s.profit_factor ?? "∞", "profit factor",
+         (s.profit_factor ?? 9) >= 1.5 ? "pos" : "") +
+    tile(s.max_dd + "%", "макс. просадка") +
+    tile(s.wr + "%", `winrate (${s.wins} из ${s.trades})`) +
+    tile(`${s.n_tp} / ${s.n_stop} / ${s.n_timeout}`, "тейков / стопов / таймаутов") +
+    tile(s.avg_hold_h + "ч", "среднее удержание");
+  document.getElementById("an_tiles2").innerHTML =
+    tile("+" + s.avg_win, "средняя прибыльная, $") +
+    tile(s.avg_loss, "средняя убыточная, $", "neg") +
+    tile(s.max_win_streak + " / " + s.max_loss_streak, "макс. серия побед / убытков") +
+    tile((s.best_month >= 0 ? "+" : "") + s.best_month + "% / " + s.worst_month + "%",
+         "лучший / худший месяц") +
+    tile(s.months_pos + " из " + s.months_total, "месяцев в плюсе");
+
+  const eqC = miniChart("eqChart");
+  const eqS = eqC.addAreaSeries({ lineColor: "#E3A83E", lineWidth: 2,
+    topColor: "rgba(227,168,62,.25)", bottomColor: "rgba(227,168,62,0)",
+    priceLineVisible: false });
+  eqS.setData(d.equity.map(p => ({ time: p[0], value: p[1] })));
+  eqC.timeScale().fitContent();
+
+  const ddC = miniChart("ddChart");
+  const ddS = ddC.addAreaSeries({ lineColor: "#E06B5E", lineWidth: 1,
+    topColor: "rgba(224,107,94,0)", bottomColor: "rgba(224,107,94,.3)",
+    priceLineVisible: false });
+  ddS.setData(d.drawdown.map(p => ({ time: p[0], value: p[1] })));
+  ddC.timeScale().fitContent();
+
+  const moC = miniChart("moChart");
+  const moS = moC.addHistogramSeries({ priceLineVisible: false });
+  moS.setData(d.monthly.map(p => ({ time: p[0], value: p[1],
+    color: p[1] >= 0 ? "#46C186" : "#E06B5E" })));
+  moC.timeScale().fitContent();
+}
+loadAnalytics();
+</script>
+</body>
+</html>
