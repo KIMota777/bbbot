@@ -12,7 +12,7 @@
 import asyncio
 import json
 import os
-import shutil
+import tempfile
 import time
 
 import mcp
@@ -20,7 +20,15 @@ import mcp
 import news_state
 
 OK = 0
-BACKUP = news_state.STATE_FILE + ".test-backup"
+
+# Тест работает в СВОЁМ файле состояния и боевой фон не трогает вообще.
+# Раньше он писал в news_state.json и восстанавливал его из копии — это
+# ломалось, как только в боевом фоне появлялись настоящие новости: проверки
+# на «ровно 2 записи» падали, а живой файл на время прогона был испорчен.
+_TMP_STATE = tempfile.NamedTemporaryFile(
+    prefix="news_state_test_", suffix=".json", delete=False).name
+os.unlink(_TMP_STATE)                      # нужен только путь, не файл
+news_state.STATE_FILE = _TMP_STATE
 
 
 def check(cond, name):
@@ -137,16 +145,17 @@ async def scenario():
 
 
 def main():
-    if os.path.exists(news_state.STATE_FILE):
-        shutil.copy(news_state.STATE_FILE, BACKUP)
+    live = os.path.join(os.path.dirname(os.path.abspath(news_state.__file__)),
+                        "news_state.json")
+    before = os.path.getmtime(live) if os.path.exists(live) else None
     try:
         asyncio.run(scenario())
-        print(f"\nВСЕ {OK} ПРОВЕРОК ПРОЙДЕНЫ")
+        after = os.path.getmtime(live) if os.path.exists(live) else None
+        assert before == after, "тест тронул боевой файл фона!"
+        print(f"\nВСЕ {OK} ПРОВЕРОК ПРОЙДЕНЫ (боевой фон не затронут)")
     finally:
-        if os.path.exists(BACKUP):
-            shutil.move(BACKUP, news_state.STATE_FILE)
-        elif os.path.exists(news_state.STATE_FILE):
-            os.unlink(news_state.STATE_FILE)
+        if os.path.exists(_TMP_STATE):
+            os.unlink(_TMP_STATE)
 
 
 if __name__ == "__main__":

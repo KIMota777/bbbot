@@ -106,7 +106,10 @@ def empty_state():
     return dict(version=1, updated_ms=0, items=[])
 
 
-def load(path=STATE_FILE):
+def load(path=None):
+    # путь разрешается в момент ВЫЗОВА, а не при импорте: иначе тест не может
+    # подменить STATE_FILE и вынужден писать в боевой файл фона
+    path = path or STATE_FILE
     if not os.path.exists(path):
         return empty_state()
     try:
@@ -119,8 +122,9 @@ def load(path=STATE_FILE):
     return st
 
 
-def save(state, path=STATE_FILE):
+def save(state, path=None):
     """Атомарная запись: бот может читать файл в любой момент."""
+    path = path or STATE_FILE
     state["updated_ms"] = _now_ms()
     d = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".news_state.", suffix=".tmp")
@@ -207,8 +211,9 @@ def sanitize(rec):
         rationale=str(rec.get("rationale", ""))[:300]), None
 
 
-def upsert(records, path=STATE_FILE):
+def upsert(records, path=None):
     """Добавляет/обновляет оценённые новости. Возвращает (принято, отказы)."""
+    path = path or STATE_FILE
     st = load(path)
     by_id = {r["id"]: r for r in st.get("items", []) if isinstance(r, dict)
              and "id" in r}
@@ -262,14 +267,14 @@ def relevance(rec, symbol):
     return 0.0
 
 
-def background(symbol, path=STATE_FILE, now_ms=None):
+def background(symbol, path=None, now_ms=None):
     """Свёртка фона для монеты -> dict(index, heat, n, stale, top).
 
     index ∈ [-1..1], heat ∈ [0..1]. Если файла нет, он протух или пуст —
     возвращается нулевой фон: бот в этом случае работает ровно как раньше.
     """
     now = now_ms or _now_ms()
-    st = load(path)
+    st = load(path or STATE_FILE)
     updated = st.get("updated_ms", 0) or 0
     stale = (now - updated) / 3600000.0 > STATE_MAX_AGE_H
     if stale or not st.get("items"):
