@@ -101,13 +101,6 @@ def run5(candles, pre, g, entry_filter=None, events=None):
     g_w_atr_k = g.get("grid_w_atr_k", gridlib.OFF10["grid_w_atr_k"])
     g_retune = g.get("grid_retune", gridlib.OFF10["grid_retune"])
     tp_atr_k = g.get("tp_atr_k", gridlib.OFF10["tp_atr_k"])
-    # Постоянная имитация новостного канала (news_stress.py). Истории новостей
-    # за 3.2 года нет, поэтому отобрать эти коэффициенты нельзя — но можно
-    # измерить ВЕРХНЮЮ ГРАНИЦУ вреда: включить канал на полную и посмотреть,
-    # во что обходится стратегии, если фон будет держаться максимальным всегда.
-    # 1.0 и 0.0 = канал выключен = прежнее поведение.
-    news_tp_mult = g.get("news_tp_mult", 1.0)
-    news_sl_frac = g.get("news_sl_frac", 0.0)
     trail_k = g.get("trail_k", gridlib.OFF10["trail_k"])
     trail_start = g.get("trail_start", gridlib.OFF10["trail_start"])
     # «норма» ATR нужна только тем генам, что на неё смотрят: не тратим время
@@ -175,37 +168,52 @@ def run5(candles, pre, g, entry_filter=None, events=None):
             stop = pos["stop"]
             tp_pre = avg_pre * (1 + sgn * pos["tp_eff"])
 
-            adverse = (l <= stop) if sgn == 1 else (h >= stop)
             # тейк проверяем по средней ДО новых доливок этой свечи (консервативно)
             hit_tp = (h >= tp_pre) if sgn == 1 else (l <= tp_pre)
 
-            if adverse:
-                # по пути к стопу исполняются лимитки сетки выше стопа
-                while pos["adds"]:
-                    ap, aq = pos["adds"][0]
-                    reachable = (l <= ap) if sgn == 1 else (h >= ap)
-                    above_stop = (ap > stop) if sgn == 1 else (ap < stop)
-                    if reachable and above_stop:
-                        pos["fees"] += aq * ap * MAKER
-                        pos["fills"].append((ap, aq))
-                        pos["adds"].pop(0)
-                        if events is not None:
-                            events.append(dict(t=ts, type="add", price=ap))
-                    else:
-                        break
+            # --- последовательный проход цены по неблагоприятной стороне ---
+            # Раньше ликвидация проверялась ТОЛЬКО внутри ветки «задет стоп».
+            # Но при высоком плече цена ликвидации оказывается БЛИЖЕ стопа, и
+            # свеча могла дойти до ликвидации, не коснувшись стопа, — движок
+            # такую свечу пропускал целиком и досчитывал позицию живой. На x15
+            # это делало бэктест систематически оптимистичнее реальности.
+            # Теперь цена проходит уровни по порядку: колено, лежащее выше
+            # обоих опасных уровней, успевает исполниться и отодвигает
+            # ликвидацию (доливка добавляет маржу) — и только потом
+            # срабатывает тот из уровней, который встретился первым.
+            killed = False
+            while True:
+                mk_pos = pos.get("m_k", m_k)
                 q = sum(f[1] for f in pos["fills"])
                 avg = sum(fp * fq for fp, fq in pos["fills"]) / q
-                mk_pos = pos.get("m_k", m_k)
                 mused = sum(mk_pos[k] for k in range(len(pos["fills"])))
                 p_liq = avg - sgn * (mused * MM) / q
-                liq_first = (p_liq >= stop) if sgn == 1 else (p_liq <= stop)
-                liq_hit = (l <= p_liq) if sgn == 1 else (h >= p_liq)
-                if liq_first and liq_hit:
-                    close_pos(pos, p_liq, ts, i, taker_exit=True, liq=True, reason="liq")
-                else:
-                    close_pos(pos, stop, ts, i, taker_exit=True, reason="stop")
-                pos = None
-                cooldown_until = i + g["cooldown"]
+                # что встретится раньше по пути вниз (для лонга)
+                danger = max(p_liq, stop) if sgn == 1 else min(p_liq, stop)
+                nxt = pos["adds"][0][0] if pos["adds"] else None
+                leg_first = nxt is not None and (
+                    (nxt > danger) if sgn == 1 else (nxt < danger))
+                leg_reached = nxt is not None and (
+                    (l <= nxt) if sgn == 1 else (h >= nxt))
+                if leg_first and leg_reached:
+                    ap, aq = pos["adds"].pop(0)
+                    pos["fees"] += aq * ap * MAKER
+                    pos["fills"].append((ap, aq))
+                    if events is not None:
+                        events.append(dict(t=ts, type="add", price=ap))
+                    continue          # маржа выросла — пересчитываем ликвидацию
+                if (l <= danger) if sgn == 1 else (h >= danger):
+                    is_liq = (p_liq >= stop) if sgn == 1 else (p_liq <= stop)
+                    close_pos(pos, p_liq if is_liq else stop, ts, i,
+                              taker_exit=True, liq=is_liq,
+                              reason="liq" if is_liq else "stop")
+                    pos = None
+                    cooldown_until = i + g["cooldown"]
+                    killed = True
+                break
+
+            if killed:
+                pass
             elif hit_tp:
                 close_pos(pos, tp_pre, ts, i, taker_exit=False, reason="tp")
                 pos = None
@@ -227,11 +235,9 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                     avg = sum(fp * fq for fp, fq in pos["fills"]) / q
                     trig = avg * (1 + sgn * pos["tp_eff"] * 0.5)
                     if (h >= trig) if sgn == 1 else (l <= trig):
-                        be = avg * (1 + sgn * 0.0015)  # безубыток + комиссии
-                        better = (be > pos["stop"]) if sgn == 1 else (be < pos["stop"])
-                        if better:
-                            pos["stop"] = be
-                        pos["be_done"] = True
+                        pos["stop"], done = gridlib.breakeven_stop(
+                            avg, pos["stop"], sgn, c)
+                        pos["be_done"] = done
                 # подвижный стоп. Ход считаем по ЗАКРЫТИЯМ, а не по хаям, и
                 # результат ограничиваем закрытием текущего бара: живой бот
                 # видит только закрытые свечи и физически не может выставить
@@ -319,16 +325,11 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                 atr_ref[i] if atr_ref else None, g_w_atr_k)
             mk_pos = [MARGIN * x for x in w]
         tp_eff = g["tp"] * gridlib.tp_factor(
-            atr[i], atr_ref[i] if atr_ref else None, tp_atr_k) * news_tp_mult
+            atr[i], atr_ref[i] if atr_ref else None, tp_atr_k)
         prices = gridlib.grid_prices(px, stop, sgn, g["levels"], g["step"],
                                      g_mode, g_span, g_spread, vol_k)
         q0 = mk_pos[0] * LEV / px
         adds = [(ap, mk_pos[k + 1] * LEV / ap) for k, ap in enumerate(prices)]
-        # Стоп поджимается ПОСЛЕ построения сетки — так же, как в живом боте:
-        # там колена строятся от «сырого» стопа (pos["stop"]), а новостное
-        # поджатие применяется при чтении в stop_price().
-        if news_sl_frac:
-            stop = stop + (px - stop) * news_sl_frac
         pos = dict(side=side, fills=[(px, q0)], stop=stop, adds=adds,
                    opened_i=i, fees=q0 * px * TAKER, be_done=False,
                    tp_eff=tp_eff, vol_k=vol_k, entry_px=px, best=px,

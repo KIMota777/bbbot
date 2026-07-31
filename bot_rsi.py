@@ -25,7 +25,6 @@ from pybit.unified_trading import HTTP
 
 import config
 import gridlib
-import news_state
 import patterns
 import smc
 
@@ -151,16 +150,9 @@ class RsiGridBot:
         self.trail_k = self.p.get("trail_k", gridlib.OFF10["trail_k"])
         self.trail_start = self.p.get("trail_start", gridlib.OFF10["trail_start"])
         self.needs_atr_ref = bool(self.grid_atr_k or self.tp_atr_k)
-        # --- реакция на новостной фон (по умолчанию выключена) ---
-        # Эти коэффициенты НЕ проходили walk-forward-отбор: истории новостей за
-        # 3.2 года у нас нет. Поэтому 0 по умолчанию, включать осознанно и
-        # сначала в DRY_RUN. Подробности — docs/NEWS_STRATEGY.md.
-        self.news_tp_k = self.p.get("news_tp_k", 0.0)
-        self.news_sl_k = self.p.get("news_sl_k", 0.0)
-        self.news_heat_max = self.p.get("news_heat_max", 0.0)
-        self.news_index_min = self.p.get("news_index_min", 0.0)
-        self.news_on = bool(self.news_tp_k or self.news_sl_k or
-                            self.news_heat_max or self.news_index_min)
+        # Новостей здесь НЕТ и быть не должно: фьючерсная сетка торгует
+        # ровно то, что проверяет бэктест. Новостной фон подключён к
+        # спотовому боту (bot_spot.py) — см. docs/NEWS_STRATEGY.md.
         self._last_pushed = (None, None)   # чтобы не слать один и тот же SL/TP
         # направление: новый числовой ген direction (0=обе/1=лонг/2=шорт)
         # приоритетнее старого строкового dir ("B"/"L"/"S"), которым были
@@ -246,51 +238,19 @@ class RsiGridBot:
         q = sum(f[1] for f in self.pos["fills"])
         return sum(p * qn for p, qn in self.pos["fills"]) / q, q
 
-    def news_bg(self):
-        """Новостной фон монеты; None, если реакция выключена или фон недоступен.
-
-        Читается на КАЖДОМ обращении к SL/TP — именно поэтому стоп и тейк
-        получаются «подвижными»: фон меняется, значит меняются и уровни, пока
-        позиция открыта.
-        """
-        if not self.news_on:
-            return None
-        try:
-            bg = news_state.background(self.symbol)
-        except Exception:
-            self.log.warning("Новостной фон недоступен — работаем без него")
-            return None
-        return None if bg["stale"] else bg
-
     def tp_price(self):
         avg, _ = self.avg_entry()
         sgn = 1 if self.pos["side"] == "L" else -1
         if self.turbo:
             return avg * (1 + sgn * self.p["tp_k"] * self.pos["atr0"])
-        tp = self.pos.get("tp_eff", self.p["tp"])
-        bg = self.news_bg()
-        if bg is not None:
-            tp = tp * news_state.tp_multiplier(bg, self.pos["side"],
-                                               self.news_tp_k)
-        return avg * (1 + sgn * tp)
+        return avg * (1 + sgn * self.pos.get("tp_eff", self.p["tp"]))
 
     def stop_price(self):
         if self.turbo:  # короткий стоп от средней
             avg, _ = self.avg_entry()
             sgn = 1 if self.pos["side"] == "L" else -1
             return avg * (1 - sgn * self.p["stop_k"] * self.pos["atr0"])
-        stop = self.pos["stop"]        # за уровнем либо подтянутый трейлингом
-        bg = self.news_bg()
-        if bg is not None and self.news_sl_k:
-            frac = news_state.sl_tighten_fraction(bg, self.pos["side"],
-                                                  self.news_sl_k)
-            if frac:
-                avg, _ = self.avg_entry()
-                # только К входу: для лонга стоп ниже средней, для шорта выше,
-                # поэтому одна формула сдвигает его ближе в обоих случаях и
-                # ни при каких значениях не может отодвинуть дальше
-                stop = stop + (avg - stop) * frac
-        return stop
+        return self.pos["stop"]   # за уровнем либо подтянутый трейлингом
 
     # ---------- биржа ----------
 
@@ -401,17 +361,6 @@ class RsiGridBot:
 
     def entry_allowed(self, side, cs):
         """Внешние фильтры входа. True = вход разрешён."""
-        # Новостной фон умеет только ЗАПРЕТИТЬ вход — открыть позицию он не
-        # может ни при каких значениях. Проверяем первым: если фон против,
-        # нет смысла тратить запросы на остальные фильтры.
-        if self.news_on:
-            bg = self.news_bg()
-            if bg is not None:
-                veto, why = news_state.entry_veto(
-                    bg, side, self.news_heat_max, self.news_index_min)
-                if veto:
-                    self.log.info("Новостной фильтр: %s — вход отменён", why)
-                    return False
         f = self.get_funding() if (self.fund_long_max < 900 or
                                    self.fund_short_min > -900) else None
         if f is not None:
@@ -776,14 +725,21 @@ class RsiGridBot:
                 trig = avg * (1 + sgn * self.p["tp"] * 0.5)
                 hi, lo = cs[-1][2], cs[-1][3]
                 if (hi >= trig if sgn == 1 else lo <= trig):
-                    be = avg * (1 + sgn * 0.0015)
-                    better = (be > self.pos["stop"] if sgn == 1
-                              else be < self.pos["stop"])
-                    if better:
-                        self.pos["stop"] = be
-                        self.log.info("Безубыток: стоп перенесён на %s", self.rp(be))
+                    # gridlib.breakeven_stop — та же формула, что в движке,
+                    # включая запрет ставить стоп за уже пройденной ценой
+                    # (биржа такой ордер не примет)
+                    new_stop, done = gridlib.breakeven_stop(
+                        avg, self.pos["stop"], sgn, c)
+                    if done and new_stop != self.pos["stop"]:
+                        self.pos["stop"] = new_stop
+                        self.log.info("Безубыток: стоп перенесён на %s",
+                                      self.rp(new_stop))
                         self.push_sl_tp()
-                    self.pos["be_done"] = True
+                    elif not done:
+                        self.log.info("Безубыток отложен: закрытие %s не дошло "
+                                      "до безубытка — стоп туда не выставить",
+                                      self.rp(c))
+                    self.pos["be_done"] = done
             # подвижный стоп: считаем по ЗАКРЫТИЯМ и не заводим стоп выгоднее
             # закрытия текущего бара — ровно как в движке (см. gridlib.trail_stop)
             if self.pos and self.trail_k:
@@ -874,7 +830,6 @@ class RsiGridBot:
             parts.append(f"тейк от волатильности (k {self.tp_atr_k:.2f})")
         if self.trail_k:
             parts.append(f"трейлинг {self.trail_k:.2f} с {self.trail_start:.2f}")
-        parts.append(f"новости: {'вкл' if self.news_on else 'выкл'}")
         return " | ".join(parts)
 
     def run(self):
@@ -886,18 +841,6 @@ class RsiGridBot:
                       self.describe(), self.p["lev"], margin_desc,
                       "TESTNET" if config.TESTNET else "MAINNET", config.DRY_RUN)
         self.log.info("Параметры: %s", self.p)
-        if self.news_on:
-            # Движок бэктеста не умеет воспроизводить историю новостей, значит
-            # при включённой реакции цифры на сайте и в отчётах описывают уже
-            # ДРУГУЮ стратегию. Молча жить с этим нельзя — это ровно тот
-            # случай, когда проверяют одно, а торгует другое.
-            self.log.warning(
-                "ВНИМАНИЕ: новостная реакция включена (tp_k=%s sl_k=%s "
-                "heat_max=%s index_min=%s). Бэктест, сайт и отчёты её НЕ "
-                "учитывают — их цифры к этому боту больше не относятся. "
-                "Подробности: docs/NEWS_STRATEGY.md, раздел 0.",
-                self.news_tp_k, self.news_sl_k, self.news_heat_max,
-                self.news_index_min)
         if not config.DRY_RUN:
             if not config.API_KEY or not config.API_SECRET:
                 raise SystemExit("Нет BYBIT_API_KEY / BYBIT_API_SECRET")
