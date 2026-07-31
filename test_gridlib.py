@@ -144,12 +144,13 @@ check(any(f > c for f, c in zip(free, cur)), "политика 2 может пр
 check(gridlib.retune_prices(px, 96.0, sgn, len(cur), 3, 0.01, 1, 0.6, 1.0,
                             1.0, cur, policy=0) == cur, "политика 0 не трогает")
 
-print("\n6. Движок: боевые конфиги с OFF-генами дают тот же результат, что и "
-      "геном вообще без ключей v10")
+print("\n6. Движок: конфиги БЕЗ ключей v10 тождественны принудительному OFF10;"
+      "\n   конфиги С ключами (LTC v12) от OFF10 отличаются — гены реально работают")
 pct5 = xd.fetch_daily_pct5()
 aux_builder = e8.make_aux_builder(pct5, 96)
 for sym, modes in config.SYMBOL_PARAMS.items():
     p = modes["final"]
+    has_grid = any(k in p for k in gridlib.OFF10)
     candles = ev.fetch(sym, "15", 1150)
     aux = aux_builder(sym, candles)
     g_bare = e7.cfg_to_genome(p, "final")
@@ -164,10 +165,15 @@ for sym, modes in config.SYMBOL_PARAMS.items():
         b = e2.run5(candles, e2.prep(candles), g_off, entry_filter=filt)
     finally:
         e2.LEV = old_lev
-    check(a["balance"] == b["balance"] and a["trades"] == b["trades"]
-          and a["max_dd"] == b["max_dd"],
-          f"{sym}: без ключей v10 == с OFF10 "
-          f"(баланс {a['balance']:.6f}, сделок {a['trades']})")
+    same = (a["balance"] == b["balance"] and a["trades"] == b["trades"]
+            and a["max_dd"] == b["max_dd"])
+    if has_grid:
+        check(not same,
+              f"{sym}: гены v10 из конфига реально меняют поведение "
+              f"(баланс {a['balance']:.4f} vs OFF {b['balance']:.4f})")
+    else:
+        check(same, f"{sym}: без ключей v10 == с OFF10 "
+                    f"(баланс {a['balance']:.6f}, сделок {a['trades']})")
 
 print("\n7. Инвариант движка сохраняется при ВКЛЮЧЁННОЙ адаптации")
 sym = "DOGEUSDT"
@@ -198,5 +204,31 @@ for tag, extra in (
     check(diff < 1e-9 and math.isfinite(r["balance"]),
           f"{tag}: баланс сходится с помесячным PnL (расхождение {diff:.2e}, "
           f"сделок {r['trades']})")
+
+print("\n8. Фильтр v12 (ADX): при выключенном гейте тождественен v8")
+import evolution12 as e12
+import indicators
+sym = "LTCUSDT"
+candles = ev.fetch(sym, "15", 1150)[-30000:]
+aux8 = aux_builder(sym, candles)
+aux12 = dict(aux8)
+aux12["adx"] = [indicators.calc_adx(candles, n) for n in e12.ADX_SET]
+g = e7.cfg_to_genome(config.SYMBOL_PARAMS[sym]["final"], "final")
+for k, v in e12.OFF12.items():
+    g.setdefault(k, v)
+a = e2.run5(candles, e2.prep(candles), g, entry_filter=e8.make_filter8(g, aux8))
+b = e2.run5(candles, e2.prep(candles), g, entry_filter=e12.make_filter12(g, aux12))
+check(a["balance"] == b["balance"] and a["trades"] == b["trades"],
+      f"filter12(adx_gate=0) == filter8 (баланс {a['balance']:.6f}, "
+      f"сделок {a['trades']})")
+g_adx = dict(g, adx_gate=1, adx_max=20.0)
+r = e2.run5(candles, e2.prep(candles), g_adx,
+            entry_filter=e12.make_filter12(g_adx, aux12))
+check(r["trades"] < a["trades"], f"ADX-гейт режет входы ({a['trades']} -> {r['trades']})")
+# синтетика: тренд/пила
+_tr = [(i, 100 + i, 100.6 + i, 99.8 + i, 100.5 + i) for i in range(200)]
+_ch = [(i, 100, 100.6, 99.4, 100 + (0.3 if i % 2 else -0.3)) for i in range(200)]
+check(indicators.calc_adx(_tr, 14)[-1] > 60, "ADX высокий на тренде")
+check(indicators.calc_adx(_ch, 14)[-1] < 20, "ADX низкий на пиле")
 
 print(f"\nВСЕ {OK} ПРОВЕРОК ПРОЙДЕНЫ")

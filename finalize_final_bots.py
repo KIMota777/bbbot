@@ -26,6 +26,7 @@ import evolution as ev
 import evolution2 as e2
 import evolution7 as e7
 import evolution8 as e8
+import evolution12 as e12
 import ext_data as xd
 
 OUT_DIR = os.path.join("webapp", "data")
@@ -111,10 +112,10 @@ def main():
         for k, v in e8.OFF8.items():
             g.setdefault(k, v)
         candles = ev.fetch(sym, interval, days)
-        aux_builder = e8.make_aux_builder(pct5, bars_per_day)
+        aux_builder = e12.make_aux_builder(pct5, bars_per_day)
         aux = aux_builder(sym, candles)
         pre = e2.prep(candles)
-        filt = e8.make_filter8(g, aux)
+        filt = e12.make_filter12(g, aux)
 
         old_lev, old_bpd = e2.LEV, e2.BARS_PER_DAY
         e2.LEV = p.get("lev", 5)
@@ -122,7 +123,7 @@ def main():
         try:
             events = []
             r = e2.run5(candles, pre, g, entry_filter=filt, events=events)
-            years = year_segments(candles, aux, g, e8.make_filter8, bars_per_day)
+            years = year_segments(candles, aux, g, e12.make_filter12, bars_per_day)
         finally:
             e2.LEV, e2.BARS_PER_DAY = old_lev, old_bpd
 

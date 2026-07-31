@@ -25,6 +25,7 @@ from pybit.unified_trading import HTTP
 
 import config
 import gridlib
+import indicators
 import patterns
 import smc
 
@@ -136,6 +137,11 @@ class RsiGridBot:
         self.ob_gate = self.p.get("ob_gate", 0)
         self.fvg_gate = self.p.get("fvg_gate", 0)
         self.structure_mode = self.p.get("structure_mode", 0)  # 1=по структуре,2=против
+        # ADX-гейт (v12): вход запрещён, пока сила тренда выше порога.
+        # Считается indicators.calc_adx — тем же кодом, что в отборе.
+        self.adx_gate = self.p.get("adx_gate", 0)
+        self.adx_n = self.p.get("adx_n", 14)
+        self.adx_max = self.p.get("adx_max", 30.0)
         # --- подвижная сетка и подвижные SL/TP (волна v10) ---
         # Значения по умолчанию — gridlib.OFF10, то есть прежнее поведение.
         # Формулы берутся из gridlib, общего с бэктест-движком: если бот
@@ -200,6 +206,8 @@ class RsiGridBot:
             # «норму» волатильности бот обязан считать по тому же окну, что и
             # бэктест, иначе один и тот же геном даст разные сетки
             need = max(need, gridlib.ATR_REF_BARS + self.atr_period)
+        if self.adx_gate:
+            need = max(need, 4 * self.adx_n + 20)   # прогрев ADX ~2n + запас
         total = need + self.atr_period + 10
         rows = []                      # от новых к старым
         cursor = None
@@ -361,6 +369,12 @@ class RsiGridBot:
 
     def entry_allowed(self, side, cs):
         """Внешние фильтры входа. True = вход разрешён."""
+        if self.adx_gate:
+            adx = indicators.calc_adx(cs[-(4 * self.adx_n + 20):], self.adx_n)[-1]
+            if adx is not None and adx > self.adx_max:
+                self.log.info("Фильтр ADX: %.1f > %.1f (тренд слишком силён) "
+                              "— вход отменён", adx, self.adx_max)
+                return False
         f = self.get_funding() if (self.fund_long_max < 900 or
                                    self.fund_short_min > -900) else None
         if f is not None:
@@ -820,6 +834,8 @@ class RsiGridBot:
             parts.append(f"FVG (режим {self.fvg_gate})")
         if self.structure_mode:
             parts.append("по структуре" if self.structure_mode == 1 else "против структуры")
+        if self.adx_gate:
+            parts.append(f"ADX({self.adx_n})<={self.adx_max:g}")
         if self.grid_mode:
             parts.append(f"сетка по пути до стопа (span {self.grid_span:.2f})")
         if self.grid_atr_k:

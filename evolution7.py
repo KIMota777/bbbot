@@ -134,6 +134,11 @@ def cfg_to_genome(p, mode):
         rsi_idx=nearest_idx(p.get("rsi_period", 14), e2.RSI_SET))
     for k, v in gridlib.OFF10.items():
         g[k] = p.get(k, v)
+    # ADX-гейт (волна v12): отсутствие ключей = гейт выключен
+    g["adx_gate"] = p.get("adx_gate", 0)
+    _adx_set = [7, 14, 21, 28]   # = evolution12.ADX_SET (без циклич. импорта)
+    g["adx_idx"] = nearest_idx(p.get("adx_n", 14), _adx_set)
+    g["adx_max"] = p.get("adx_max", 30.0)
     return g
 
 

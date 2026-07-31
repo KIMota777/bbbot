@@ -26,6 +26,7 @@ import evolution as ev
 import evolution2 as e2
 import evolution7 as e7
 import evolution8 as e8
+import evolution12 as e12
 import ext_data as xd
 import signal_engine as se
 
@@ -70,9 +71,9 @@ def bot_pnls(sym, p, pct5):
     for k, v in e8.OFF8.items():
         g.setdefault(k, v)
     candles = ev.fetch(sym, interval, 1150)
-    aux = e8.make_aux_builder(pct5, bars_per_day)(sym, candles)
+    aux = e12.make_aux_builder(pct5, bars_per_day)(sym, candles)
     pre = e2.prep(candles)
-    filt = e8.make_filter8(g, aux)
+    filt = e12.make_filter12(g, aux)
     old_lev, old_bpd = e2.LEV, e2.BARS_PER_DAY
     e2.LEV = p.get("lev", 5)
     e2.BARS_PER_DAY = bars_per_day

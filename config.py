@@ -193,15 +193,24 @@ SYMBOL_PARAMS["DOGEUSDT"]["final"] = dict(  # 3.2г x10: +145% | DD 18.5% | 1276
     dxy_long_max=0.798781, gold_long_max=1.074119,
     aroon_n=25, aroon_long_min=35,
     regime_gate=1)  # торгует только в bear/боковике
-SYMBOL_PARAMS["LTCUSDT"]["final"] = dict(   # v8, 3.2г x5: +115.9% | DD 17.0% |
-    # 1307 сд. | доля НАСТОЯЩИХ убытков 3.9% (проверено — не артефакт be_move).
-    # Обошла прежний конфиг (+56.9%) почти вдвое: главное отличие —
-    # regime_gate=0, торгует во ВСЕХ режимах рынка, не только bear/боковик.
-    lev=5, rsi_period=7, rsi_os=40, zone_l=0.484424, zone_s=0.525871,
-    window=748, step=0.0137541, levels=2, mult=1.849410, tp=0.008,
-    sweep=0.032825, max_bars=230, cooldown=0, knife=2.320918, be_move=1,
-    fund_long_max=0.0014791, fund_short_min=0.0097158, oi_gate=1,
-    spx_long_min=-0.812556, dxy_long_max=2.275862, gold_long_max=3.639490)
+SYMBOL_PARAMS["LTCUSDT"]["final"] = dict(   # v12, честный движок: 3.2г x5:
+    # +99.7% | DD 17.4% | WR 84.8% | 521 сд. | убыточных 15.2% (настоящих).
+    # Найден ПОСЛЕ исправления дефектов движка (be_move по хаю бара +
+    # пропуск ликвидации): прежний v8-конфиг на честном движке давал -33%.
+    # Показательно: отбор сам ВЫКЛЮЧИЛ be_move (be_move=0) — механизм, на
+    # нечестной версии которого держались старые цифры, — и взял гены
+    # подвижной сетки v10 (веса колен от волатильности, лёгкий трейлинг).
+    # Прошёл все 3 экзамена walk-forward в плюс: +10.92 / +6.54 / +0.79.
+    lev=5, rsi_period=7, rsi_os=40, zone_l=0.402603, zone_s=0.497115,
+    window=735, step=0.004, levels=2, mult=1.476755, tp=0.008,
+    sweep=0.032825, max_bars=288, cooldown=10, knife=1.183261, be_move=0,
+    fund_long_max=-0.0104656, fund_short_min=0.0086917, oi_gate=1,
+    spx_long_min=-0.25933, dxy_long_max=3.853112, gold_long_max=6,
+    ema_mode=0, ema_n=600, ma_mode=0, masf=20, masl=200, aroon_n=50,
+    aroon_long_min=23, aroon_short_min=8, direction=0, regime_gate=0,
+    pattern_gate=0, ob_gate=0, fvg_gate=0, structure_mode=0,
+    grid_span=0.673904, grid_spread=1.29816, grid_w_atr_k=0.407135,
+    tp_atr_k=0.083447, trail_k=0.049001, trail_start=0.783138)
 SYMBOL_PARAMS["BTCUSDT"]["final"] = dict(   # 3.2г x15: +140.2% | DD 12.6% | 60 сд.
     # самый низкорисковый бот портфеля: DD растёт с 5.4% (x5) до всего 12.6%
     # (x15) — редкие точные входы почти не усиливают просадку с плечом

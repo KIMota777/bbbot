@@ -20,7 +20,8 @@ import evolution2 as e2  # noqa: E402
 import evolution5 as e5  # noqa: E402
 import evolution6 as e6  # noqa: E402
 import evolution7 as e7  # noqa: E402
-import evolution8 as e8  # noqa: E402
+import evolution8 as e8
+import evolution12 as e12  # noqa: E402
 import ext_data as xd  # noqa: E402
 import patterns as pt  # noqa: E402
 from pybit.unified_trading import HTTP  # noqa: E402
@@ -45,7 +46,7 @@ VER = {
     ("ETHUSDT", "normal"): "v2", ("ETHUSDT", "bear"): "v6",
     ("ETHUSDT", "turbo"): "турбо-иссл.",
     ("SOLUSDT", "normal"): "v5", ("SOLUSDT", "bear"): "v6",
-    ("DOGEUSDT", "final"): "v7", ("LTCUSDT", "final"): "v8",
+    ("DOGEUSDT", "final"): "v7", ("LTCUSDT", "final"): "v12",
     ("BTCUSDT", "final"): "v7", ("ETHUSDT", "final"): "v7",
     ("SOLUSDT", "final"): "v7",
 }
@@ -171,8 +172,8 @@ META = {
               "с просадкой ≤20% на 3.2г). Запуск: python bot_rsi.py DOGE"),
     ("LTCUSDT", "final"): dict(
         title="LTC",
-        stats="3.2г x5: -33.3% | DD 52.7% | WR 93.0% | PF 0.89 — УБЫТОЧЕН",
-        about="Единственный бот, улучшенный волной v8 (геном + Smart Money "
+        stats="3.2г x5: +99.7% | DD 17.4% | WR 84.8% | 521 сделка | v12",
+        about="Первый конфиг, найденный на ЧЕСТНОМ движке (v12, после исправления be_move и модели ликвидации; прежний v8-конфиг на честном движке давал -33%). Отбор сам выключил be_move и взял гены подвижной сетки v10: веса колен дышат с волатильностью, лёгкий трейлинг. Все 3 экзамена в плюс. Доля настоящих убыточных сделок 15.2%. Прежнее описание (v8): улучшен волной v8 (геном + Smart Money "
               "Concepts как гены). SMC не прошли экзамен и здесь, но сам "
               "поиск нашёл более сильный базовый конфиг: torgует во ВСЕХ "
               "режимах рынка (regime_gate=0, был 1) — почти удвоил доход "
@@ -544,8 +545,8 @@ def build_sim(symbol, mode):
     candles = get_raw_candles(symbol, interval)
     pre = e2.prep(candles)
     pct5 = xd.fetch_daily_pct5()
-    aux = e8.make_aux_builder(pct5, bars_per_day)(symbol, candles)
-    filt = e8.make_filter8(g, aux)
+    aux = e12.make_aux_builder(pct5, bars_per_day)(symbol, candles)
+    filt = e12.make_filter12(g, aux)
     events = []
     old_lev, old_bpd = e2.LEV, e2.BARS_PER_DAY
     e2.LEV = p.get("lev", 5)
