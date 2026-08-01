@@ -29,36 +29,97 @@
     </div>
     <h1 class="h-page">{{ coin }}/USDT{% if title and title != coin %}
       <span class="muted" style="font-weight:600">· {{ title }}</span>{% endif %}</h1>
-    <p class="h-sub">{{ stats }}{% if not honest %}
-      <span class="muted-2">— цифры обучающего периода, честной проверки не было</span>{% endif %}</p>
+    {% if honest %}
+    <p class="h-sub">{{ stats }}</p>
+    {% else %}
+    <p class="h-sub">Честной проверки у этого конфига не было — показателей
+      доходности на странице нет.</p>
+    <p class="insample insample-block">{{ stats }} — обучающий период, не
+      доказательство</p>
+    {% endif %}
   </header>
 
   <!-- ============ ЧЕСТНАЯ ПРОВЕРКА (главное, первый экран) ============ -->
   {% if honest %}
   {% set h = honest %}
   {% set P = hmeta.periods %}
+  {% set t = h.tiny.holdout %}
+  {% set tf = h.tiny.full %}
+  {% set rn = h.robust_no_tiny %}
+
+  {% if t.holds_on_artifact %}
+  <div class="art">
+    <span class="ico">⚠</span>
+    <div class="nb">
+      <span class="t">Прибыли у этого бота нет — есть перенос стопа в безубыток.</span>
+      <span class="num">{{ t.tiny_share }}%</span> циклов на экзамене закрылись
+      «в ноль» (|PnL| &lt; ${{ '%.2f'|format(hmeta.tiny_rule.thr_usd) }}), из них
+      <span class="num">{{ t.be_share }}%</span> — прямой безубыток. Если считать
+      такие выходы нулём, экзамен превращается из
+      <b class="num">{{ '%+.1f'|format(t.ret) }}%</b> в
+      <b class="num">{{ '%+.1f'|format(t.ret_without_tiny) }}%</b>, а винрейт —
+      из <b class="num">{{ t.wr }}%</b> в <b class="num">{{ t.wr_honest }}%</b>.
+      За всю историю копеечные выходы дали
+      <b class="num">{{ '%+.2f'|format(tf.pnl_split.tiny) }}$</b> при итоге
+      <b class="num">{{ '%+.2f'|format(tf.pnl_usd) }}$</b> — без них
+      <b class="num">{{ '%+.2f'|format(tf.pnl_without_tiny) }}$</b>.
+    </div>
+  </div>
+  {% endif %}
+
   <div class="card {{ 'card--live' if h.verdict.key == 'ok' }}">
     <div class="h-card">Честная проверка
-      <span class="muted small" style="font-weight:400">холдоут
+      <span class="muted small" style="font-weight:400">экзамен
         {{ P.holdout.start }} — {{ P.holdout.end }} ({{ P.holdout.months }} мес):
-        последние 28% истории, в подборе параметров не участвовали</span></div>
+        последние 28% истории, отбор их не оптимизировал; копеечные выходы
+        считаются нулём</span></div>
+
+    <div class="note warn" style="margin:0 0 12px">
+      <span class="ico">⚠</span>
+      <div class="nb"><span class="t">Холдоут у ботов загрязнён частично</span> —
+        78% его баров служили OOS-критерием в волнах отбора v4–v8, то есть по
+        ним выбирался победитель, хотя на них и не обучались.
+        <b style="color:var(--ink)">Плюс на таком холдоуте — слабое
+        доказательство, минус — сильное.</b> Главный аргумент здесь не сам
+        холдоут, а устойчивость параметров и сравнение со случайными геномами.
+      </div>
+    </div>
 
     <div class="exam-card">
       <div class="exam-left">
-        <div class="exam-big {{ 'pos' if h.robust.median > 0 else 'neg' }}">{{ '%+.2f'|format(h.robust.per_month) }}%</div>
+        <div class="exam-big {{ 'pos' if rn.per_month > 0 else 'neg' }}">{{ '%+.2f'|format(rn.per_month) }}%</div>
         <div class="exam-cap"><b>честная оценка, в месяц</b>
-          медиана {{ h.robust.n }} возмущений генома ±{{ h.robust.pert_pct }}%
-          на холдоуте = {{ '%+.1f'|format(h.robust.median) }}% за
-          {{ P.holdout.months }} мес</div>
+          медиана {{ rn.n }} возмущений генома ±{{ h.robust.pert_pct }}%
+          на экзамене, копеечные выходы у каждого соседа обнулены
+          = {{ '%+.1f'|format(rn.median) }}% за {{ P.holdout.months }} мес
+          <span class="mini-note">без поправки на копеечные было бы
+            {{ '%+.2f'|format(h.robust.per_month) }}%/мес — эта цифра завышена</span></div>
       </div>
       <div class="exam-right">
         <div class="metrics">
-          <div class="metric"><b class="{{ 'pos' if h.holdout.ret > 0 else 'neg' }}">{{ '%+.1f'|format(h.holdout.ret) }}%</b><span>итог на холдоуте, x{{ h.lev }}</span></div>
+          <div class="metric"><b class="{{ 'pos' if t.ret_without_tiny > 0 else 'neg' }}">{{ '%+.1f'|format(t.ret_without_tiny) }}%</b>
+            <span>итог на экзамене без копеечных, x{{ h.lev }}</span>
+            <span class="mini-note">с ними считалось {{ '%+.1f'|format(t.ret) }}%</span></div>
+          <div class="metric"><b>{{ t.wr_honest }}%</b><span>честный winrate</span>
+            <span class="mini-note">сырой {{ t.wr }}% раздут безубытком</span></div>
+          <div class="metric"><b class="flat">{{ t.tiny_share }}%</b><span>циклов в ноль</span>
+            <span class="mini-note">из них безубыток {{ t.be_share }}%</span></div>
           <div class="metric"><b>{{ h.n_trades.holdout }}</b><span>сделок</span></div>
-          <div class="metric"><b>{{ h.holdout.wr }}%</b><span>winrate</span></div>
           <div class="metric"><b>{{ h.holdout.dd }}%</b><span>просадка</span></div>
-          <div class="metric"><b>{{ '%+.1f'|format(h.robust.p10) }}…{{ '%+.1f'|format(h.robust.p90) }}%</b><span>p10…p90 соседей</span></div>
-          <div class="metric"><b class="{{ 'pos' if h.robust.share_pos >= 60 else 'neg' }}">{{ h.robust.share_pos }}%</b><span>прибыльных соседей</span></div>
+          <div class="metric"><b class="{{ 'pos' if rn.share_pos >= 60 else 'neg' }}">{{ rn.share_pos }}%</b><span>прибыльных соседей</span>
+            <span class="mini-note">p10…p90 {{ '%+.1f'|format(rn.p10) }}…{{ '%+.1f'|format(rn.p90) }}%</span></div>
+        </div>
+
+        <div class="bench" style="margin-top:12px">
+          <div>из чего сложился итог экзамена (${{ '%.2f'|format(hmeta.tiny_rule.margin) }} маржи на цикл):
+            копеечные <b class="flat">{{ '%+.2f'|format(t.pnl_split.tiny) }}$</b>
+            · реальные плюсы <b class="pos">{{ '%+.2f'|format(t.pnl_split.wins) }}$</b>
+            · убытки <b class="neg">{{ '%+.2f'|format(t.pnl_split.losses) }}$</b>
+            = <b>{{ '%+.2f'|format(t.pnl_usd) }}$</b>, без копеечных
+            <b class="{{ 'pos' if t.pnl_without_tiny > 0 else 'neg' }}">{{ '%+.2f'|format(t.pnl_without_tiny) }}$</b></div>
+          <div>средний реальный плюс <b>{{ '%+.3f'|format(t.avg_win_real) }}$</b>
+            против среднего убытка <b class="neg">{{ '%.3f'|format(t.avg_loss) }}$</b>
+            · средний копеечный <b class="flat">{{ '%+.4f'|format(t.avg_tiny) }}$</b></div>
         </div>
 
         <div class="bench">
@@ -73,16 +134,27 @@
           <div>издержки съели
             <b class="{{ 'neg' if (h.costs.holdout.share or 0) > 50 else '' }}">{{ h.costs.holdout.share }}%</b>
             валовой прибыли</div>
-          <div>плечо по холдоуту (макс. с просадкой ≤{{ h.lev_by_holdout.dd_cap }}%):
+          <div title="плечо здесь выбрано ПО холдоуту, то есть с оглядкой на экзамен — это подсказка, а не проверенная рекомендация">плечо
+            по холдоуту (макс. с просадкой ≤{{ h.lev_by_holdout.dd_cap }}%):
             <b class="{{ 'neg' if not h.lev_by_holdout.rec else '' }}">{{ h.lev_by_holdout.rec or 'НЕ ЗАПУСКАТЬ' }}</b>
-            {% if h.lev_by_holdout.rec != 'x' ~ h.lev %}<span class="muted-2">(сейчас x{{ h.lev }})</span>{% endif %}</div>
+            {% if h.lev_by_holdout.rec != 'x' ~ h.lev %}<span class="muted-2">(сейчас x{{ h.lev }})</span>{% endif %}
+            <span class="muted-2">— подобрано ПО экзамену, поэтому само не
+              проверено; поднимать плечо на этом основании нельзя</span></div>
         </div>
 
         <div class="crit">
           <div style="font-weight:590">Вердикт:
             <span class="{{ 'pos' if h.verdict.key == 'ok' else ('' if h.verdict.key == 'part' else 'neg') }}">{{ h.verdict.status }} — {{ h.verdict.score }}</span>
-            <span class="muted-2" style="font-weight:400">(критерий объявлен до подсчёта)</span>
+            <span class="muted-2" style="font-weight:400">(критерий из
+              {{ h.verdict.n_crit }} пунктов объявлен до подсчёта)</span>
           </div>
+          {% if h.verdict.changed %}
+          <div class="warn-line">Вердикт пересмотрен после поправки на копеечные
+            выходы: было «{{ h.verdict.status_old }} {{ h.verdict.score_old }}»
+            → стало «{{ h.verdict.status }} {{ h.verdict.score }}». Пятый пункт
+            критерия (устойчивость к обнулению копеечных выходов) добавлен
+            последним, порядок первых четырёх не менялся.</div>
+          {% endif %}
           {% for r in h.verdict.reasons %}
           <div class="c {{ 'ok' if r.ok else 'no' }}"><i>{{ '✓' if r.ok else '✗' }}</i>
             <div><b>{{ r.title }}</b> — <span>{{ r.detail }}</span></div></div>
@@ -95,34 +167,63 @@
     </div>
 
     <div class="train-line">
-      <b>Обучение — не доказательство.</b>
-      Обучающий период {{ P.train.start }} — {{ P.train.end }}
-      ({{ P.train.months }} мес, подбор видел его целиком):
-      {{ '%+.1f'|format(h.train.ret) }}%, {{ h.n_trades.train|trades_n }},
-      WR {{ h.train.wr }}%, просадка {{ h.train.dd }}%.
-      На холдоуте — {{ '%+.1f'|format(h.holdout.ret) }}%.
-      {% if h.train.ret > h.holdout.ret %}Падение результата вне обучения — обычная
-      цена подгонки.{% else %}Здесь холдоут ЛУЧШЕ обучения — редкий признак того,
-      что подгонки не было.{% endif %}
+      <span class="insample"><b>Обучающий период — не доказательство, показан
+        только для разбора механики.</b>
+        {{ P.train.start }} — {{ P.train.end }} ({{ P.train.months }} мес, подбор
+        видел его целиком): {{ h.n_trades.train|trades_n }}, из них
+        {{ h.tiny.train.tiny_share }}% закрылись в ноль, честный винрейт
+        {{ h.tiny.train.wr_honest }}%. Проценты доходности обучения со страницы
+        убраны намеренно — подбор их и максимизировал, смотреть на них смысла
+        нет. Объём выборки и доля пустых выходов оставлены: по ним видно, на
+        чём вообще считалась статистика.</span>
       <details style="margin-top:6px">
-        <summary>что показывалось раньше и почему это не доказательство</summary>
-        <p>Крупно на карточках стояло <b>{{ '%+.1f'|format(h.site_pnl_pct) }}%</b>
-          — полная история {{ P.full.start }} — {{ P.full.end }} с реинвестом 25%
-          капитала (страница /pnl), и <b>{{ '%+.1f'|format(h.config_doc_pct) }}%</b>
-          — та же история с фиксированной маржой $5 от $20 (цифра из config.py).
-          Обе включают {{ P.train.months }} месяцев, на которых бот и подбирался,
-          поэтому доказательством доходности они не являются — это верхняя
-          граница мечты, а не ожидание.</p>
+        <summary>оговорки к самой честной проверке</summary>
         <p>{{ hmeta.caveat }}</p>
-        <p>Портфель всех 5 ботов: обучение
-          {{ '%+.1f'|format(hmeta.portfolio.train.ret) }}% →
-          холдоут {{ '%+.1f'|format(hmeta.portfolio.holdout.ret) }}%.
+        <p>{{ hmeta.tiny_rule.text }}</p>
+        <p>{{ hmeta.tiny_rule.be_note }}</p>
+        <p>Портфель всех 5 ботов на экзамене без копеечных выходов:
+          {{ '%+.1f'|format(hmeta.portfolio.holdout_no_tiny.ret) }}%
+          (с ними считалось {{ '%+.1f'|format(hmeta.portfolio.holdout.ret) }}%).
           Самопроверки пересчёта: регрессия
           {{ 'OK' if hmeta.selfcheck.regression else 'ПРОВАЛ' }}, причинность
           {{ 'OK' if hmeta.selfcheck.causality else 'ПРОВАЛ' }}
           ({{ hmeta.generated }}).</p>
       </details>
     </div>
+
+    <details style="margin-top:12px">
+      <summary>Разложение прибыли: сколько заработано по-настоящему</summary>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Период</th><th>Циклов</th><th>В ноль</th><th>Копеечные, $</th>
+            <th>Реальные плюсы, $</th><th>Убытки, $</th><th>Итого, $</th>
+            <th>Без копеечных, $</th><th>WR сырой</th><th>WR честный</th></tr></thead>
+          <tbody>
+          {% for k, lab in [('train', 'обучение'), ('holdout', 'экзамен'), ('full', 'вся история')] %}
+          {% set x = h.tiny[k] %}
+          <tr>
+            <td>{{ lab }}{% if k == 'train' %} <span class="insample"></span>{% endif %}</td>
+            <td>{{ x.n }}</td>
+            <td class="flat">{{ x.tiny_share }}%</td>
+            <td class="flat">{{ '%+.2f'|format(x.pnl_split.tiny) }}</td>
+            <td class="pos">{{ '%+.2f'|format(x.pnl_split.wins) }}</td>
+            <td class="neg">{{ '%+.2f'|format(x.pnl_split.losses) }}</td>
+            <td class="{{ 'pos' if x.pnl_usd > 0 else 'neg' }}">{{ '%+.2f'|format(x.pnl_usd) }}</td>
+            <td class="{{ 'pos' if x.pnl_without_tiny > 0 else 'neg' }}"><b>{{ '%+.2f'|format(x.pnl_without_tiny) }}</b></td>
+            <td class="muted-2">{{ x.wr }}%</td>
+            <td>{{ x.wr_honest }}%</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="tv-hint">Деньги на базе ${{ '%.0f'|format(hmeta.tiny_rule.margin) }}
+        маржи на цикл. «В ноль» — цикл с |PnL| меньше 1% маржи
+        (${{ '%.2f'|format(hmeta.tiny_rule.thr_usd) }}): такие выходы почти
+        всегда даёт перенос стопа в безубыток, деньгами они не являются ни при
+        каком способе счёта. Строка «обучение» здесь — разбор механики, не
+        показатель доходности.</p>
+    </details>
 
     <details style="margin-top:12px">
       <summary>Лестница плечей на холдоуте</summary>
@@ -141,7 +242,11 @@
       </div>
       <p class="tv-hint">Плечо бота выбиралось по просадке на ПОЛНОЙ истории
         (холдоут внутри) — поэтому оно тоже часть подгонки; здесь то же правило,
-        применённое только к холдоуту.</p>
+        применённое только к холдоуту. Итоги в этой таблице посчитаны БЕЗ
+        поправки на копеечные выходы (пересчёт лестницы в JSON не приходит):
+        у бота с высокой долей «нулевых» циклов они завышены на ту же величину,
+        что и цифра {{ '%+.1f'|format(t.ret) }}% → {{ '%+.1f'|format(t.ret_without_tiny) }}%
+        в шапке.</p>
     </details>
 
     <details style="margin-top:8px">
@@ -156,16 +261,23 @@
             <td>{{ '%+.1f'|format(s.p10) }}%</td><td>{{ '%+.1f'|format(s.p90) }}%</td>
             <td>{{ s.share_pos }}%</td><td>{{ s.rank }}%</td></tr>
           {% endfor %}
-          <tr><td><b>все {{ h.robust.n }}</b></td>
-            <td class="{{ 'pos' if h.robust.median > 0 else 'neg' }}"><b>{{ '%+.1f'|format(h.robust.median) }}%</b></td>
-            <td>{{ '%+.1f'|format(h.robust.p10) }}%</td><td>{{ '%+.1f'|format(h.robust.p90) }}%</td>
-            <td>{{ h.robust.share_pos }}%</td><td>{{ h.robust.rank_fact }}%</td></tr>
+          <tr><td class="muted-2">все {{ h.robust.n }} (с копеечными)</td>
+            <td class="muted-2">{{ '%+.1f'|format(h.robust.median) }}%</td>
+            <td class="muted-2">{{ '%+.1f'|format(h.robust.p10) }}%</td>
+            <td class="muted-2">{{ '%+.1f'|format(h.robust.p90) }}%</td>
+            <td class="muted-2">{{ h.robust.share_pos }}%</td>
+            <td class="muted-2">{{ h.robust.rank_fact }}%</td></tr>
+          <tr><td><b>все {{ rn.n }} · БЕЗ копеечных</b></td>
+            <td class="{{ 'pos' if rn.median > 0 else 'neg' }}"><b>{{ '%+.1f'|format(rn.median) }}%</b></td>
+            <td>{{ '%+.1f'|format(rn.p10) }}%</td><td>{{ '%+.1f'|format(rn.p90) }}%</td>
+            <td>{{ rn.share_pos }}%</td><td>{{ rn.rank_fact }}%</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="tv-hint">Ранг факта близко к 100% = конфиг лучше почти всех своих
-        соседей, то есть стоит на шпиле: завтрашний рынок сдвинет оптимум, и
-        останется медиана соседей, а не факт.</p>
+      <p class="tv-hint">Решение принимается по последней строке — там у каждого
+        соседа копеечные выходы обнулены. Ранг факта близко к 100% = конфиг
+        лучше почти всех своих соседей, то есть стоит на шпиле: завтрашний рынок
+        сдвинет оптимум, и останется медиана соседей, а не факт.</p>
     </details>
 
     <details style="margin-top:8px">
@@ -201,32 +313,32 @@
   </div>
   {% endif %}
 
-  <div class="h-sec">Обучающий период — не доказательство{% if hmeta.periods %}
-    ({{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }},
-    целиком in-sample){% endif %}</div>
-
-  <div class="stripe" id="topStripe" style="display:none">
-    <div><div class="k">итог из $50 · in-sample</div><div class="v" id="t_final">–</div></div>
-    <div><div class="k">доход за всю историю</div><div class="v" id="t_ret">–</div></div>
-    <div><div class="k">просадка</div><div class="v" id="t_dd">–</div></div>
-    <div><div class="k">winrate</div><div class="v" id="t_wr">–</div></div>
-    <div><div class="k">profit factor</div><div class="v" id="t_pf">–</div></div>
-    <div><div class="k">месяцев в плюсе</div><div class="v" id="t_mo">–</div></div>
-  </div>
+  <div class="h-sec">Разбор механики{% if hmeta.periods %}
+    ({{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }}, обучающий
+    период внутри){% endif %}</div>
 
   <div class="note warn">
-    <span class="ico">⚠</span>
+    <span class="ico">🔧</span>
     <div class="nb">
-      <span class="t">Всё, что ниже, посчитано на ПОЛНОЙ истории</span> — вместе
-      с обучающим периодом. Это инструмент разбора механики (какие входы,
-      где доливки, как вёл себя капитал), а не доказательство доходности.
-      {% if honest %}Честные цифры — в блоке выше.{% endif %}
+      <span class="t">Всё, что ниже, — инструмент разбора, а не результат.</span>
+      Графики, циклы и сетка посчитаны по ПОЛНОЙ истории вместе с обучающим
+      периодом: они показывают, ГДЕ бот входит, как доливает и чем закрывает
+      цикл. Плиток с процентами доходности здесь больше нет — они были бы
+      цифрами подгонки.{% if honest %} Показатели доходности — только в блоке
+      «Честная проверка» выше.{% endif %}
       <details>
-        <summary>подробнее</summary>
+        <summary>почему цифры полной истории не годятся как результат</summary>
         <p>Бот отбирался по схеме walk-forward, где обучающая выборка всегда
           начиналась с начала истории, поэтому «экзамен» раннего фолда попадал
           внутрь обучения позднего. Плечо подбиралось по просадке на всех
-          3.2 годах. Относись к цифрам ниже как к гипотезе.</p>
+          3.2 годах.</p>
+        {% if honest %}
+        <p>Второй слой: {{ h.tiny.full.tiny_share }}% циклов за всю историю
+          закрылись «в ноль» (перенос стопа в безубыток). На графике ниже они
+          подписаны «≈0» и покрашены серым — раньше на их месте стояло
+          «+0.001&nbsp;$» зелёным, из-за чего винрейт выглядел
+          {{ h.tiny.full.wr }}% вместо честных {{ h.tiny.full.wr_honest }}%.</p>
+        {% endif %}
       </details>
     </div>
   </div>
@@ -247,8 +359,9 @@
         <span class="sep"></span>
         <select class="sel" id="fTrades">
           <option value="all">все циклы</option>
-          <option value="win">только прибыльные</option>
+          <option value="win">только прибыльные (без «в ноль»)</option>
           <option value="loss">только убыточные</option>
+          <option value="flat">только «в ноль» (безубыток)</option>
         </select>
         <span class="sep"></span>
         <span class="pills" id="tfPills" title="таймфрейм графика (бот всегда торгует на своём)"></span>
@@ -277,7 +390,11 @@
       <span><i style="background:var(--up)"></i>вход в лонг ▲ / <i style="background:var(--down)"></i>вход в шорт ▼</span>
       <span><i style="background:var(--warn)"></i>■ доливка сетки</span>
       <span><i style="background:#bb9af7"></i>средняя цена позиции — от неё считаются стоп и тейк</span>
-      <span>● закрытие: <b class="pos">тейк</b> / <b class="neg">стоп</b> / серый таймаут / <b class="liq">ликвидация</b></span>
+      <span>● закрытие: <b class="pos">тейк</b> / <b class="neg">стоп</b> /
+        <b class="flat">в ноль «≈0»</b> / <b class="liq">ликвидация</b></span>
+      <span><i style="background:#8f939e"></i><b class="flat">«≈0»</b> — цикл
+        закрыт переносом стопа в безубыток: |итог| &lt; $0.05 (1% маржи цикла).
+        Это НЕ победа; раньше здесь стояло «+0.001$» зелёным</span>
       <span>пунктир средняя→выход: <b class="pos">плюс</b> / <b class="neg">минус</b></span>
     </div>
     <div class="selbox" id="selInfo"></div>
@@ -309,9 +426,11 @@
       </div>
       <div class="tiles">
         <div class="tile"><b id="s_n">–</b><span id="s_n_lab">циклов за всю историю</span></div>
-        <div class="tile"><b id="s_wr">–</b><span>прибыльных</span></div>
-        <div class="tile"><b id="s_pnl">–</b><span>PnL, USDT</span></div>
-        <div class="tile"><b id="s_hold">–</b><span>из них на экзамене</span></div>
+        <div class="tile"><b id="s_wr">–</b><span>честный winrate
+          <span class="mini-note" id="s_wr_raw"></span></span></div>
+        <div class="tile"><b id="s_flat" class="flat">–</b><span>закрыто в ноль
+          <span class="mini-note">перенос стопа в безубыток, деньгами не является</span></span></div>
+        <div class="tile"><b id="s_hold">–</b><span title="в блоке «Честная проверка» цифра меньше: та посчитана на момент пересчёта, здесь добавлены свежие сделки с биржи">из них на экзамене<sup>*</sup></span></div>
       </div>
       <div class="tbl-wrap tall" style="margin-top:12px"><table class="tbl" id="cycles"></table></div>
       <p class="tv-hint" id="tblNote"></p>
@@ -343,54 +462,35 @@
   <!-- ================= прибыль по месяцам ================= -->
   <div class="card" id="moCard" style="display:none">
     <div class="h-card">Прибыль по месяцам
-      <span class="muted small" style="font-weight:400">реинвест от $50{% if hmeta.periods %},
-        вся история {{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }}{% endif %}</span></div>
+      <span class="muted small" style="font-weight:400">{% if hmeta.periods %}только
+        экзамен {{ hmeta.periods.holdout.start }} — {{ hmeta.periods.holdout.end }}
+        ({{ hmeta.periods.holdout.months }} мес){% endif %}</span></div>
     <div class="mchart" id="moBox"></div>
     {% if hmeta.periods %}
-    <p class="tv-hint">Бары до {{ hmeta.periods.holdout.start }} — обучающий период
-      ({{ hmeta.periods.train.months }} мес, подбор их видел), после — холдоут
-      ({{ hmeta.periods.holdout.months }} мес).</p>
+    <p class="tv-hint">Месяцы обучающего периода
+      ({{ hmeta.periods.train.months }} мес) на графике не показаны: подбор
+      параметров видел их целиком. Копеечные выходы внутри баров ещё сидят —
+      помесячная кривая считается по общей прибыли, поэтому это форма, а не
+      обещание; очищенные цифры — в блоке «Честная проверка».</p>
     {% endif %}
   </div>
 
-  <!-- ================= аналитика ================= -->
+  <!-- ================= аналитика (разбор механики) ================= -->
   <div class="card" id="analyticsCard" style="display:none">
-    <div class="h-card">Капитал и просадка
-      <span class="muted small" style="font-weight:400">полная история{% if hmeta.periods %}
-        {{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }}, из них
-        {{ hmeta.periods.train.months }} мес — обучение{% endif %} ·
-        <span id="an_final"></span></span></div>
-    <div class="tiles" id="an_tiles"></div>
+    <div class="h-card">Капитал и просадка — форма кривой
+      <span class="muted small" style="font-weight:400">разбор механики{% if hmeta.periods %},
+        полная история {{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }},
+        из них {{ hmeta.periods.train.months }} мес — обучение{% endif %}</span></div>
+    <p class="insample">Итоговых процентов и «$50 → $X» здесь больше нет: 72%
+      этой кривой — период, на котором бот и подбирался. Смотри на форму
+      (где просадки, как долго восстанавливается), а не на конец линии.</p>
+    <div class="tiles" id="an_tiles" style="margin-top:12px"></div>
     <div class="h-sec">Капитал, $</div>
     <div class="tv"><div class="tv-chart small" id="eqChart">
       <div class="tv-legend"><div class="ohlc" id="eqLeg"></div></div></div></div>
     <div class="h-sec">Просадка от пика, %</div>
     <div class="tv"><div class="tv-chart small" id="ddChart">
       <div class="tv-legend"><div class="ohlc" id="ddLeg"></div></div></div></div>
-    <div class="tiles" id="an_tiles2" style="margin-top:14px"></div>
-  </div>
-
-  <!-- ================= статистика по годам/месяцам ================= -->
-  <div class="card" id="finalstatsCard" style="display:none">
-    <div class="h-card">Статистика за всю историю <span class="muted small"
-        style="font-weight:400">in-sample, обучение включено ·
-        <span id="fs_period"></span></span></div>
-    <div class="tiles">
-      <div class="tile"><b id="fs_ret">–</b><span>итог, вся история</span></div>
-      <div class="tile"><b id="fs_wr">–</b><span>winrate</span></div>
-      <div class="tile"><b id="fs_dd">–</b><span>просадка</span></div>
-      <div class="tile"><b id="fs_pos">–</b><span>месяцев в плюсе</span></div>
-    </div>
-    <div class="h-sec">По годам</div>
-    <div class="tbl-wrap"><table class="tbl" id="fs_years"></table></div>
-    <div class="h-sec">Любой месяц</div>
-    <div style="margin-bottom:10px"><select class="sel" id="fs_month_sel"></select></div>
-    <div class="tiles">
-      <div class="tile"><b id="fs_m_ret">–</b><span>доход, %</span></div>
-      <div class="tile"><b id="fs_m_usdt">–</b><span>доход, USDT</span></div>
-      <div class="tile"><b id="fs_m_trades">–</b><span>сделок</span></div>
-      <div class="tile"><b id="fs_m_wins">–</b><span>прибыльных</span></div>
-    </div>
   </div>
 
   <div class="card">
@@ -450,6 +550,10 @@ const LEVELS = {{ params.get('levels', 3) }};
 const TP = {{ params.get('tp', 0.01) }};               // тейк от средней, доля
 const TF_LIST = {{ view_tfs|tojson }};                 // [{iv,label}] — что есть на диске
 const TF_LABEL = "{{ tf_label }}";
+/* разбор «копеечных» выходов за всю историю (bots_honest.json) — нужен
+   разделу разбора механики, чтобы он не остался с сырым winrate */
+const TINY_FULL = {{ ((honest.tiny.full if honest else none) or none)|tojson }};
+function TFULL() { return TINY_FULL || null; }
 /* ТФ ОТОБРАЖЕНИЯ по умолчанию — 4ч, а не родные 15м бота. На 15м вся история
    это 110 тысяч свечей: маркеры сделок при этом остаются быстрыми (замер:
    ~2 мс на перерисовку), но сама отрисовка стольких свечей роняет плавность
@@ -526,7 +630,9 @@ const overlay = (function () {
           const y0 = Y(c.avg), y1 = Y(c.exit);
           if (x0 === null || x1 === null || y0 === null || y1 === null) continue;
           ctx.setLineDash(dash);
-          ctx.strokeStyle = (c.pnl || 0) >= 0 ? C.up : C.down;
+          // «в ноль» — серый: зелёный пунктир на +0.001$ и был той самой
+          // картинкой, из-за которой бот выглядел прибыльным
+          ctx.strokeStyle = c.flat ? C.flat : ((c.pnl || 0) >= 0 ? C.up : C.down);
           ctx.beginPath();
           ctx.moveTo(x0, y0);
           ctx.lineTo(x1, y1);
@@ -627,6 +733,25 @@ async function getJSON(u) {
 }
 function isHoldout(c) { return HOLD !== null && c.t0 >= HOLD; }
 
+/* ---------- цикл, закрытый «в ноль» ----------
+   Перенос стопа в безубыток (ген be_move=1) закрывает цикл на +0.001$.
+   Формально победа, фактически ноль — и раньше именно из-за этого график
+   был подписан «+0.001$» зелёным, а winrate ботов доходил до 98%.
+   Признак приходит готовым из bot_trades_<SYM>.json (поля tiny/be,
+   build_analytics.py); порог нужен только там, где поля нет.
+   Единая точка правды — TVK.isTiny/outColor/outLabel из _chartkit. */
+const tinyOpts = () => ({ tinyUsd: TMETA.tiny_thr, unit: "$", digits: 3 });
+function isFlat(c) { return TVK.isTiny({ tiny: c.tiny, pnl: c.pnl },
+                                       TVK.tinyThr(tinyOpts())); }
+function isBe(c) { return !!c.be; }
+/* подпись выхода: «≈0» вместо «+0.001$» */
+function exitLabel(c) {
+  return isFlat(c) ? TVK.TINY.lab : money(c.pnl);
+}
+function exitColor(c) {
+  return isFlat(c) ? C.flat : reasonColor(c.reason);
+}
+
 /* ---------- RSI по свечам графика (Уайлдер, как в bot_rsi.calc_rsi) ---------- */
 function calcRsi(closes, period) {
   const out = new Array(closes.length).fill(null);
@@ -666,6 +791,9 @@ function fromPrecomputed(t, i) {
     t0: t.entry_ts, entry: t.entry, avg: t.avg, stop: t.stop, tp: t.tp,
     adds: (t.adds || []).map(a => ({ t: a[0], price: a[1], avg: a[2] })),
     t1: t.exit_ts, exit: t.exit, pnl: t.pnl, reason: t.reason, liq: !!t.liq,
+    // tiny — цикл закрыт «в ноль», be — именно переносом стопа в безубыток
+    // (оба поля кладёт build_analytics.py, считаются точно)
+    tiny: t.tiny, be: !!t.be,
     hold_h: t.exit_ts ? (t.exit_ts - t.entry_ts) / 3600 : null };
 }
 /* события /api/sim и /api/trades -> такие же циклы */
@@ -733,6 +861,8 @@ function tradeVisible(c) {
   const fl = $("fTrades").value;
   if (fl === "all") return true;
   if (c.pnl === null || c.pnl === undefined) return false;
+  if (fl === "flat") return isFlat(c);
+  if (isFlat(c)) return false;          // «в ноль» — ни прибыль, ни убыток
   return fl === "win" ? c.pnl > 0 : c.pnl <= 0;
 }
 
@@ -770,8 +900,8 @@ function pushCycle(mk, c, live, lvl, withText) {
     const tx = snap(c.t1);
     if (tx !== null)
       mk.push({ time: tx, position: c.long ? "aboveBar" : "belowBar",
-        color: live ? C.accent : reasonColor(c.reason), shape: "circle",
-        size: 0.8, text: withText && c.pnl !== null ? money(c.pnl) : "" });
+        color: live ? C.accent : exitColor(c), shape: "circle",
+        size: 0.8, text: withText && c.pnl !== null ? exitLabel(c) : "" });
   }
 }
 function plural(n, one, few, many) {
@@ -850,7 +980,7 @@ function drawOverlays(list) {
       if (x !== null && x <= e) x = Math.min(e + VIEW_BAR, lastT);
       if (x !== null && x <= e) x = null;
       const it = { t0s: e, x1: null, avg: +c.avg, exit: +c.exit, pnl: c.pnl,
-                   path: null };
+                   flat: isFlat(c), path: null };
       if (x !== null && TVK.isNum(it.avg) && TVK.isNum(it.exit)) it.x1 = x;
       // без доливок средняя равна входу — отдельная линия ничего не добавит
       if (c.adds.length) {
@@ -903,9 +1033,12 @@ chart.subscribeCrosshairMove(p => {
     + row("тейк от средней", px(x.c.tp)));
   for (const c of o.close) parts.push(
     '<div class="rt">● закрытие #' + c.idx + " — "
-    + (c.liq ? "ЛИКВИДАЦИЯ" : reasonRu(c.reason)) + "</div>"
+    + (c.liq ? "ЛИКВИДАЦИЯ" : isBe(c) ? "БЕЗУБЫТОК"
+       : isFlat(c) ? "В НОЛЬ" : reasonRu(c.reason)) + "</div>"
     + row("средняя / выход", px(c.avg) + " → " + px(c.exit))
-    + row("итог", money(c.pnl), (c.pnl || 0) >= 0 ? "pos" : "neg")
+    + (isFlat(c)
+       ? row("итог", money(c.pnl) + " = ноль", "flat")
+       : row("итог", money(c.pnl), (c.pnl || 0) >= 0 ? "pos" : "neg"))
     + row("держали", TVK.fmtN(c.hold_h, 1) + "ч"));
   if (!parts.length) { ro.classList.remove("show"); return; }
   ro.innerHTML = parts.join('<div style="height:7px"></div>');
@@ -948,7 +1081,8 @@ function selectCycle(c) {
   addLine(c.stop, C.down, "стоп вх.");
   addLine(c.tp, C.up, "тейк");
   if (c.exit !== undefined && c.exit !== null)
-    addLine(c.exit, (c.pnl || 0) >= 0 ? C.up : C.down, "выход");
+    addLine(c.exit, isFlat(c) ? C.flat : ((c.pnl || 0) >= 0 ? C.up : C.down),
+            isFlat(c) ? "выход ≈0" : "выход");
   const t1 = c.t1 || c.t0;
   const pad = Math.max(20 * VIEW_BAR, (t1 - c.t0) * 0.7);
   if (TIMES.length) {
@@ -969,10 +1103,14 @@ function selectCycle(c) {
     + kv("средняя цена", px(c.avg))
     + kv("стоп при входе / тейк", px(c.stop) + " / " + px(c.tp))
     + (c.t1 ? kv("выход", TVK.fmtDT(c.t1) + " по " + px(c.exit)
-        + " — " + (c.liq ? "ЛИКВИДАЦИЯ" : reasonRu(c.reason)))
+        + " — " + (c.liq ? "ЛИКВИДАЦИЯ" : isBe(c) ? "БЕЗУБЫТОК"
+                   : reasonRu(c.reason)))
        : kv("выход", "цикл открыт"))
     + (c.pnl === null || c.pnl === undefined ? ""
-       : kv("итог", money(c.pnl), c.pnl >= 0 ? "pos" : "neg"))
+       : isFlat(c)
+         ? kv("итог", money(c.pnl) + " → считаем нулём", "flat")
+         : kv("итог", money(c.pnl), c.pnl >= 0 ? "pos" : "neg"))
+    + (isFlat(c) ? kv("почему ноль", TVK.TINY.note) : "")
     + (c.t1 ? kv("держали", TVK.fmtN(c.hold_h, 1) + "ч") : "")
     + "</div>";
 }
@@ -1012,16 +1150,24 @@ function renderCycles() {
   const t0 = now();
   const list = (SRC === "live" ? LIVE : BACK).filter(tradeVisible);
   const done = list.filter(c => c.pnl !== null && c.pnl !== undefined);
-  const wins = done.filter(c => c.pnl > 0).length;
-  const total = done.reduce((a, c) => a + c.pnl, 0);
+  // ЧЕСТНЫЙ винрейт — ровно та же формула, что в bots_honest.tiny_stats:
+  // РЕАЛЬНЫЕ плюсы против ВСЕХ убытков (копеечный плюс победой не считается,
+  // копеечный минус из знаменателя не выкидываем — так консервативнее).
+  // Иначе на одной странице стояли бы два разных «честных винрейта».
+  const flat = done.filter(isFlat).length;
+  const wins = done.filter(c => !isFlat(c) && c.pnl > 0).length;
+  const losses = done.filter(c => c.pnl < 0).length;
   $("s_n").textContent = done.length;
   $("s_n_lab").textContent = SRC === "live" ? "циклов в логе"
     : (IS_FINAL ? "циклов за всю историю" : "циклов за ~90 дней");
-  $("s_wr").textContent = done.length
-    ? Math.round(wins / done.length * 100) + "%" : "–";
-  const sp = $("s_pnl");
-  sp.textContent = done.length ? money(total) : "–";
-  sp.className = total >= 0 ? "pos" : "neg";
+  $("s_wr").textContent = (wins + losses)
+    ? (wins / (wins + losses) * 100).toFixed(1) + "%" : "–";
+  $("s_wr_raw").textContent = done.length
+    ? "сырой " + (done.filter(c => c.pnl > 0).length / done.length * 100).toFixed(1)
+      + "% — с «нулевыми» циклами" : "";
+  const fl = $("s_flat");
+  fl.textContent = done.length
+    ? (flat / done.length * 100).toFixed(1) + "%" : "–";
   const nh = list.filter(isHoldout).length;
   $("s_hold").textContent = (SRC === "live" || HOLD === null) ? "—" : nh;
 
@@ -1044,11 +1190,14 @@ function renderCycles() {
     + "<td>" + px(c.stop) + "</td>"
     + "<td>" + px(c.tp) + "</td>"
     + "<td>" + px(c.exit) + "</td>"
-    + '<td class="' + (c.reason === "tp" ? "pos" : c.reason === "stop" ? "neg"
-        : c.liq ? "liq" : "") + '">'
-    + (c.liq ? "ЛИКВ." : reasonRu(c.reason)) + "</td>"
+    + '<td class="' + (isFlat(c) ? "flat" : c.reason === "tp" ? "pos"
+        : c.reason === "stop" ? "neg" : c.liq ? "liq" : "") + '">'
+    + (c.liq ? "ЛИКВ." : isBe(c) ? "БЕЗУБЫТОК"
+        : isFlat(c) ? "В НОЛЬ" : reasonRu(c.reason)) + "</td>"
     + '<td class="' + (c.pnl === null || c.pnl === undefined ? ""
-        : (c.pnl >= 0 ? "pos" : "neg")) + '">' + money(c.pnl) + "</td>"
+        : isFlat(c) ? "flat" : (c.pnl >= 0 ? "pos" : "neg")) + '" title="'
+    + (isFlat(c) ? TVK.esc(money(c.pnl) + " — " + TVK.TINY.note) : "") + '">'
+    + exitLabel(c) + "</td>"
     + "<td>" + (c.t1 ? TVK.fmtN(c.hold_h, 1) : "–") + "</td>"
     + '<td class="' + (isHoldout(c) ? "" : "muted-2") + '">'
     + (c.live ? "живой" : isHoldout(c) ? "экзамен" : "обучение")
@@ -1059,11 +1208,24 @@ function renderCycles() {
         : "под фильтр не попало ни одного цикла") + "</td></tr>") + "</tbody>";
   $("trCnt").textContent = rows.length + " из " + (SRC === "live"
     ? LIVE.length : BACK.length);
-  $("tblNote").textContent = rows.length > TBL_MAX
+  // Сноска про расхождение с блоком «Честная проверка».
+  // Причина НЕ в свежих сделках (их почти нет): там экзамен считается
+  // ОТДЕЛЬНЫМ прогоном движка по срезу свечей candles[h:], и первые сделки
+  // экзамена теряются на прогреве индикаторов — у LTC 179 циклов вместо 188,
+  // у ETH 62 вместо 65. Здесь же берётся сплошной прогон по всей истории и
+  // отбираются циклы после границы, поэтому их больше.
+  const freshNote = " * «Из них на экзамене» здесь больше, чем в блоке "
+    + "«Честная проверка»: там экзамен считается отдельным прогоном по срезу "
+    + "истории и первые его сделки теряются на прогреве индикаторов. "
+    + "Разница в консервативную сторону — та оценка занижена, не завышена."
+    + " Честный winrate = реальные плюсы / (они + ВСЕ убытки): цикл, закрытый "
+    + "в безубыток, победой не считается, а копеечный минус из знаменателя не "
+    + "выкидывается — та же формула, что в блоке «Честная проверка».";
+  $("tblNote").textContent = (rows.length > TBL_MAX
     ? `Показаны первые ${TBL_MAX} строк из ${rows.length} — сортировка по клику `
       + "на заголовок и фильтр над графиком работают по всему списку."
     : "Клик по строке — зум на цикл и линии входа / средней / стопа / тейка. "
-      + "Сортировка — клик по заголовку.";
+      + "Сортировка — клик по заголовку.") + freshNote;
   for (const th of $("cycles").querySelectorAll("th[data-k]"))
     th.onclick = () => {
       const k = th.getAttribute("data-k");
@@ -1353,44 +1515,10 @@ load().catch(e => console.error(e));
    незачем — история не меняется */
 setInterval(() => loadLive().catch(e => console.error(e)), 60000);
 
-/* ---------- статистика по годам и месяцам ---------- */
-async function loadFinalStats() {
-  const d = await getJSON(`/api/finalstats/${SYM}`);
-  if (!d.available) return;
-  $("finalstatsCard").style.display = "";
-  $("fs_period").textContent = `${d.period_start} — ${d.period_end}`;
-  const ret = $("fs_ret");
-  ret.textContent = TVK.fmtPct(d.overall.ret);
-  ret.className = d.overall.ret >= 0 ? "pos" : "neg";
-  $("fs_wr").textContent = d.overall.wr + "%";
-  $("fs_dd").textContent = d.overall.dd + "%";
-  $("fs_pos").textContent = d.overall.pos_share + "%";
-
-  $("fs_years").innerHTML =
-    "<thead><tr><th>Период</th><th>Доход</th><th>Сделок</th><th>WR</th><th>DD</th></tr></thead><tbody>"
-    + d.years.map(y => `<tr><td>${y.period}</td>
-      <td class="${y.ret >= 0 ? "pos" : "neg"}">${TVK.fmtPct(y.ret)}</td>
-      <td>${y.trades}</td><td>${y.wr}%</td><td>${y.dd}%</td></tr>`).join("")
-    + "</tbody>";
-
-  const sel = $("fs_month_sel");
-  sel.innerHTML = d.months.map((m, i) => `<option value="${i}">${m.start} — ${m.end}</option>`).join("");
-  sel.value = d.months.length - 1;
-  const showMonth = () => {
-    const m = d.months[sel.value];
-    const mr = $("fs_m_ret");
-    mr.textContent = TVK.fmtPct(m.ret_pct);
-    mr.className = m.ret_pct >= 0 ? "pos" : "neg";
-    const mu = $("fs_m_usdt");
-    mu.textContent = money(m.ret_usdt);
-    mu.className = m.ret_usdt >= 0 ? "pos" : "neg";
-    $("fs_m_trades").textContent = m.trades;
-    $("fs_m_wins").textContent = m.wins;
-  };
-  sel.onchange = showMonth;
-  showMonth();
-}
-loadFinalStats().catch(e => console.error(e));
+/* Карточка «Статистика за всю историю» (итог %, WR, по годам, любой месяц)
+   удалена намеренно: это были проценты доходности обучающего периода,
+   поданные как KPI. Данные /api/finalstats никуда не делись, но на странице
+   как достижение больше не показываются. */
 
 /* ---------- аналитика: капитал, просадка, месяцы ---------- */
 async function loadAnalytics() {
@@ -1399,31 +1527,25 @@ async function loadAnalytics() {
   if (!d.available) return;
   $("analyticsCard").style.display = "";
   const s = d.stats;
-  const pos = s.final_pct >= 0;
-  $("an_final").textContent = `$50 → $${s.final_usd} (${pos ? "+" : ""}${s.final_pct}%)`;
-  $("topStripe").style.display = "";
-  const set = (id, v, cl) => { const e = $(id); e.textContent = v; if (cl) e.className = "v " + cl; };
-  set("t_final", "$" + s.final_usd, pos ? "pos" : "neg");
-  set("t_ret", TVK.fmtPct(s.final_pct, 0), pos ? "pos" : "neg");
-  set("t_dd", s.max_dd + "%");
-  set("t_wr", s.wr + "%");
-  set("t_pf", s.profit_factor ?? "∞");
-  set("t_mo", s.months_pos + "/" + s.months_total);
-
-  const tile = (v, l, cls) =>
-    `<div class="tile"><b class="${cls || ""}">${v}</b><span>${l}</span></div>`;
+  // Плитки доходности («итог из $50», profit factor, winrate, лучший месяц)
+  // убраны: это проценты обучающего периода. Остаётся только механика —
+  // риск, форма серий и структура выходов.
+  const tile = (v, l, cls, note) =>
+    `<div class="tile"><b class="${cls || ""}">${v}</b><span>${l}`
+    + (note ? `<span class="mini-note">${note}</span>` : "") + "</span></div>";
+  const tn = TFULL();                       // разбор «в ноль» из bots_honest
   $("an_tiles").innerHTML =
-    tile("$" + s.final_usd, "итог из $50", pos ? "pos" : "neg") +
-    tile(s.profit_factor ?? "∞", "profit factor", (s.profit_factor ?? 9) >= 1.5 ? "pos" : "") +
-    tile(s.max_dd + "%", "макс. просадка") +
-    tile(s.wr + "%", `winrate (${s.wins} из ${s.trades})`);
-  $("an_tiles2").innerHTML =
-    tile("+" + s.avg_win, "средняя прибыльная, $") +
-    tile(s.avg_loss, "средняя убыточная, $", "neg") +
-    tile(s.max_win_streak + " / " + s.max_loss_streak, "макс. серия побед / убытков") +
-    tile((s.best_month >= 0 ? "+" : "") + s.best_month + "% / " + s.worst_month + "%",
-         "лучший / худший месяц") +
-    tile(s.months_pos + " из " + s.months_total, "месяцев в плюсе");
+    tile(s.max_dd + "%", "макс. просадка за всю историю") +
+    tile("+" + s.avg_win + " / " + s.avg_loss, "средний плюс / минус, $",
+         "", "включая «нулевые» циклы") +
+    tile(s.max_win_streak + " / " + s.max_loss_streak,
+         "макс. серия побед / убытков") +
+    (tn ? tile(tn.tiny_share + "%", "циклов закрыто в ноль", "flat",
+               "из них безубыток " + tn.be_share + "%")
+        : "") +
+    (tn ? tile(tn.wr_honest + "%", "честный winrate за всю историю", "",
+               "сырой " + tn.wr + "% — с «нулевыми» циклами")
+        : "");
 
   const eqC = TVK.mini("eqChart", 190);
   const eqS = eqC.addAreaSeries({ lineColor: C.accent, lineWidth: 2,
@@ -1446,11 +1568,29 @@ async function loadAnalytics() {
 }
 loadAnalytics().catch(e => console.error(e));
 
-/* ---------- прибыль по месяцам ---------- */
+/* ---------- прибыль по месяцам ----------
+   Показываем ТОЛЬКО экзамен: месяцы обучающего периода отрезаем прямо в
+   данных (onData вызывается до отрисовки) и пересчитываем итоговую строку —
+   иначе «лучший месяц» и «месяцев в плюсе» опять берутся с подгонки. */
+const HOLDOUT_MONTH = "{{ (hmeta.periods.holdout.start if hmeta.periods else '')[:7] }}";
+function cutTrainMonths(d) {
+  if (!HOLDOUT_MONTH || !d || !d.months) return;
+  const keep = d.months.filter(m => String(m.label || "") >= HOLDOUT_MONTH);
+  if (!keep.length) return;
+  d.months = keep;
+  const v = keep.map(m => +m.pct || 0);
+  let bi = 0, wi = 0;
+  v.forEach((x, i) => { if (x > v[bi]) bi = i; if (x < v[wi]) wi = i; });
+  d.summary = { pos: v.filter(x => x > 0).length, total: keep.length,
+    best: { pct: v[bi], label: keep[bi].label },
+    worst: { pct: v[wi], label: keep[wi].label },
+    avg: v.reduce((a, x) => a + x, 0) / keep.length };
+}
 if (MODE === "final") {
   $("moCard").style.display = "";
   TVK.monthChart("moBox", "bot_" + SYM, {
-    caption: "доход за месяц",
+    caption: "доход за месяц · только экзамен",
+    onData: cutTrainMonths,
     onEmpty: () => { $("moCard").style.display = "none"; } });
 }
 </script>

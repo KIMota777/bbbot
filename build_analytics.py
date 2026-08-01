@@ -9,6 +9,11 @@
   - ЦИКЛЫ БОТОВ ЗА ВСЮ ИСТОРИЮ для графика на странице бота: вход, каждая
     доливка сетки, средняя цена позиции после каждой доливки, стоп при
     входе, тейк от средней, выход и PnL (webapp/data/bot_trades_<SYM>.json).
+    У каждого цикла есть флаги tiny и be: tiny — закрылся «в ноль»
+    (|PnL| < 1% маржи цикла = $0.05), be — закрыт перенесённым в безубыток
+    стопом. Нужны графику, чтобы не подписывать «+0.001$» как победу; в
+    шапке файла лежит сводка (n_tiny, n_be, честный винрейт, итог без
+    копеечных) — та же, что на странице честных цифр ботов.
 
 Для 5 финальных ботов и рабочих сигнальных сетапов.
 Результат: webapp/data/analytics_<key>.json (key: bot_<SYM> | sig_<name>),
@@ -28,6 +33,7 @@ import sys
 import time
 from collections import defaultdict
 
+import bots_honest as bh
 import build_pnl_curves as bpc
 import config
 import evolution as ev
@@ -148,7 +154,19 @@ def build_cycles(events, candles, g):
     (LEV и MARGIN — общие множители, сокращаются). Стоп берём тот, что
     движок ставит при входе: за экстремумом окна с запасом sweep. Тейк —
     от средней, как в движке (tp_pre = avg * (1 + sgn * tp)).
+
+    Каждому циклу проставляются два флага (график не должен рисовать
+    «+0.001$» как победу):
+      tiny — цикл закрылся «в ноль», |PnL| < 1% маржи цикла = $0.05
+             (порог и смысл — bots_honest.TINY_USD);
+      be   — цикл закрыт ПЕРЕНЕСЁННЫМ в безубыток стопом. Определяется
+             точно: стоп в движке ставится один раз при входе и двигается
+             только безубытком, значит «вышли по стопу, но не по тому стопу,
+             что стоял при входе» = безубыток (bots_honest.is_be_exit).
+             Если стоп входа восстановить не удалось (нет бара входа),
+             поле не пишется вовсе — врать нечем.
     """
+    be_on = bool(g.get("be_move"))
     rlow, rhigh = ev.rolling_extremes(candles, g["window"])
     idx = {c[0]: i for i, c in enumerate(candles)}
     w = [g["mult"] ** k for k in range(g["levels"])]
@@ -172,6 +190,12 @@ def build_cycles(events, candles, g):
             c["stop"] = rp(rlow[i] * (1 - g["sweep"]) if sgn == 1
                            else rhigh[i] * (1 + g["sweep"]))
         c.pop("_entry_raw")
+        if "pnl" in c:
+            c["tiny"] = bh.is_tiny(c["pnl"])
+            if not be_on:
+                c["be"] = False        # гена нет — двигать стоп движку нечем
+            elif c.get("stop") is not None:
+                c["be"] = bh.is_be_exit(c["reason"], c["exit"], c["stop"])
         return c
 
     out, cur = [], None
@@ -200,7 +224,20 @@ def build_cycles(events, candles, g):
     return out
 
 
-def write_bot_trades(sym, p, g, cycles, candles, hold_ts):
+def tiny_block(cycles, g, hold_ts):
+    """Сводка копеечных выходов для шапки файла сделок (bots_honest.tiny_stats
+    — тот же счёт, что на странице «честные цифры ботов»)."""
+    method = "off" if not g.get("be_move") else "exact"
+    hold = [c for c in cycles if c["entry_ts"] >= hold_ts]
+    mon = lambda rows: (max(1e-9, (rows[-1]["exit_ts"] - rows[0]["entry_ts"])
+                            / MONTH) if rows else None)
+    return dict(thr_usd=round(bh.TINY_USD, 2), frac=bh.TINY_FRAC,
+                margin=e2.MARGIN, be_method=method,
+                full=bh.tiny_stats(cycles, method, mon(cycles)),
+                holdout=bh.tiny_stats(hold, method, mon(hold)))
+
+
+def write_bot_trades(sym, p, g, cycles, candles, hold_ts, tiny):
     """webapp/data/bot_trades_<SYM>.json — источник графика страницы бота."""
     path = os.path.join(OUT_DIR, f"bot_trades_{sym}.json")
     n_hold = sum(1 for c in cycles if c["entry_ts"] >= hold_ts)
@@ -211,13 +248,23 @@ def write_bot_trades(sym, p, g, cycles, candles, hold_ts):
         holdout_from=hold_ts,
         first_ts=candles[0][0] // 1000, last_ts=candles[-1][0] // 1000,
         n=len(cycles), n_holdout=n_hold,
+        n_tiny=tiny["full"]["tiny_n"], n_be=tiny["full"]["be_n"],
+        tiny_thr=tiny["thr_usd"], tiny=tiny,
         generated=time.strftime("%Y-%m-%d %H:%M"),
         trades=cycles)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False)
     kb = os.path.getsize(path) / 1024
+    t = tiny["full"]
     print(f"  циклов {len(cycles)} (на холдоуте {n_hold}), "
           f"{os.path.basename(path)} {kb:.0f} КБ")
+    print(f"  копеечных («в ноль», |PnL| < ${tiny['thr_usd']:.2f}): "
+          f"{t['tiny_n']} = {t['tiny_share']:.1f}% циклов, из них по "
+          f"безубытку {t['be_n']} ({t['be_share']:.1f}%); "
+          f"винрейт {t['wr']:.1f}% -> честный {t['wr_honest']:.1f}%; "
+          f"итог {t['pnl_usd']:+.2f}$ -> без копеечных "
+          f"{t['pnl_without_tiny']:+.2f}$"
+          + ("   <- ДЕРЖИТСЯ НА АРТЕФАКТЕ" if t["holds_on_artifact"] else ""))
 
 
 def main():
@@ -244,11 +291,14 @@ def main():
             if not ok:
                 raise SystemExit(f"{sym}: список сделок разошёлся с /pnl — "
                                  "предпосчёт остановлен")
-        data = analyze(t0, pnls, extra=dict(lev=p.get("lev", 5)))
+        tb = tiny_block(cycles, g, hold_ts)
+        data = analyze(t0, pnls, extra=dict(lev=p.get("lev", 5),
+                                            tiny=tb["full"],
+                                            tiny_thr=tb["thr_usd"]))
         with open(os.path.join(OUT_DIR, f"analytics_bot_{sym}.json"), "w",
                   encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False)
-        write_bot_trades(sym, p, g, cycles, candles, hold_ts)
+        write_bot_trades(sym, p, g, cycles, candles, hold_ts, tb)
 
     if only_bots:
         print("-> webapp/data/analytics_bot_*.json, bot_trades_*.json")
@@ -273,11 +323,16 @@ def main():
         for t in r["trades"]:
             reasons[t["reason"]] += 1
             holds.append(t["hold_h"])
+        # копеечные выходы и у сигналов: движок v1/v2 безубыток не переносит,
+        # но проверять надо фактом, а не декларацией (be_method="off")
+        cyc = [dict(pnl=t["pnl"], tiny=bh.is_tiny(t["pnl"]),
+                    reason=t.get("reason"), be=False) for t in r["trades"]]
         extra = dict(lev=rec.get("rec_lev", 15),
                      n_tp=reasons.get("tp", 0), n_stop=reasons.get("stop", 0),
                      n_timeout=reasons.get("timeout", 0),
                      n_liq=reasons.get("liq", 0),
-                     avg_hold_h=round(sum(holds) / len(holds), 1) if holds else 0)
+                     avg_hold_h=round(sum(holds) / len(holds), 1) if holds else 0,
+                     tiny=bh.tiny_stats(cyc, "off"), tiny_thr=round(bh.TINY_USD, 2))
         data = analyze(t0, pnls, extra=extra)
         with open(os.path.join(OUT_DIR, f"analytics_sig_{name}.json"), "w",
                   encoding="utf-8") as fh:

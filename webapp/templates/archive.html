@@ -97,14 +97,20 @@
     <div><div class="k">архивных конфигов</div><div class="v">{{ bots|length }}</div></div>
     <div><div class="k">отвергнутых гипотез</div><div class="v">{{ REJECTED|length }}</div></div>
     <div><div class="k">из них подтверждено</div><div class="v">0</div></div>
+    <div><div class="k">цифр доходности на странице</div><div class="v">0
+      <small>все были in-sample</small></div></div>
     <div><div class="k">действующих ботов</div><div class="v">5 <small>на главной</small></div></div>
   </div>
 
   <div class="note">
     <span class="ico">ⓘ</span>
-    <div class="nb"><span class="t">Цифры архивных конфигов — обучающий период.</span>
-      Они не проходили честной проверки, и запускать их не следует.
-      Что осталось после честной проверки — <a href="/evolution">в хронике</a>;
+    <div class="nb"><span class="t">Здесь только причины отклонения — цифр
+      доходности нет.</span>
+      Все результаты архивных конфигов были посчитаны на обучающем периоде,
+      честной проверки они не проходили, запускать их не следует — поэтому
+      «достижения» с этой страницы убраны, осталось только то, ради чего она
+      нужна: что проверяли и почему отказались.
+      Что пережило честную проверку — <a href="/evolution">в хронике</a>;
       пять действующих ботов — <a href="/">на главной</a>.</div>
   </div>
 
@@ -161,7 +167,12 @@
             <span class="lr-main">
               <span class="lr-title">{{ b.coin }}/USDT{% if b.title and b.title != b.coin %}
                 <span class="muted" style="font-weight:500">· {{ b.title }}</span>{% endif %}</span>
-              <span class="lr-sub">{{ b.stats }}</span>
+              {# цифры доходности архивных конфигов намеренно не выводятся:
+                 все они посчитаны на обучающем периоде. Причина отклонения —
+                 в плашке над группой (MODE_WHY). #}
+              <span class="why"><b>отклонён:</b> {{ MODE_WHY[b.mode][0]|lower }}.
+                Честной проверки конфиг не проходил, показателей доходности у
+                него нет.</span>
               <span class="badge-row" style="margin-top:7px">
                 <span class="badge badge--info">{{ b.ver or 'архив' }}</span>
                 <span class="badge">{{ b.mode_name }}</span>

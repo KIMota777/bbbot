@@ -364,6 +364,14 @@ var f = function (v, d) { return num(v) === null ? "–" : Number(v).toFixed(d =
 var sg = function (v, d) { return num(v) === null ? "–" : (v >= 0 ? "+" : "") + Number(v).toFixed(d === undefined ? 2 : d); };
 var pc = function (v, d) { return num(v) === null ? "–" : (v >= 0 ? "+" : "") + Number(v).toFixed(d === undefined ? 1 : d) + "%"; };
 var cls = TVK.cls;
+/* Порог «сделки в ноль» — из движка (signal_builder.TINY_USD = 1% маржи
+   цикла = $0.05). Берём из схемы, а не хардкодим: если движок передумает,
+   график и цифры не разойдутся. */
+var TINY_USD = Number((SCHEMA.thresholds || {}).tiny_usd) || TVK.TINY.usd;
+var MAX_TINY_SHARE = Number((SCHEMA.thresholds || {}).max_tiny_share) || 0.40;
+/* сделка «в ноль» — не победа: нейтральный класс и в таблице тоже */
+var tinyT = function (t) { return TVK.isTiny(t, TINY_USD); };
+var clsT = function (t, v) { return tinyT(t) ? "muted" : cls(v); };
 
 var IV_RU = { "15": "15м", "60": "1ч", "240": "4ч", "D": "1д" };
 var WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
@@ -968,7 +976,7 @@ function renderResult() {
     + "</ul>"
     + '<div class="bv-s" style="margin-top:12px">' + esc(
       st === "работает"
-        ? "Все пять критериев пройдены. Это НЕ гарантия будущего — это отсутствие явных признаков подгонки. Прежде чем торговать, проверьте зеркальный сетап и другую монету."
+        ? "Все " + v.checks.length + " критериев пройдены. Это НЕ гарантия будущего — это отсутствие явных признаков подгонки. Прежде чем торговать, проверьте зеркальный сетап и другую монету."
         : st === "наблюдение"
         ? "Часть критериев не пройдена: идея не опровергнута, но и не подтверждена. Нужны новые данные, а не новый перебор параметров."
         : "Идея не подтверждена. Это валидный результат: за 14 волн исследования ни один сигнальный сетап подтверждения не получил. Менять пороги под результат нельзя.")
@@ -988,9 +996,24 @@ function renderResult() {
      риск почти нулевой, и R у такой сделки взлетает до десятков — цифра
      перестаёт что-то значить. Молчать об этом нельзя. */
   var rBlown = Math.abs(h.best_r || 0) > 20 || Math.abs(h.worst_r || 0) > 20;
+  /* Сделки «в ноль»: |итог| < 1% маржи цикла. Их winrate и ожидание меряют
+     не торговлю, а перенос стопа в безубыток. Порог доли — из движка. */
+  var tinySh = (h.tiny_share === undefined ? 0 : h.tiny_share) / 100;
+  var tinyBad = tinySh > MAX_TINY_SHARE;
   out.push('<div class="card"><div class="h-card">Экзамен на невиданных данных'
     + '<span class="badge badge--info">' + f(h.months, 1) + " мес · "
     + esc(TVK.fmtDate(d.holdout_from)) + " – " + esc(TVK.fmtDate(d.holdout_to)) + "</span></div>"
+    + (tinyBad ? '<div class="note danger" style="margin-bottom:14px"><span class="ico">!</span>'
+        + '<div class="nb"><span class="t">Winrate здесь мерит не торговлю</span> '
+        + (h.tiny_n || 0) + " из " + h.n + " сделок (" + f(h.tiny_share, 1)
+        + "%) закрылись «в ноль»: |итог| меньше " + TVK.fmtUsd(TINY_USD, 2)
+        + " — это 1% маржи цикла и примерно половина издержек одной сделки. "
+        + "Почти всегда это перенос стопа в безубыток"
+        + (h.be_n ? " (безубыток отработал в " + h.be_n + " сделках)" : "")
+        + ". Winrate " + f(h.wr, 1) + "% из-за них раздут: честный, где «в ноль» "
+        + "не считается победой, — <b>" + f(h.wr_honest, 1) + "%</b>. Без этих "
+        + "сделок итог счёта был бы " + pc(h.ret_pct_ex_tiny, 1) + " вместо "
+        + pc(h.ret_pct, 1) + ".</div></div>" : "")
     + (rBlown ? '<div class="note danger" style="margin-bottom:14px"><span class="ico">!</span>'
         + '<div class="nb"><span class="t">Цифре в R здесь верить нельзя</span> '
         + 'Лучшая сделка дала ' + sg(h.best_r, 1) + 'R. R считается от фактического '
@@ -1002,8 +1025,17 @@ function renderResult() {
     + '<div class="exam"><div><div class="exam-big ' + (rBlown ? "" : cls(h.exp_r)) + '">' + sg(h.exp_r, 3)
     + 'R</div><div class="exam-cap"><b>ожидание на сделку</b>'
     + "это главная цифра: сколько рисков приносит одна сделка в среднем</div></div>"
+    /* «Сделок в ноль» стоит РЯДОМ с winrate намеренно: winrate без этой
+       цифры не читается. У ботов проекта до 89% циклов закрывались
+       переносом стопа на +0.001$, и «винрейт 98%» означал ровно это. */
     + '<div class="metrics"><div class="metric"><b>' + h.n + "</b><span>сделок</span></div>"
-    + '<div class="metric"><b>' + f(h.wr, 1) + "%</b><span>winrate</span></div>"
+    + '<div class="metric"><b' + (tinyBad ? ' class="neg"' : "") + ">" + f(h.wr, 1)
+    + "%</b><span>winrate" + (h.tiny_n ? " (с пустыми)" : "") + "</span></div>"
+    + '<div class="metric"><b' + (tinyBad ? ' class="neg"' : "") + ">" + (h.tiny_n || 0)
+    + " (" + f(h.tiny_share === undefined ? 0 : h.tiny_share, 1)
+    + "%)</b><span>закрыто в ноль</span></div>"
+    + '<div class="metric"><b>' + f(h.wr_honest, 1)
+    + "%</b><span>честный winrate</span></div>"
     + '<div class="metric"><b>' + (h.pf === null ? "–" : f(h.pf, 2)) + "</b><span>профит-фактор</span></div>"
     + '<div class="metric"><b class="' + cls(h.ret_pct) + '">' + pc(h.ret_pct, 1) + "</b><span>итог счёта</span></div>"
     + '<div class="metric"><b class="neg">' + f(h.dd_pct, 1) + "%</b><span>просадка</span></div>"
@@ -1012,7 +1044,8 @@ function renderResult() {
     + "</div></div>"
     + '<div class="train-line"><b>Обучающий период</b> (' + esc(TVK.fmtDate(d.train_from))
     + " – " + esc(TVK.fmtDate(d.train_to)) + ", " + f(tr.months, 1) + " мес): сделок " + tr.n
-    + " · WR " + f(tr.wr, 1) + "% · " + sg(tr.exp_r, 3) + "R · PF "
+    + " · WR " + f(tr.wr, 1) + "% (честный " + f(tr.wr_honest, 1) + "%, в ноль "
+    + (tr.tiny_n || 0) + " = " + f(tr.tiny_share, 1) + "%) · " + sg(tr.exp_r, 3) + "R · PF "
     + (tr.pf === null ? "–" : f(tr.pf, 2)) + " · итог " + pc(tr.ret_pct, 1)
     + " · просадка " + f(tr.dd_pct, 1) + "%. Эти цифры <b>не доказательство</b>: "
     + "на этой части истории идея и настраивалась.</div>"
@@ -1148,12 +1181,14 @@ function renderResult() {
     + '<label class="chip on"><input type="checkbox" id="tgTrain" checked> обучающие сделки</label>'
     + '<span class="sep"></span><span class="muted small" id="chartCnt"></span></div>'
     + '<div class="tv-chart" id="bChart"><div class="tv-legend"><div class="sym" id="legSym"></div>'
-    + '<div class="ohlc" id="legOhlc"></div></div></div></div>'
+    + '<div class="ohlc" id="legOhlc"></div><div class="ohlc" id="legTrade"></div>'
+    + '</div></div></div>'
     + '<div style="padding:12px 20px"><div class="legend-row">'
-    + '<span><i style="background:' + C.up + '"></i>прибыльная сделка</span>'
-    + '<span><i style="background:' + C.down + '"></i>убыточная</span>'
-    + '<span><i style="background:#5d6068"></i>обучающий период (не доказательство)</span>'
-    + '<span class="muted-2">пунктир — путь от входа к выходу</span></div></div></div>');
+    + TVK.tradeLegend({ tinyUsd: TINY_USD,
+        extra: '<span><i style="background:#5d6068"></i>обучающий период '
+          + '(не доказательство)</span>'
+          + '<span class="muted-2">пунктир — путь от входа к выходу</span>' })
+    + "</div></div></div>");
 
   /* --- таблица сделок --- */
   out.push('<div class="card card--pad0"><div style="padding:16px 20px 0">'
@@ -1232,8 +1267,13 @@ function renderTrades(fl) {
     return "<tr><td>" + esc(TVK.fmtDT(t.entry_ts)) + "</td><td>" + esc(TVK.fmtDT(t.exit_ts))
       + "</td><td>" + f(t.hold_h, 1) + "</td><td>" + TVK.fmtN(t.avg_entry || t.entry, dg)
       + "</td><td>" + TVK.fmtN(t.stop, dg) + "</td><td>" + f(t.stop_pct, 2) + "%</td><td class=\""
-      + (t.exit_kind === "liq" ? "liq" : cls(t.r)) + "\">" + esc(KIND_RU[t.exit_kind] || t.exit_kind)
-      + "</td><td class=\"" + cls(t.r) + "\">" + sg(t.r, 2) + "</td><td class=\"" + cls(t.pnl)
+      + (t.exit_kind === "liq" ? "liq" : clsT(t, t.r)) + "\">"
+      + esc(KIND_RU[t.exit_kind] || t.exit_kind)
+      + (tinyT(t) ? ' <span class="muted-2">≈0</span>' : "")
+      /* сделка «в ноль» не красится зелёным ни в графике, ни здесь:
+         «+0.001$» зелёным — ровно та подпись, из-за которой винрейт
+         ботов выглядел 98% */
+      + "</td><td class=\"" + clsT(t, t.r) + "\">" + sg(t.r, 2) + "</td><td class=\"" + clsT(t, t.pnl)
       + "\">" + sg(t.pnl, 2) + "</td><td>" + t.grid_fills + "</td><td>" + f(t.mae_r, 2)
       + "</td><td>" + f(t.mfe_r, 2) + "</td><td>" + esc(REGIME_N[t.regime] || "–")
       + "</td><td class=\"muted\">" + (t.part === "holdout" ? "экзамен" : "обучение")
@@ -1285,16 +1325,31 @@ function drawChart() {
 
   var bar = (DISP_IV === "D" ? 1440 : Number(DISP_IV)) * 60;
   var tt = (RESULT.trades || []);
+  /* pnl передаётся ОБЯЗАТЕЛЬНО: по нему TVK отличает сделку «в ноль»
+     (|pnl| < 1% маржи) от настоящей прибыли и красит её серым, а не
+     зелёным. Без pnl график снова стал бы рисовать безубыток победой. */
   var mk = function (arr, o) {
     return TVK.tradeLines(CHART, arr.map(function (t) {
       return { entry_ts: t.entry_ts, exit_ts: t.exit_ts,
-               entry_px: t.avg_entry || t.entry, exit_px: t.exit_px, r: t.r }; }),
-      { bar: bar, winColor: o.w, lossColor: o.l, width: o.width || 1 });
+               entry_px: t.avg_entry || t.entry, exit_px: t.exit_px,
+               r: t.r, pnl: t.pnl }; }),
+      { bar: bar, winColor: o.w, lossColor: o.l, flatColor: o.f,
+        tinyUsd: TINY_USD, width: o.width || 1 });
   };
   LINKS_T = mk(tt.filter(function (t) { return t.part === "train"; }),
-    { w: "#5d6068", l: "#5d6068" });
+    { w: "#5d6068", l: "#5d6068", f: "#5d6068" });
   LINKS_H = mk(tt.filter(function (t) { return t.part === "holdout"; }),
-    { w: C.up, l: C.down, width: 2 });
+    { w: C.up, l: C.down, f: C.flat, width: 2 });
+
+  /* ридаут: при наведении говорим, ЧТО за сделка под курсором, и для
+     закрытых в безубыток пишем это прямым текстом */
+  TVK.tradeReadout(CHART, tt, "legTrade", {
+    bar: bar, tinyUsd: TINY_USD, unit: "R", digits: 2,
+    label: function (t) { return sg(t.r, 2) + "R (" + sg(t.pnl, 2) + "$)"; },
+    note: function (t) {
+      return (KIND_RU[t.exit_kind] || t.exit_kind || "") + " · "
+        + (t.part === "holdout" ? "экзамен" : "обучение"); },
+    idle: "наведи курсор на участок сделки" });
 
   applyChartToggles();
   var bounds = function () {
@@ -1314,21 +1369,15 @@ function applyChartToggles() {
   if (hs !== null) mks.push({ time: hs, position: "aboveBar", color: "#7aa2f7",
     shape: "arrowDown", text: "начало экзамена" });
   if (showMk) {
-    (RESULT.trades || []).forEach(function (t) {
-      if (t.part === "train" && !showTr) return;
-      var grey = t.part === "train";
-      var te = snap(t.entry_ts);
-      if (te !== null) mks.push({ time: te,
-        position: t.side === "L" ? "belowBar" : "aboveBar",
-        color: grey ? "#5d6068" : (t.side === "L" ? C.up : C.down),
-        shape: t.side === "L" ? "arrowUp" : "arrowDown", text: "" });
-      var tx = snap(t.exit_ts);
-      if (tx !== null) mks.push({ time: tx,
-        position: t.side === "L" ? "aboveBar" : "belowBar",
-        color: grey ? "#5d6068" : (t.r > 0 ? C.up : C.down),
-        shape: t.exit_kind === "liq" ? "square" : "circle", size: 0.8,
-        text: grey ? "" : sg(t.r, 1) + "R" });
-    });
+    /* разметка — общая (TVK.tradeMarkers): цвет и подпись выхода берутся из
+       TVK.outcome, поэтому сделка «в ноль» серая и подписана «≈0», а не
+       «+0.03R» зелёным */
+    mks = mks.concat(TVK.tradeMarkers(RESULT.trades || [], {
+      snap: function (v) { return snap(v); },
+      skip: function (t) { return t.part === "train" && !showTr; },
+      dim: function (t) { return t.part === "train"; },
+      liq: function (t) { return t.exit_kind === "liq"; },
+      tinyUsd: TINY_USD, unit: "R", digits: 1 }));
   }
   mks.sort(function (a, b) { return a.time - b.time; });
   CANDLE_S.setMarkers(mks);

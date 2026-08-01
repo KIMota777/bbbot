@@ -167,81 +167,81 @@ META = {
         usage="Для медвежьего рынка. Запуск: python bot_rsi.py SOL bear"),
 
     # --- v7: финальные боты (главная страница) ---
-    # ВАЖНО: строка stats у финальных ботов — ИСТОРИЧЕСКАЯ, обучающий период
-    # целиком (in-sample). На страницу и карточку она крупно не выводится:
-    # подзаголовок собирается из webapp/data/bots_honest.json (honest_stats_line),
-    # чтобы цифры META, карточек, страниц и JSON не могли разойтись.
+    # ВАЖНО: цифр доходности в этих строках БОЛЬШЕ НЕТ. Любое число про
+    # результат берётся только из webapp/data/bots_honest.json (блок
+    # «Честная проверка» на странице бота) — иначе META, карточки и JSON
+    # неизбежно разъезжаются, и на сайте живут вердикты позапрошлой недели.
+    # Здесь остаётся ровно то, что цифрой не является: механика и запуск.
     ("DOGEUSDT", "final"): dict(
         title="DOGE",
-        stats="история 3.2г (2023-05-30..2026-07-23, in-sample) x10: +145.0% | "
-              "DD 18.5% | 1276 сделок — обучающий период, не доказательство",
+        stats="конфиг волны v7, x10 — цифры результата см. в блоке "
+              "«Честная проверка»",
         about="Итог v7 — единого отбора, где направление, режимный гейт и "
               "фильтр классических паттернов были ГЕНАМИ одного генома. "
               "Победил тот же конфиг, что и медвежий специалист v6: обе "
               "стороны сделки (direction=0), но торгует ТОЛЬКО в bear/боковике "
               "— в подтверждённом bull стоит в стороне. Паттерны (двойные "
-              "вершины, голова-плечи, треугольники…) экзамен не прошли.",
+              "вершины, голова-плечи, треугольники…) экзамен не прошли. "
+              "Перенос стопа в безубыток включён (be_move=1): часть циклов "
+              "закрывается «в ноль», и в винрейте они не считаются победами.",
         usage="Плечо x10 выбрано правилом «макс. плечо с просадкой ≤20%» на "
-              "полной истории 3.2г. Честная проверка: вердикт ЧАСТИЧНО (3/4) — "
-              "на холдоуте (10.7 мес) бот дал +38.3%, но НЕОБУЧЕННАЯ сетка из "
-              "шапки config.py на том же куске дала +50.3%, то есть тонкая "
-              "настройка денег не добавила. Запуск: python bot_rsi.py DOGE"),
+              "полной истории — то есть с оглядкой на обучающий период. "
+              "Вердикт, доход на холдоуте и доля копеечных выходов — в блоке "
+              "«Честная проверка» выше, он собирается из bots_honest.json и "
+              "обновляется вместе с пересчётом. "
+              "Запуск: python bot_rsi.py DOGE"),
     ("LTCUSDT", "final"): dict(
         title="LTC",
-        stats="история 3.2г (in-sample) x5: +115.9% | DD 17.0% | 1307 сделок | "
-              "v8 — обучающий период, не доказательство",
+        stats="конфиг волны v8, x5 — цифры результата см. в блоке "
+              "«Честная проверка»",
         about="Единственный бот, улучшенный волной v8 (геном + Smart Money "
               "Concepts как гены). SMC не прошли экзамен и здесь, но сам "
-              "поиск нашёл более сильный базовый конфиг: торгует во ВСЕХ "
-              "режимах рынка (regime_gate=0, был 1) — почти удвоил доход "
-              "при том же риске НА ОБУЧАЮЩЕМ ПЕРИОДЕ. Доля настоящих "
-              "убыточных сделок 3.9% — там же.",
-        usage="Плечо x5. Честная проверка НЕ ПРОЙДЕНА (2/4): на холдоуте "
-              "(10.7 мес) +6.5% против +24.6% у необученной сетки, медиана "
-              "90 соседних конфигов всего +2.4% при 56% прибыльных соседей — "
-              "это шпиль, а не плато. Издержки съедают 65% валовой прибыли. "
-              "Запуск: python bot_rsi.py LTC"),
+              "поиск нашёл другой базовый конфиг: торгует во ВСЕХ режимах "
+              "рынка (regime_gate=0, был 1). Прирост, ради которого его "
+              "приняли, измерен на обучающем периоде и доказательством не "
+              "является. Перенос стопа в безубыток включён (be_move=1).",
+        usage="Плечо x5. Вердикт и честные цифры — в блоке «Честная проверка» "
+              "выше. Запуск: python bot_rsi.py LTC"),
     ("BTCUSDT", "final"): dict(
         title="BTC",
-        stats="история 3.2г (in-sample) x15: +140.2% | DD 12.6% | 60 сделок — "
-              "обучающий период, не доказательство",
-        about="На обучающем периоде — самый низкорисковый бот портфеля: "
-              "просадка растёт с 5.4% (x5) до 12.6% (x15), редкость точных "
-              "входов (~19/год) почти не усиливается плечом. Обе стороны, "
-              "гейт в bull, фильтр тренда SMA20/400 + Aroon. Обратная сторона "
-              "этой редкости — проверить бота нечем.",
-        usage="НЕ ЗАПУСКАТЬ. Честная проверка провалена (1/4): на холдоуте "
-              "−1.7% и всего 14 сделок за 10.7 мес (статистически пустая "
-              "выборка — тут не доказать ни плюс, ни минус), издержки съели "
-              "148% валовой прибыли, медиана соседних конфигов −11.0%. "
-              "Правило выбора плеча по холдоуту даёт «не запускать» на всех "
-              "плечах x5..x15."),
+        stats="конфиг волны v7, x15 — цифры результата см. в блоке "
+              "«Честная проверка»",
+        about="Самый редкий бот портфеля: точных входов ~19 в год, поэтому "
+              "плечо почти не увеличивает просадку. Обе стороны, гейт в bull, "
+              "фильтр тренда SMA20/400 + Aroon. Обратная сторона редкости — "
+              "проверять его почти не на чем: на холдоуте выборка "
+              "статистически пуста, там не доказать ни плюс, ни минус.",
+        usage="НЕ ЗАПУСКАТЬ: честную проверку конфиг не прошёл, и правило "
+              "выбора плеча по холдоуту даёт «не запускать» на всех плечах "
+              "x5..x15. Подробности и все цифры — в блоке «Честная проверка» "
+              "выше."),
     ("ETHUSDT", "final"): dict(
         title="ETH",
-        stats="история 3.2г (in-sample) x5: +22.7% | DD 21.8% | 237 сделок — "
-              "обучающий период, не доказательство",
-        about="Единственный финал БЕЗ регионного гейта — торгует всегда, во "
+        stats="конфиг волны v7, x5 — цифры результата см. в блоке "
+              "«Честная проверка»",
+        about="Единственный финал БЕЗ режимного гейта — торгует всегда, во "
               "всех режимах рынка. Не изменился с самой первой честной "
               "эволюции (v2): четыре последующие волны отбора не нашли, чем "
-              "его улучшить — хороший знак устойчивости, а не застоя.",
-        usage="Главный бот ETH. Плечо x5. Единственный бот, ПОДТВЕРЖДЁННЫЙ по "
-              "всем 4 пунктам: обучение (−2.2%) хуже холдоута (+23.5%) — "
-              "признак того, что подгонки под обучающий период не было. "
-              "Честная оценка скромная: +7.9% за 10.7 мес (+0.74%/мес). "
-              "Запуск: python bot_rsi.py ETH"),
+              "его улучшить. Единственный из пяти, у кого перенос стопа в "
+              "безубыток ВЫКЛЮЧЕН (be_move=0), поэтому прямого артефакта "
+              "безубытка у него нет — но копеечные выходы всё равно есть, "
+              "их дают мелкие тейки.",
+        usage="Главный бот ETH. Плечо x5. Вердикт и честные цифры — в блоке "
+              "«Честная проверка» выше. Запуск: python bot_rsi.py ETH"),
     ("SOLUSDT", "final"): dict(
         title="SOL",
-        stats="история 3.2г (in-sample) x5: +45.8% | DD 18.4% | 1245 сделок — "
-              "обучающий период, не доказательство",
-        about="Единственный НОВЫЙ конфиг, который v7 честно нашла впервые "
-              "(обошла прежний лучший результат на всех 3 экзаменах). Торгует "
+        stats="конфиг волны v7, x5 — цифры результата см. в блоке "
+              "«Честная проверка»",
+        about="Единственный НОВЫЙ конфиг, который v7 нашла впервые. Торгует "
               "всегда (без гейта). Aroon перекошен (aroon_short_min=99) — "
               "формально обе стороны разрешены, но шорты на практике почти "
-              "не проходят фильтр.",
-        usage="Главный бот SOL. Плечо x5. ПОДТВЕРЖДЁН (4/4), но честная оценка "
-              "мала: медиана соседних конфигов +2.7% за 10.7 мес "
-              "(+0.26%/мес) при 61% прибыльных соседей, издержки съедают "
-              "71.5% валовой прибыли. Запуск: python bot_rsi.py SOL"),
+              "не проходят фильтр. Перенос стопа в безубыток включён "
+              "(be_move=1) и определяет почти всю статистику бота: "
+              "подавляющее большинство циклов закрывается «в ноль».",
+        usage="Плечо x5. ВНИМАНИЕ: результат этого бота держится на "
+              "копеечных выходах — если считать их нулём, холдоут уходит в "
+              "минус. Цифры и вердикт — в блоке «Честная проверка» выше. "
+              "Запуск: python bot_rsi.py SOL"),
 }
 
 
@@ -284,19 +284,33 @@ def trades_n(n):
     return f"{n} {word}"
 
 
+def honest_tiny(h, period="holdout"):
+    """Блок «копеечных» выходов бота за период (build_bot_honest_data.py).
+    Копеечный цикл = |PnL| < 1% маржи, то есть перенос стопа в безубыток:
+    формально «победа», фактически ноль."""
+    return ((h or {}).get("tiny") or {}).get(period) or {}
+
+
 def honest_stats_line(h, hd):
-    """Подзаголовок бота: сперва честная оценка, обучение — мелким шрифтом
-    и с оговоркой. Собирается из JSON, вручную нигде не дублируется."""
+    """Подзаголовок бота: ТОЛЬКО честные цифры холдоута и притом очищенные
+    от копеечных выходов. Обучающего периода здесь нет вовсе — он больше
+    нигде не подаётся как показатель доходности."""
     if not h:
         return None
     p = (hd.get("periods") or {})
     hm = (p.get("holdout") or {}).get("months", "?")
-    tm = (p.get("train") or {}).get("months", "?")
-    return (f"холдоут {hm} мес: {h['holdout']['ret']:+.1f}% на x{h['lev']} "
-            f"({trades_n(h['n_trades']['holdout'])}) · честная оценка "
-            f"{h['robust']['median']:+.1f}% = {h['robust']['per_month']:+.2f}%/мес · "
-            f"вердикт: {h['verdict']['status'].lower()} {h['verdict']['score']} · "
-            f"обучение {tm} мес: {h['train']['ret']:+.1f}% — не доказательство")
+    t = honest_tiny(h)
+    rn = h.get("robust_no_tiny") or h.get("robust") or {}
+    parts = [f"холдоут {hm} мес на x{h['lev']} ({trades_n(h['n_trades']['holdout'])})"]
+    if t:
+        parts.append(f"итог без копеечных выходов {t['ret_without_tiny']:+.1f}%")
+        parts.append(f"честный винрейт {t['wr_honest']}% "
+                     f"(в ноль закрылось {t['tiny_share']}% циклов)")
+    else:
+        parts.append(f"итог {h['holdout']['ret']:+.1f}%")
+    parts.append(f"консервативная честная оценка {rn.get('per_month', 0):+.2f}%/мес")
+    parts.append(f"вердикт: {h['verdict']['status'].lower()} {h['verdict']['score']}")
+    return " · ".join(parts)
 
 
 def list_bots(modes):
@@ -311,52 +325,19 @@ def list_bots(modes):
             active = (os.path.exists(log_file) and
                       time.time() - os.path.getmtime(log_file) < 180)
             iv = p.get("interval", "15")
-            reinvest, an, honest = "", None, None
-            if mode == "final":
-                a = _read_json(os.path.join(BOT_DIR, "webapp", "data",
-                                            f"analytics_bot_{sym}.json")) or {}
-                st = a.get("stats") or {}
-                honest = honest_bot(sym)
-                if st.get("final_usd") is not None:
-                    sign = "+" if st.get("final_pct", 0) >= 0 else ""
-                    reinvest = (f"💰 полная история с реинвестом (in-sample): "
-                                f"$50 → ${st['final_usd']} "
-                                f"({sign}{st['final_pct']}%)")
-                    an = dict(final_usd=st.get("final_usd"),
-                              final_pct=st.get("final_pct"),
-                              dd=st.get("max_dd"), wr=st.get("wr"),
-                              trades=st.get("trades"),
-                              pf=st.get("profit_factor"),
-                              months_pos=st.get("months_pos"),
-                              months_total=st.get("months_total"),
-                              spark=_spark(_dedupe_pairs(a.get("equity"))))
+            honest = honest_bot(sym) if mode == "final" else None
+            # Спарклайн кривой капитала и итог «$50 → $X» с карточек убраны:
+            # 72% этой кривой — обучающий период, на котором бот и подбирался.
             bots.append(dict(
                 symbol=sym, coin=sym.replace("USDT", ""), mode=mode,
                 mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
                 interval=iv, tf_label=("4ч" if iv == "240" else f"{iv}m"),
                 ver=VER.get((sym, mode), ""),
                 title=meta.get("title", f"{sym.replace('USDT','')} — {mode}"),
-                stats=meta.get("stats", ""), reinvest=reinvest, an=an,
-                honest=honest,
+                stats=meta.get("stats", ""),
+                honest=honest, tiny=honest_tiny(honest) if honest else None,
                 active=active, has_log=os.path.exists(log_file)))
     return bots
-
-
-def _spark(pairs, n=56):
-    """Спарклайн кривой капитала: (ts, value) -> точки polyline в поле 100x26."""
-    vals = [v for _, v in (pairs or [])]
-    if len(vals) < 2:
-        return None
-    step = max(1, len(vals) // n)
-    sample = vals[::step]
-    if sample[-1] != vals[-1]:
-        sample.append(vals[-1])
-    lo, hi = min(sample), max(sample)
-    rng = (hi - lo) or 1.0
-    m = len(sample) - 1
-    pts = " ".join("%.1f,%.1f" % (i / m * 100.0, 25.0 - (v - lo) / rng * 24.0)
-                   for i, v in enumerate(sample))
-    return dict(pts=pts, up=sample[-1] >= sample[0])
 
 
 def final_bot_list():
@@ -369,31 +350,32 @@ def archive_bot_list():
 
 @app.route("/")
 def index():
-    """Главная. Крупно — честная проверка (холдоут + медиана соседей),
-    обучающий период уходит в мелкий серый текст."""
+    """Главная. Крупно — только честная проверка, и притом очищенная от
+    копеечных выходов (перенос стопа в безубыток). Цифр обучающего периода
+    на карточках нет вообще."""
     finals = final_bot_list()
     hd = load_honest()
-    ans = [b["an"] for b in finals if b.get("an")]
     summary = None
     if hd.get("bots"):
         s, pf = hd["summary"], hd["portfolio"]
+        nt_h = pf.get("holdout_no_tiny") or pf["holdout"]
         summary = dict(
             n=s["n"], active=sum(1 for b in finals if b["active"]),
             confirmed=s["confirmed"], partial=s["partial"], failed=s["failed"],
+            confirmed_old=s.get("confirmed_old"),
+            on_artifact=s.get("on_artifact", 0),
             hold_ret=pf["holdout"]["ret"], hold_dd=pf["holdout"]["dd"],
-            train_ret=pf["train"]["ret"], train_dd=pf["train"]["dd"],
+            # ГЛАВНЫЕ цифры страницы: те же метрики без копеечных выходов
+            hold_ret_nt=nt_h.get("ret"), hold_dd_nt=nt_h.get("dd"),
             avg_robust=s["avg_robust"], per_month=s["avg_per_month"],
+            avg_robust_nt=s.get("avg_robust_no_tiny"),
+            per_month_nt=s.get("avg_per_month_no_tiny"),
             hold_months=hd["periods"]["holdout"]["months"],
             hold_start=hd["periods"]["holdout"]["start"],
             hold_end=hd["periods"]["holdout"]["end"],
             train_months=hd["periods"]["train"]["months"],
             train_start=hd["periods"]["train"]["start"],
-            train_end=hd["periods"]["train"]["end"],
-            # in-sample для мелкой строки: те самые $50 -> $X за всю историю
-            insample_start=round(50.0 * len(ans), 2) if ans else None,
-            insample_end=round(sum(x["final_usd"] or 0.0 for x in ans), 2)
-            if ans else None,
-            trades=sum(x["trades"] or 0 for x in ans) if ans else None)
+            train_end=hd["periods"]["train"]["end"])
     return render_template("index.html", bots=finals, dry_run=config.DRY_RUN,
                            has_final=bool(finals), summary=summary, honest=hd)
 
@@ -1437,6 +1419,9 @@ def v3_card(key, rec):
         repro=rec.get("repro") or {},
         stats=rec.get("stats") or {},
         grid=rec.get("grid") or {},
+        # ген переноса стопа в безубыток: включённый, он даёт у сетапа тот же
+        # артефакт, что у ботов (циклы «в ноль» считаются победами)
+        be_after_r=(rec.get("exitcfg") or {}).get("be_after_r") or 0,
         has_page=os.path.exists(os.path.join(FINAL_DATA_DIR, f"v3_{key}.json")))
 
 
@@ -1721,9 +1706,10 @@ def bot_page(symbol, mode):
         tf_label=("4ч" if interval == "240" else f"{interval}m"),
         ver=VER.get((symbol, mode), ""),
         title=meta.get("title", f"{symbol} {mode}"),
-        # подзаголовок: честные цифры, если они посчитаны; иначе — исторические
+        # подзаголовок: честные цифры, если они посчитаны. У архивных конфигов
+        # их нет — там уходит историческая строка, и шаблон рисует её классом
+        # .insample (мелко, серо, с пометкой «обучающий период»)
         stats=(honest_stats_line(h, hd) or meta.get("stats", "")),
-        stats_hist=meta.get("stats", ""),
         honest=h, hmeta=hd, about=meta.get("about", ""),
         usage=meta.get("usage", ""), core=STRATEGY_CORE,
         params=p, dry_run=config.DRY_RUN)

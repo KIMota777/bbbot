@@ -95,18 +95,25 @@
     {% endif %}
 
     <div class="train-line">
-      <b>Обучающий период — не доказательство.</b>
+      <span class="insample"><b>Обучающий период — не доказательство, показан
+        только для разбора механики.</b>
       {% if st %}
       Полная история: {{ st.get('n', '?') }} сделок · WR {{ st.get('wr', '?') }}% ·
       PF {{ st.get('pf', '?') }} · expectancy {{ '%+.3f'|format(st.get('exp_r', 0)) }}R ·
-      итог {{ st.get('ret', '?') }}% · DD {{ st.get('dd', '?') }}%.
-      {% endif %}
+      DD {{ st.get('dd', '?') }}%.
+      {% endif %}</span>
       <details style="margin-top:6px">
         <summary>почему на эти цифры нельзя опираться</summary>
-        <p style="margin:0">Они включают данные, на которых сетап и подбирался.
-          Всё, что ниже на странице (графики, сделки, near-miss, разбор ворот),
-          посчитано по ПОЛНОЙ истории — это инструмент разбора механики, а не
-          доказательство доходности.</p>
+        <p style="margin:0 0 7px">Они включают данные, на которых сетап и
+          подбирался. Всё, что ниже на странице (графики, сделки, near-miss,
+          разбор ворот), посчитано по ПОЛНОЙ истории — это инструмент разбора
+          механики, а не доказательство доходности. Процент итоговой доходности
+          обучающего периода со страницы убран: подбор его и максимизировал.</p>
+        <p style="margin:0">Артефакта безубытка у сетапов v2 нет: движок
+          <code>signal_engine2</code> переноса стопа в безубыток не имеет, выход
+          — стоп либо тейк 1:3. Доля сделок, закрытых «в ноль», измерена по всем
+          8 вариантам и не превышает 2.9%, поэтому winrate здесь честный (в
+          отличие от ботов, где он раздут до 95–98%).</p>
       </details>
     </div>
 
@@ -253,9 +260,13 @@
   </div>
 
   <div class="card" id="kpiCard">
-    <div class="h-card">Метрики полной истории
-      <span class="muted small" style="font-weight:400" id="kpiNote"></span></div>
-    <div class="tiles" id="kpiTiles"></div>
+    <div class="h-card">Метрики полной истории — разбор механики
+      <span class="insample" id="kpiNote"></span></div>
+    <p class="insample">Обучающий период внутри, поэтому процентов итоговой
+      доходности здесь нет: остались метрики, которые описывают КАК сетап
+      торгует (expectancy, PF, winrate, просадка, серии). Результат — только
+      в блоке «Честный экзамен» выше.</p>
+    <div class="tiles" id="kpiTiles" style="margin-top:12px"></div>
     <div class="h-sec">Чем закончились сделки</div>
     <div class="tbl-wrap"><table class="tbl" id="outTbl"></table></div>
   </div>
@@ -307,13 +318,14 @@
 
   <div class="card" id="moCard">
     <div class="h-card">Прибыль по месяцам
-      <span class="muted small" style="font-weight:400">полная история, реинвест от $50</span></div>
+      <span class="insample">полная история, обучающий период внутри — форма, а
+        не обещание</span></div>
     <div class="mchart" id="moBox"></div>
   </div>
 
   <div class="card" id="eqCard" style="display:none">
-    <div class="h-card">Капитал и просадка
-      <span class="muted small" style="font-weight:400" id="eqNote"></span></div>
+    <div class="h-card">Капитал и просадка — форма кривой
+      <span class="insample" id="eqNote"></span></div>
     <div class="tv"><div class="tv-chart small" id="eqChart">
       <div class="tv-legend"><div class="ohlc" id="eqLeg"></div></div></div></div>
     <div class="h-sec">Просадка от пика, %</div>
@@ -1002,15 +1014,10 @@ function renderKpi() {
   const ret = sv("ret_pct", "ret"), dd = sv("dd_pct", "dd");
   const wr = sv("wr"), be = sv("wr_breakeven"), beRR = sv("wr_breakeven_rr");
   const t = [];
-  if (fu !== null)
-    t.push(tile("$" + f(fu, 1), "итог из $" + f(base, 0) + " с реинвестом ("
-      + sg(fp, 1) + "%)", cls(fp),
-      "как на страницах ботов: маржа — доля капитала"
-      + (ov(ri, "max_dd_pct") !== null ? ", просадка " + f(ov(ri, "max_dd_pct"), 1) + "%" : "")));
-  if (ret !== null)
-    t.push(tile(sg(ret, 1) + "%", "итог бэктеста (фикс. маржа $"
-      + f(sv("margin_usd") === null ? 5 : sv("margin_usd"), 0) + " от $"
-      + f(sv("start_usd") === null ? 20 : sv("start_usd"), 0) + ")", cls(ret)));
+  // Плитки «итог из $50 с реинвестом» и «итог бэктеста» убраны: это проценты
+  // доходности обучающего периода, поданные как KPI. Остальные плитки —
+  // механика (expectancy, PF, winrate, просадка, серии), они нужны для разбора.
+  void fu; void fp; void ret; void base;
   t.push(tile(sgr(sv("exp_r"), 3), "expectancy — средний R на сделку",
     cls(sv("exp_r")), "главная метрика: сколько R приносит сделка в среднем"
     + (sv("exp_usd") !== null ? " (" + sg(sv("exp_usd"), 2) + "$)" : "")));
@@ -1079,7 +1086,8 @@ function renderKpi() {
     bits.push("риск на сделку ≈ " + f(sv("avg_risk_usd"), 2) + "$");
   if (DATA.built_at) bits.push("посчитано " + DT(DATA.built_at));
   $("kpiNote").textContent = bits.length
-    ? "обучающий период · " + bits.join(", ") : "обучающий период";
+    ? "обучающий период, не доказательство · " + bits.join(", ")
+    : "обучающий период, не доказательство";
 }
 
 /* ---------- гистограммы-полоски ---------- */
@@ -1704,9 +1712,10 @@ function buildMini() {
     TVK.fit(c);
     TVK.lineLegend(c, "eqLeg", [{ series: s, label: "капитал", color: C.accent,
       fmt: v => TVK.fmtUsd(v, 2) }], { idle: "наведи курсор" });
-    const last = data[data.length - 1];
-    if (last) $("eqNote").textContent = "итог $" + f(last.value, 1)
-      + " — обучающий период, не доказательство";
+    // итог кривой («$X на конце») намеренно не пишем: это результат
+    // обучающего периода, читается как достижение
+    $("eqNote").textContent = "обучающий период внутри — смотри форму "
+      + "(глубину и длину просадок), а не конец линии";
   }
   if (dd.length) {
     const c = miniChart("ddChart");

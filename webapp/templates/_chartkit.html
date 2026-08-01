@@ -9,7 +9,10 @@ window.TVK = (function () {
   var P = { bg:"#131722", grid:"#1e222d", line:"#2a2e39", ink:"#d1d4dc",
     muted:"#787b86", muted2:"#5d6068", up:"#26a69a", down:"#ef5350",
     accent:"#2962ff", warn:"#ff9f0a", liq:"#ff5370", info:"#7aa2f7",
-    violet:"#bb9af7", cross:"#4c525e", crossBg:"#363a45" };
+    violet:"#bb9af7", cross:"#4c525e", crossBg:"#363a45",
+    /* нейтральный серый для сделок «в ноль» — заметно светлее muted2,
+       которым страницы гасят обучающий период, чтобы два серых не слились */
+    flat:"#8f939e" };
 
   var byId = function (x) {
     return (typeof x === "string") ? document.getElementById(x) : x;
@@ -427,19 +430,170 @@ window.TVK = (function () {
       });
   }
 
+  /* ================= ИСХОД СДЕЛКИ: прибыль / убыток / «В НОЛЬ» =========
+     Перенос стопа в безубыток закрывает цикл на +0.001$. Формально это
+     «победа», фактически — ноль. Пока классов исхода два, график ВРЁТ:
+     89% циклов SOL нарисованы зелёными с подписью «+0.001$», а винрейт
+     ботов раздут до 95-98% (честный — 78-83%). Поэтому классов ТРИ, и
+     третий рисуется нейтральным серым с подписью «≈0».
+
+     ПОРОГ. «В ноль» = |PnL| < 1% маржи цикла = $0.05 при марже $5 — та же
+     константа, что в bots_honest.TINY_USD и signal_builder.TINY_USD (это
+     примерно половина издержек одного цикла, то есть шум, а не результат).
+     Если у сделки уже есть поле tiny (боты: build_analytics кладёт его
+     рядом с be), верим ему — порог нужен только там, где поля нет.
+     Сделки БЕЗ pnl (страницы сигналов передают только R) остаются
+     двухклассовыми осознанно: R нормирован на риск, и |R| < 0.01 значит
+     не «ноль денег», а другое. Измерено: у сигнальных сетапов доля
+     «в ноль» 0.0-2.9%, артефакта там нет. */
+  var TINY = { usd: 0.05, frac: 0.01, margin: 5,
+    lab: "≈0", name: "в ноль (безубыток)",
+    note: "закрыто в безубыток (перенос стопа), результат ≈ 0" };
+
+  function tinyThr(o) {                    // порог из данных, если он там есть
+    o = o || {};
+    var v = Number(o.tinyUsd !== undefined ? o.tinyUsd : o.tiny_thr);
+    return (isFinite(v) && v > 0) ? v : TINY.usd;
+  }
+  function outVal(t) {                     // «на сколько закрылись» (R или $)
+    if (!t) return NaN;
+    if (t.r !== undefined && t.r !== null && isFinite(Number(t.r)))
+      return Number(t.r);
+    return Number(t.pnl !== undefined ? t.pnl : t.pnl_usd);
+  }
+  function isTiny(t, thr) {
+    if (!t) return false;
+    if (t.tiny !== undefined && t.tiny !== null) return !!t.tiny;  // флаг данных
+    var p = Number(t.pnl !== undefined ? t.pnl : t.pnl_usd);
+    if (!isFinite(p)) return false;        // нет денег в сделке — не судим
+    return Math.abs(p) < ((isFinite(thr) && thr > 0) ? thr : TINY.usd);
+  }
+  /* "win" | "loss" | "flat" — ЕДИНАЯ точка правды для цвета и подписи */
+  function outcome(t, thr) {
+    if (isTiny(t, thr)) return "flat";
+    return outVal(t) > 0 ? "win" : "loss";
+  }
+  function outColor(t, o) {
+    o = o || {};
+    var k = outcome(t, tinyThr(o));
+    return k === "flat" ? (o.flatColor || P.flat)
+         : k === "win" ? (o.winColor || P.up) : (o.lossColor || P.down);
+  }
+  /* Подпись выхода: у «в ноль» это ВСЕГДА «≈0», а не «+0.001$» */
+  function outLabel(t, o) {
+    o = o || {};
+    if (outcome(t, tinyThr(o)) === "flat") return TINY.lab;
+    if (o.label) return o.label(t);
+    var v = outVal(t);
+    if (!isFinite(v)) return "";
+    return (v > 0 ? "+" : "") + fmtFix(v, o.digits === undefined ? 1 : o.digits)
+      + (o.unit === undefined ? "" : o.unit);
+  }
+  /* Легенда трёх классов — одинаковая на всех страницах проекта */
+  function tradeLegend(o) {
+    o = o || {};
+    var it = function (c, s) {
+      return '<span><i style="background:' + c + '"></i>' + s + "</span>";
+    };
+    return it(o.winColor || P.up, esc(o.winText || "прибыльная сделка"))
+      + it(o.lossColor || P.down, esc(o.lossText || "убыточная"))
+      + it(o.flatColor || P.flat, esc(o.flatText
+          || ("в ноль «≈0»: |итог| < " + fmtUsd(tinyThr(o), 2)
+              + " (1% маржи цикла) — перенос стопа в безубыток, а не победа")))
+      + (o.extra || "");
+  }
+
+  /* ---------- маркеры сделок (вход-стрелка + выход-кружок) ----------
+     Одна разметка на все страницы: цвет выхода и его подпись берутся из
+     outcome(), поэтому «в ноль» нигде не сможет притвориться прибылью.
+     o: {snap(ts,t), dim(t)->bool (гасить, напр. обучающий период),
+         skip(t)->bool, liq(t)->bool, tinyUsd, unit, digits, label(t), size} */
+  function tradeMarkers(trades, o) {
+    o = o || {};
+    var thr = tinyThr(o);
+    var snapf = o.snap || function (t) { return ts(t); };
+    var out = [];
+    (trades || []).forEach(function (t) {
+      if (o.skip && o.skip(t)) return;
+      var dim = o.dim ? !!o.dim(t) : false;
+      var long = (t.side === "L" || t.side === "long" || t.side === "buy");
+      var te = snapf(t.entry_ts, t), tx = snapf(t.exit_ts, t);
+      if (te !== null && te !== undefined && isFinite(te))
+        out.push({ time: te, position: long ? "belowBar" : "aboveBar",
+          color: dim ? P.muted2 : (long ? P.up : P.down),
+          shape: long ? "arrowUp" : "arrowDown", text: "" });
+      if (tx !== null && tx !== undefined && isFinite(tx))
+        out.push({ time: tx, position: long ? "aboveBar" : "belowBar",
+          color: dim ? P.muted2 : outColor(t, o),
+          shape: (o.liq && o.liq(t)) ? "square" : "circle",
+          size: o.size === undefined ? 0.8 : o.size,
+          text: dim ? "" : outLabel(t, o) });
+    });
+    out.sort(function (a, b) { return a.time - b.time; });
+    return out;
+  }
+
+  /* ---------- ридаут «что за сделка под курсором» ----------
+     Библиотека не умеет ховер по маркеру, поэтому ищем сделку, ВНУТРИ
+     которой лежит время курсора (бинарный поиск по входам). Для «в ноль»
+     пишем прямым текстом, что это перенос стопа, а не победа. */
+  function tradeReadout(chart, trades, el, o) {
+    el = byId(el); o = o || {};
+    if (!el) return { paint: function () {} };
+    var thr = tinyThr(o), idle = o.idle || "";
+    var list = (trades || []).filter(function (t) {
+        return ts(t.entry_ts) !== null && ts(t.exit_ts) !== null;
+      }).sort(function (a, b) { return ts(a.entry_ts) - ts(b.entry_ts); });
+    var starts = list.map(function (t) { return ts(t.entry_ts); });
+    var pad = Math.max(0, Number(o.bar) || 0);
+    function find(tm) {
+      var lo = 0, hi = starts.length - 1, best = -1, m, i;
+      while (lo <= hi) {
+        m = (lo + hi) >> 1;
+        if (starts[m] <= tm) { best = m; lo = m + 1; } else hi = m - 1;
+      }
+      /* сделки могут перекрываться (сетка/усреднение) — назад смотрим
+         ограниченно, иначе на 4000 циклов это заметная работа на каждый
+         кадр движения мыши */
+      for (i = best; i >= 0 && i > best - 60; i--)
+        if (ts(list[i].exit_ts) + pad >= tm) return list[i];
+      return null;
+    }
+    function paint(t) {
+      if (!t) { el.innerHTML = idle ? "<span>" + esc(idle) + "</span>" : ""; return; }
+      var k = outcome(t, thr), col = outColor(t, o);
+      var side = (t.side === "L" || t.side === "long" || t.side === "buy")
+        ? "лонг" : "шорт";
+      el.innerHTML = '<span class="ll"><i style="background:' + col + '"></i>'
+        + esc(side) + " " + esc(fmtDT(t.entry_ts)) + " → " + esc(fmtDT(t.exit_ts))
+        + "</span> <b style=\"color:" + col + '">' + esc(outLabel(t, o)) + "</b> "
+        + (k === "flat"
+            ? '<span style="color:' + (o.flatColor || P.flat) + '">'
+              + esc(TINY.note) + "</span>"
+            : '<span class="muted-2">' + esc(o.note ? o.note(t) : "") + "</span>");
+    }
+    chart.subscribeCrosshairMove(function (p) {
+      if (!p || !p.time) { paint(null); return; }
+      paint(find(ts(p.time)));
+    });
+    paint(null);
+    return { paint: paint, find: find };
+  }
+
   /* ---------- пунктирные линии «вход -> выход» по каждой сделке ----------
-     Рисуем ВСЕ сделки двумя сериями (прибыльные / убыточные), а не серией на
-     сделку: сотня серий заметно тормозит график. Внутри серии сделки
-     разделяются точкой-пропуском (whitespace), поэтому линии не склеиваются
-     между собой. Время снапится на сетку баров — иначе библиотека не находит
-     точку на шкале. Если у двух соседних сделок выход и вход попадают в один
-     бар, второй сдвигается на бар вперёд: одинаковое время в серии роняет
-     весь график.
-     trades: [{entry_ts, exit_ts, entry, exit_px|avg_entry..., r|pnl}]
-     Возвращает { win, loss, setVisible(bool), count } */
+     Рисуем ВСЕ сделки ТРЕМЯ сериями (прибыльные / убыточные / «в ноль»), а
+     не серией на сделку: сотня серий заметно тормозит график. Внутри серии
+     сделки разделяются точкой-пропуском (whitespace), поэтому линии не
+     склеиваются между собой. Время снапится на сетку баров — иначе
+     библиотека не находит точку на шкале. Если у двух соседних сделок выход
+     и вход попадают в один бар, второй сдвигается на бар вперёд: одинаковое
+     время в серии роняет весь график.
+     trades: [{entry_ts, exit_ts, entry, exit_px|avg_entry..., r|pnl, tiny}]
+     Возвращает { win, loss, flat, setVisible(bool), count, counts } */
   function tradeLines(chart, trades, o) {
     o = o || {};
     var bar = Math.max(1, Number(o.bar) || 60);
+    var thr = tinyThr(o);
     var snap = function (t) { return Math.floor(ts(t) / bar) * bar; };
     var mk = function (color) {
       return chart.addLineSeries({
@@ -449,8 +603,10 @@ window.TVK = (function () {
         crosshairMarkerVisible: false, pointMarkersVisible: false,
       });
     };
-    var win = mk(o.winColor || P.up), loss = mk(o.lossColor || P.down);
-    var dw = [], dl = [], n = 0;
+    var win = mk(o.winColor || P.up), loss = mk(o.lossColor || P.down),
+        flat = mk(o.flatColor || P.flat);
+    var d = { win: [], loss: [], flat: [] };
+    var counts = { win: 0, loss: 0, flat: 0 }, n = 0;
     (trades || []).slice()
       .sort(function (a, b) { return ts(a.entry_ts) - ts(b.entry_ts); })
       .forEach(function (t) {
@@ -461,8 +617,8 @@ window.TVK = (function () {
         if (!isFinite(e) || !isFinite(x) || !isNum(pe) || !isNum(px)) return;
         if (x < e) return;
         if (x === e) x = e + bar;                 // вход и выход в одном баре
-        var good = (t.r !== undefined ? Number(t.r) : Number(t.pnl)) > 0;
-        var arr = good ? dw : dl;
+        var k = outcome(t, thr);
+        var arr = d[k];
         if (arr.length && e <= arr[arr.length - 1].time) {
           e = arr[arr.length - 1].time + bar;     // не даём одинаковое время
           if (x <= e) x = e + bar;
@@ -470,20 +626,27 @@ window.TVK = (function () {
         arr.push({ time: e, value: pe });
         arr.push({ time: x, value: px });
         arr.push({ time: x + bar });              // разрыв до следующей сделки
+        counts[k]++;
         n++;
       });
-    win.setData(dw);
-    loss.setData(dl);
+    win.setData(d.win);
+    loss.setData(d.loss);
+    flat.setData(d.flat);
     return {
-      win: win, loss: loss, count: n,
+      win: win, loss: loss, flat: flat, count: n, counts: counts,
       setVisible: function (v) {
         win.applyOptions({ visible: !!v });
         loss.applyOptions({ visible: !!v });
+        flat.applyOptions({ visible: !!v });
       },
     };
   }
 
   return { P: P, ts: ts, isNum: isNum, esc: esc, cls: cls, tradeLines: tradeLines,
+    TINY: TINY, tinyThr: tinyThr, isTiny: isTiny, outcome: outcome,
+    outVal: outVal, outColor: outColor, outLabel: outLabel,
+    tradeMarkers: tradeMarkers, tradeLegend: tradeLegend,
+    tradeReadout: tradeReadout,
     fmtN: fmtN, fmtFix: fmtFix, fmtUsd: fmtUsd, fmtPct: fmtPct,
     fmtDate: fmtDate, fmtDT: fmtDT,
     points: points, histPoints: histPoints, bars: bars,

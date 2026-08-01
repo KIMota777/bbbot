@@ -55,6 +55,15 @@
   5. ПЛЕЧО: лестница x5..x15 на ХОЛДОУТЕ + рекомендация по объективному
      правилу (наибольшее плечо с просадкой <= 20%), а не по полному периоду.
 
+  6. КОПЕЕЧНЫЕ ВЫХОДЫ (артефакт безубытка). Перенос стопа в безубыток
+     (ген be_move=1) закрывает цикл у средней цены +0.15%: формально плюс,
+     фактически ноль. Из-за этого винрейт ботов доходит до 98%, а часть из
+     них держится ТОЛЬКО на таких выходах. Скрипт считает долю циклов «в
+     ноль» (|PnL| < 1% маржи цикла = $0.05), честный винрейт без них и
+     главное — каким был бы итог, если копеечные выходы обнулить. Это
+     ПЯТЫЙ критерий вердикта: бот, у которого без копеек остаётся минус,
+     подтверждённым считаться не может.
+
 Все прогоны — evolution2.run5 (тот же движок, что у боевых цифр), конфиг ->
 геном через evolution7.cfg_to_genome + evolution8.OFF8, фильтр входа
 evolution8.make_filter8 на полном aux (funding/OI/SPX/DXY/золото/EMA/MA/
@@ -89,6 +98,20 @@ N_RAND = 200              # случайных геномов ядра на мо
 RAND_SEED = 2026
 SLEEVE = 50.0             # стартовый капитал стратегии на сайте (/pnl)
 BT_BASE = e2.START        # $20 базы бэктеста, маржа цикла $5 = 25%
+
+# --- КОПЕЕЧНЫЕ ВЫХОДЫ («в ноль») -------------------------------------------
+# Перенос стопа в безубыток (ген be_move=1) закрывает цикл ровно у средней
+# цены + 0.15%: формально плюс, фактически ноль. Такие выходы раздувают
+# винрейт до 95-98% и подписываются на графике как «+0.001$ победа».
+# ПОРОГ: цикл считается закрытым «в ноль», если |PnL| меньше 1% маржи цикла.
+# Маржа цикла $5 (e2.MARGIN) -> порог $0.05. Почему 1%: движок берёт с цикла
+# около 0.1% на комиссии+слиппедж, то есть $0.05 — это примерно ПОЛОВИНА
+# издержек одного цикла; всё, что меньше, деньгами не является ни при каком
+# способе счёта. Порог односторонним не делаем: копеечный минус — такой же
+# «ноль», как копеечный плюс.
+TINY_FRAC = 0.01
+TINY_USD = e2.MARGIN * TINY_FRAC      # $0.05 при марже цикла $5
+BE_PAD = 0.0015                       # надбавка безубытка в evolution2.run5
 
 # Цифры, задокументированные в config.py (сделок, итог %, DD %) — регрессия.
 DOC = {"DOGEUSDT": (1276, 145.0, 18.5), "LTCUSDT": (1307, 115.9, 17.0),
@@ -176,6 +199,149 @@ def summarize(r, events, months):
                 pos_share=st["pos_share"] * 100, med=st["med"],
                 avg_r=(sum(pnls) / len(pnls) / e2.MARGIN) if pnls else 0.0,
                 pnl_usd=r["balance"] - e2.START, pnls=pnls)
+
+
+# ------------------------------------------- копеечные выходы и безубыток
+
+def is_tiny(pnl):
+    """Цикл закрылся «в ноль»: |PnL| меньше 1% маржи цикла (см. TINY_USD)."""
+    return abs(pnl) < TINY_USD
+
+
+def is_be_exit(reason, exit_price, stop0):
+    """Цикл закрыт ПЕРЕНЕСЁННЫМ стопом (безубыток)?
+
+    Определение точное, а не по косвенным признакам: в evolution2.run5 стоп
+    ставится один раз при входе (за экстремумом окна с запасом sweep) и
+    двигается ровно в одном месте — в блоке be_move (стоп -> средняя+0.15%).
+    Значит «вышли по стопу, но цена выхода НЕ равна стопу входа» = безубыток.
+    stop0 — стоп входа; допуск 1e-6 относительный, потому что в JSON цены
+    округлены до 7 значащих цифр (перенос двигает стоп на проценты, а не на
+    миллионные доли, спутать нельзя).
+    """
+    if reason != "stop" or not stop0:
+        return False
+    return abs(exit_price - stop0) > 1e-6 * abs(stop0)
+
+
+def mark_cycles(events, candles=None, g=None):
+    """События движка -> список циклов с пометками tiny/be.
+
+    [{t, pnl, reason, tiny, be}], где be:
+      * False       — ген be_move=0, переносить стоп движку нечем;
+      * точно       — если переданы candles и g: стоп входа восстанавливается
+                      из rolling_extremes(window) и сравнивается с ценой выхода
+                      (см. is_be_exit);
+      * ПРИБЛИЖЁННО — если candles/g не переданы: «причина стоп и PnL >= 0».
+                      Приближение занижает счёт (безубыток с минусом после
+                      комиссий в него не попадает) и завышает (обычный стоп,
+                      закрытый в ноль доливками, попадает зря). На пяти ботах
+                      расхождение с точным счётом 4..31 цикл из 60..1307.
+    Метод возвращается вторым значением: "off" | "exact" | "approx".
+    """
+    be_on = bool(g and g.get("be_move"))
+    exact = be_on and candles is not None and g is not None
+    method = "off" if not be_on else ("exact" if exact else "approx")
+    if exact:
+        rlow, rhigh = ev.rolling_extremes(candles, g["window"])
+        idx = {c[0]: i for i, c in enumerate(candles)}
+    out, side, bar = [], None, None
+    for e in events:
+        if e["type"] == "entry":
+            side, bar = e["side"], e["t"]
+        elif e["type"] == "close":
+            reason = e.get("reason") or "?"
+            if not be_on:
+                be = False
+            elif exact:
+                i = idx.get(bar)
+                if i is None:
+                    be = None
+                else:
+                    stop0 = (rlow[i] * (1 - g["sweep"]) if side == "L"
+                             else rhigh[i] * (1 + g["sweep"]))
+                    be = is_be_exit(reason, e["price"], stop0)
+            else:
+                be = reason == "stop" and e["pnl"] >= 0
+            out.append(dict(t=e["t"], pnl=e["pnl"], reason=reason,
+                            tiny=is_tiny(e["pnl"]), be=be))
+            side = bar = None
+    return out, method
+
+
+def ret_no_tiny(pnls, base=None):
+    """Итог % на базе $20, если КОПЕЕЧНЫЕ выходы считать нулём.
+
+    Ключевая цифра проверки на артефакт: остаётся ли бот в плюсе, когда из
+    результата убрать всё, что закрылось «в ноль».
+    """
+    base = base or e2.START
+    return sum(p for p in pnls if not is_tiny(p)) / base * 100
+
+
+def tiny_stats(cycles, method="exact", months=None):
+    """Метрики копеечных выходов по размеченным циклам (mark_cycles).
+
+    Считает раздельно: сколько циклов «в ноль», каким был бы итог без них,
+    честный винрейт и асимметрию средних. Всё в долларах маржи $5 / процентах
+    от базы бэктеста $20 — сопоставимо с остальными цифрами отчёта.
+    """
+    cycles = [c for c in cycles if c.get("pnl") is not None]
+    n = len(cycles)
+    pnl = [c["pnl"] for c in cycles]
+    tiny = [c["pnl"] for c in cycles if c["tiny"]]
+    rw = [c["pnl"] for c in cycles if not c["tiny"] and c["pnl"] > 0]
+    rl = [c["pnl"] for c in cycles if not c["tiny"] and c["pnl"] < 0]
+    loss_all = [p for p in pnl if p < 0]
+    be_n = sum(1 for c in cycles if c.get("be"))
+    s_tiny, s_rw, s_rl = sum(tiny), sum(rw), sum(rl)
+    total = sum(pnl)
+    without = total - s_tiny
+    gross = s_tiny + s_rw            # вся валовая прибыль (плюсы любой величины)
+    sh = lambda k: round(k / n * 100, 1) if n else 0.0
+    return dict(
+        n=n, tiny_n=len(tiny), tiny_share=sh(len(tiny)),
+        tiny_win_n=sum(1 for p in tiny if p > 0),
+        tiny_loss_n=sum(1 for p in tiny if p < 0),
+        real_win_n=len(rw), real_loss_n=len(rl), loss_n=len(loss_all),
+        wr=round(sum(1 for p in pnl if p > 0) / n * 100, 1) if n else 0.0,
+        # честный винрейт: РЕАЛЬНЫЕ плюсы против ВСЕХ убытков (копеечный плюс
+        # победой не считается, копеечный минус из знаменателя не выкидываем —
+        # так консервативнее)
+        wr_honest=(round(len(rw) / (len(rw) + len(loss_all)) * 100, 1)
+                   if rw or loss_all else 0.0),
+        # то же, но копеечные убраны с обеих сторон — для полноты картины
+        wr_ex_tiny=(round(len(rw) / (len(rw) + len(rl)) * 100, 1)
+                    if rw or rl else 0.0),
+        pnl_usd=round(total, 2),
+        pnl_split=dict(tiny=round(s_tiny, 2), wins=round(s_rw, 2),
+                       losses=round(s_rl, 2)),
+        pnl_without_tiny=round(without, 2),
+        ret=round(total / e2.START * 100, 1),
+        ret_without_tiny=round(without / e2.START * 100, 1),
+        per_month=(round(total / e2.START * 100 / months, 2) if months else None),
+        per_month_without_tiny=(round(without / e2.START * 100 / months, 2)
+                                if months else None),
+        # какую долю ВСЕЙ валовой прибыли принесли копеечные выходы
+        tiny_profit_share=(round(s_tiny / gross * 100, 1) if gross > 1e-9
+                           else None),
+        # какую долю ЧИСТОГО итога сделали копейки (>= 100% = без них минус);
+        # None, если итог и так неположительный — доля там бессмысленна
+        tiny_net_share=(round(s_tiny / total * 100, 1) if total > 1e-9
+                        else None),
+        be_n=be_n, be_share=sh(be_n), be_method=method,
+        avg_win_real=round(s_rw / len(rw), 3) if rw else 0.0,
+        avg_loss=round(s_rl / len(rl), 3) if rl else 0.0,
+        avg_tiny=round(s_tiny / len(tiny), 4) if tiny else 0.0,
+        # прямой ответ: бот держится на артефакте, если итог плюсовой, а без
+        # копеечных выходов — минусовой
+        holds_on_artifact=bool(total > 0 and without <= 0))
+
+
+def cycle_metrics(events, candles=None, g=None, months=None):
+    """mark_cycles + tiny_stats одним вызовом (обычный способ применения)."""
+    cyc, method = mark_cycles(events, candles, g)
+    return tiny_stats(cyc, method, months)
 
 
 def portfolio(curves, n_bots):
@@ -425,17 +591,22 @@ def main():
         evs = []
         r = run_at(d["candles"], d["pre"], d["g"], d["filt"], d["lev"],
                    events=evs)
-        d["full"] = summarize(r, evs,
-                              (d["candles"][-1][0] - d["candles"][0][0])
-                              / (30 * 86400000))
+        months_full = ((d["candles"][-1][0] - d["candles"][0][0])
+                       / (30 * 86400000))
+        d["full"] = summarize(r, evs, months_full)
+        d["full_tiny"] = cycle_metrics(evs, d["candles"], d["g"], months_full)
         for part in ("train", "hold"):
             s = d[part]
             evs = []
             r = run_at(s["candles"], s["pre"], d["g"], s["filt"], d["lev"],
                        events=evs)
             s["m"] = summarize(r, evs, s["months"])
+            s["tiny"] = cycle_metrics(evs, s["candles"], d["g"], s["months"])
             s["curve"] = [(e["t"], e["pnl"]) for e in evs
                           if e["type"] == "close"]
+            # та же кривая с обнулёнными копеечными выходами — для портфеля
+            s["curve_nt"] = [(t, 0.0 if is_tiny(p) else p)
+                             for t, p in s["curve"]]
         # необученный конфиг — на ОБЕИХ частях, на плече бота
         gd = e7.cfg_to_genome(DEFAULT_CFG, "final")
         for k, v in e8.OFF8.items():
@@ -521,9 +692,13 @@ def main():
                             len(syms))
         dret, ddd = portfolio({s: prep[s][part]["def_curve"] for s in syms},
                               len(syms))
+        nret, ndd = portfolio({s: prep[s][part]["curve_nt"] for s in syms},
+                              len(syms))
         print(f"  ПОРТФЕЛЬ 5 ботов по $20, {title:9}: итог {ret:+7.1f}% | "
               f"просадка {dd:5.1f}%   || тот же портфель на НЕОБУЧЕННОМ "
               f"конфиге: {dret:+7.1f}% | просадка {ddd:5.1f}%")
+        print(f"  {'':10} {'':9}  БЕЗ КОПЕЕЧНЫХ ВЫХОДОВ (раздел 6): "
+              f"{nret:+7.1f}% | просадка {ndd:5.1f}%")
 
     # ------------------------------------------------------------ 2. бенчмарки
     print()
@@ -608,19 +783,24 @@ def main():
         s = d["hold"]
         aux_h = {k: slice_aux(v, d["hold_i"], d["n"])
                  for k, v in d["aux"].items()}
-        allv = []
+        allv, allnt = [], []
         rows = []
         for seed in PERT_SEEDS:
             rg = random.Random(seed)
             vals = []
             for _ in range(N_PERT):
                 gp = perturb(d["g"], e8.GENES8, rg, PERT)
+                evs = []
                 rr = run_at(s["candles"], s["pre"], gp,
-                            e8.make_filter8(gp, aux_h), d["lev"])
+                            e8.make_filter8(gp, aux_h), d["lev"], events=evs)
                 vals.append((rr["balance"] / e2.START - 1) * 100)
+                # тот же сосед, но копеечные выходы обнулены (см. раздел 6)
+                allnt.append(ret_no_tiny([e["pnl"] for e in evs
+                                          if e["type"] == "close"]))
             allv += vals
             rows.append((seed, vals))
         d["pert"] = allv
+        d["pert_no_tiny"] = allnt
         first = True
         for seed, vals in rows:
             rank = sum(1 for x in vals if x < s["m"]["ret"]) / len(vals) * 100
@@ -725,17 +905,72 @@ def main():
         print(f"  {sym:10} " + " ".join(f"{c:>16}" for c in cells)
               + f" {rec:>12}")
 
-    # -------------------------------------------------------------- 6. вердикт
+    # ------------------------------------------------- 6. копеечные выходы
     print()
     print("=" * 108)
-    print("6. ВЕРДИКТЫ ПО КАЖДОМУ БОТУ")
-    print("   КРИТЕРИЙ ПОДТВЕРЖДЕНИЯ (объявлен до подсчёта, все 4 пункта):")
+    print("6. КОПЕЕЧНЫЕ ВЫХОДЫ («в ноль») — АРТЕФАКТ ПЕРЕНОСА СТОПА В "
+          "БЕЗУБЫТОК")
+    print(f"   Порог: |PnL| < {TINY_FRAC*100:.0f}% маржи цикла = "
+          f"${TINY_USD:.2f} при марже ${e2.MARGIN:.0f}. Это примерно половина "
+          f"издержек одного цикла,")
+    print("   то есть меньше порога — не деньги ни при каком способе счёта. "
+          "Перенос стопа в безубыток (ген be_move=1)")
+    print("   закрывает цикл у средней цены +0.15%: формально «прибыльная "
+          "сделка», фактически ноль. Такие выходы")
+    print("   раздувают винрейт и на графике подписаны как «+0.001$ победа».")
+    print("   «безуб.%» — доля циклов, закрытых ПЕРЕНЕСЁННЫМ стопом; счёт "
+          "точный (стоп входа восстановлен из окна),")
+    print("   а не по косвенным признакам. «без копеек» = итог, если "
+          "копеечные выходы считать нулём.")
+    print(f"  {'бот':10} {'период':9} {'сд.':>6} {'WR%':>6} {'ЧЕСТНЫЙ WR%':>12} "
+          f"{'копееч.%':>9} {'безуб.%':>8} | {'копейки$':>9} {'реальн.+$':>10} "
+          f"{'убытки$':>9} {'ИТОГО$':>8} {'БЕЗ КОПЕЕК$':>12} "
+          f"{'ср.плюс$':>9} {'ср.минус$':>10}")
+    for sym, d in prep.items():
+        for part, title in (("train", "обучение"), ("hold", "ХОЛДОУТ")):
+            t = d[part]["tiny"]
+            mark = "  <- ДЕРЖИТСЯ НА АРТЕФАКТЕ" if t["holds_on_artifact"] else ""
+            print(f"  {sym:10} {title:9} {t['n']:6} {t['wr']:6.1f} "
+                  f"{t['wr_honest']:12.1f} {t['tiny_share']:9.1f} "
+                  f"{t['be_share']:8.1f} | {t['pnl_split']['tiny']:+9.2f} "
+                  f"{t['pnl_split']['wins']:+10.2f} "
+                  f"{t['pnl_split']['losses']:+9.2f} {t['pnl_usd']:+8.2f} "
+                  f"{t['pnl_without_tiny']:+12.2f} {t['avg_win_real']:+9.3f} "
+                  f"{t['avg_loss']:+10.3f}{mark}")
+    print("  ДОЛЯ КОПЕЕК В ИТОГЕ (сколько процентов результата сделаны "
+          "«нулями»; «-» = итог и так неположительный):")
+    for sym, d in prep.items():
+        cells = []
+        for part, title in (("train", "обучение"), ("hold", "холдоут")):
+            v = d[part]["tiny"]["tiny_net_share"]
+            cells.append(f"{title} {('-' if v is None else f'{v:.0f}%'):>5}")
+        f = d["full_tiny"]["tiny_net_share"]
+        print(f"    {sym:10} " + " | ".join(cells)
+              + f" | вся история {('-' if f is None else f'{f:.0f}%'):>5}"
+              + ("   <- итог сделан копейками" if f is not None and f >= 50
+                 else ""))
+    print("  ЧЕСТНЫЙ WR = реальные плюсы против ВСЕХ убытков (копеечный плюс "
+          "победой не считается).")
+    print("  Асимметрия: если средний реальный плюс заметно меньше среднего "
+          "убытка, бот живёт на частоте мелких")
+    print("  выигрышей — а её и создаёт безубыток. У ETH ген be_move=0, и его "
+          "копеечные — это мелкие тейки:")
+    print("  артефакт шире одного гена, поэтому мерим ПОРОГОМ, а не признаком "
+          "«вышли по безубытку».")
+
+    # -------------------------------------------------------------- 7. вердикт
+    print()
+    print("=" * 108)
+    print("7. ВЕРДИКТЫ ПО КАЖДОМУ БОТУ")
+    print("   КРИТЕРИЙ ПОДТВЕРЖДЕНИЯ (объявлен до подсчёта, все 5 пунктов):")
     print("     (1) на холдоуте бот в плюсе;")
     print("     (2) обходит необученный конфиг на том же плече;")
     print("     (3) обходит медиану 90 своих возмущённых соседей (доля "
           "прибыльных соседей >= 60%) —")
     print("         то есть стоит на плато, а не на шпиле;")
-    print("     (4) обходит медиану 200 случайных геномов ядра (ранг >= 75%).")
+    print("     (4) обходит медиану 200 случайных геномов ядра (ранг >= 75%);")
+    print("     (5) НОВЫЙ: остаётся в плюсе на холдоуте, если копеечные выходы "
+          "обнулить (проверка на артефакт).")
     verdicts = {}
     for sym, d in prep.items():
         s = d["hold"]
@@ -746,12 +981,17 @@ def main():
         c3 = s["m"]["ret"] >= med_p and share_p >= 60
         med_r = statistics.median(d["rand"])
         c4 = d["rand_rank"] >= 75
-        okn = sum([c1, c2, c3, c4])
-        status = ("ПОДТВЕРЖДЁН" if okn == 4 else
-                  "ЧАСТИЧНО" if okn == 3 else "НЕ ПОДТВЕРЖДЁН")
-        verdicts[sym] = (status, okn, c1, c2, c3, c4)
+        c5 = s["tiny"]["pnl_without_tiny"] > 0
+        okn_old = sum([c1, c2, c3, c4])
+        okn = okn_old + int(c5)
+        status_old = ("ПОДТВЕРЖДЁН" if okn_old == 4 else
+                      "ЧАСТИЧНО" if okn_old == 3 else "НЕ ПОДТВЕРЖДЁН")
+        status = ("ПОДТВЕРЖДЁН" if okn == 5 else
+                  "ЧАСТИЧНО" if okn == 4 else "НЕ ПОДТВЕРЖДЁН")
+        verdicts[sym] = (status, okn, c1, c2, c3, c4, c5, status_old, okn_old)
         print()
-        print(f"  --- {sym} x{d['lev']} : {status} ({okn}/4) ---")
+        print(f"  --- {sym} x{d['lev']} : {status} ({okn}/5) "
+              f"[было {status_old} ({okn_old}/4)] ---")
         print(f"      обучение {d['train']['m']['ret']:+.1f}% -> холдоут "
               f"{s['m']['ret']:+.1f}% (реинв. {s['m']['comp']:+.1f}%), "
               f"сделок {s['m']['trades']}, WR {s['m']['wr']:.1f}%, "
@@ -768,6 +1008,13 @@ def main():
         print(f"      (4) лучше случайных геномов .......... "
               f"{'ДА' if c4 else 'НЕТ'}  (медиана случайных {med_r:+.1f}%, "
               f"ранг бота {d['rand_rank']:.0f}%)")
+        print(f"      (5) держится не на копейках .......... "
+              f"{'ДА' if c5 else 'НЕТ'}  (без копеечных выходов "
+              f"{s['tiny']['pnl_without_tiny']:+.2f}$ = "
+              f"{s['tiny']['ret_without_tiny']:+.1f}% против "
+              f"{s['m']['ret']:+.1f}%; копеечных "
+              f"{s['tiny']['tiny_share']:.0f}% циклов, честный WR "
+              f"{s['tiny']['wr_honest']:.1f}% вместо {s['tiny']['wr']:.1f}%)")
         print(f"      холд монеты за тот же период {d['hodl']:+.1f}% | "
               f"издержки съели {d['cost_share']:.1f}% валовой прибыли | "
               f"плечо по холдоуту: {d['rec_lev']}")
@@ -812,6 +1059,37 @@ def main():
           "Это то, чего разумно ждать от бота,")
     print("  когда рынок сдвинет оптимум: сам конфиг стоит в точке, "
           "выбранной подбором ПО ЭТИМ ЖЕ данным.")
+
+    # ------------------------------------- пересмотр вердиктов и оценок
+    print()
+    print("=" * 108)
+    print("ПЕРЕСМОТР С УЧЁТОМ КОПЕЕЧНЫХ ВЫХОДОВ: было -> стало")
+    print("  «честная оценка» пересчитана дважды: как раньше (медиана 90 "
+          "соседей) и КОНСЕРВАТИВНО — та же медиана,")
+    print("  но у каждого соседа копеечные выходы обнулены. Решения "
+          "принимаются по второй колонке.")
+    print(f"  {'бот':10} {'вердикт БЫЛО':>18} {'вердикт СТАЛО':>18} | "
+          f"{'холдоут%':>9} {'холдоут БЕЗ КОПЕЕК%':>20} | "
+          f"{'честно (было)%':>15} {'честно БЕЗ КОПЕЕК%':>19} {'/мес':>7} | "
+          f"{'копееч.%':>9}")
+    for sym, v in verdicts.items():
+        d = prep[sym]
+        t = d["hold"]["tiny"]
+        nt = statistics.median(d["pert_no_tiny"])
+        print(f"  {sym:10} {v[7] + ' ' + str(v[8]) + '/4':>18} "
+              f"{v[0] + ' ' + str(v[1]) + '/5':>18} | "
+              f"{d['hold']['m']['ret']:+9.1f} {t['ret_without_tiny']:+20.1f} | "
+              f"{d['med_pert']:+15.1f} {nt:+19.1f} "
+              f"{nt/d['hold']['months']:+7.2f} | {t['tiny_share']:9.1f}")
+    avg_nt = sum(statistics.median(prep[s]["pert_no_tiny"])
+                 for s in syms) / len(syms)
+    print(f"  {'СРЕДНЕЕ':10} {'':18} {'':18} | {'':9} {'':20} | "
+          f"{tot_med:+15.1f} {avg_nt:+19.1f} "
+          f"{avg_nt/prep[syms[0]]['hold']['months']:+7.2f}")
+    print("  Бот, у которого «холдоут БЕЗ КОПЕЕК» отрицателен, зарабатывал "
+          "не торговлей, а безубытком: его плюс")
+    print("  сложен из выходов размером в сотые доли доллара, которые "
+          "исчезают при любых реальных издержках.")
     print(f"  самопроверки: регрессия {'OK' if ok1 else 'ПРОВАЛ'}, "
           f"причинность {'OK' if ok2 else 'ПРОВАЛ'}")
     print(f"  (время работы {time.time() - t_start:.1f} c)")

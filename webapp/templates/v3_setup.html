@@ -79,7 +79,21 @@
   </div>
   <p class="tv-hint">Период экзамена: {{ h.get('period', '—') }} — эти бары не видели
     ни отбор, ни выбор победителя. Всё остальное на странице посчитано по ВСЕЙ
-    истории и включает обучающий период.</p>
+    истории, включает обучающий период и помечено значком ⚠: это разбор
+    механики, а не показатель доходности.</p>
+  {% set _ex = rec.get('exitcfg') or {} %}
+  {% if _ex.get('be_after_r') %}
+  <div class="art">
+    <span class="ico">⚠</span>
+    <div class="nb"><span class="t">У сетапа включён перенос стопа в безубыток
+      (be_after_r = {{ _ex.be_after_r }}).</span>
+      Это тот же ген, который у ботов закрывает больше половины циклов на
+      +0.001&nbsp;$ — формально «победа», фактически ноль. Winrate и PF выше
+      нужно читать с поправкой: цикл, закрытый в безубыток, победой не является.
+      Проверка «сколько сделок закрыто в ноль» для сетапов v3 ещё не
+      автоматизирована.</div>
+  </div>
+  {% endif %}
   {% else %}
   <div class="note warn"><span class="ico">!</span><div class="nb">
     Результата на holdout нет — отбор его не передал, поэтому честной оценки у
@@ -199,9 +213,10 @@
   </div>
 
   <div class="card" id="kpiCard" style="display:none">
-    <div class="h-card">Статистика по всей истории
-      <span class="muted small" style="font-weight:400">включает обучающий период — не доказательство</span></div>
-    <div class="tiles" id="kpiTiles"></div>
+    <div class="h-card">Статистика по всей истории — разбор механики
+      <span class="insample">включает обучающий период — не доказательство,
+        процента итоговой доходности здесь нет</span></div>
+    <div class="tiles" id="kpiTiles" style="margin-top:10px"></div>
     <div class="h-card" style="margin-top:16px">Исходы</div>
     <div class="tbl-wrap"><table class="tbl" id="outTbl"></table></div>
     <div class="h-card" style="margin-top:16px">Сетка и сопровождение</div>
@@ -625,7 +640,8 @@ function renderKpi() {
     tile(sgn2(s.exp_r, 3) + "R", "на сделку", cls(s.exp_r)) +
     tile(s.pf === null || s.pf === undefined ? "—" : f2(s.pf, 2), "PF", cls((s.pf || 0) - 1)) +
     tile(sgn2(s.sum_r, 1) + "R", "сумма R", cls(s.sum_r)) +
-    tile(sg(s.ret_pct, 1), "итог фикс-база", cls(s.ret_pct)) +
+    // плитка «итог фикс-база» убрана: это процент доходности обучающего
+    // периода, поданный как KPI (результат — только в шапке, на holdout)
     tile(f2(s.dd_pct, 1) + "%", "просадка") +
     tile(f2(s.tpm, 2), "сделок в месяц") +
     tile(f2(g.avg_fills, 2), "колен в среднем",

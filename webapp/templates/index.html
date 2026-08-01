@@ -20,9 +20,7 @@
   .bot-row .r-cap { font-size:10.5px; color:var(--muted-2); margin-top:4px;
     text-transform:uppercase; letter-spacing:.04em; }
   .lr-exam { flex:0 0 auto; text-align:right; min-width:104px; }
-  .train-sub { color:var(--muted-2); font-size:11.5px; margin-top:6px;
-    font-variant-numeric:tabular-nums; }
-  .stripe .v.sm { font-size:14px; color:var(--muted); }
+  .stripe .mini-note { margin-top:3px; }
   @media (max-width:720px){ .lr-exam { min-width:78px; } .bot-row .r-big { font-size:21px; } }
 </style>
 </head>
@@ -39,19 +37,44 @@
 
   {% if summary %}
   <div class="stripe">
-    <div><div class="k">портфель на холдоуте · {{ summary.hold_months }} мес</div>
-      <div class="v {{ 'pos' if summary.hold_ret >= 0 else 'neg' }}">{{ '%+.1f'|format(summary.hold_ret) }}%</div></div>
+    <div><div class="k">портфель на экзамене · {{ summary.hold_months }} мес</div>
+      <div class="v {{ 'pos' if summary.hold_ret_nt >= 0 else 'neg' }}">{{ '%+.1f'|format(summary.hold_ret_nt) }}%</div>
+      <div class="mini-note">копеечные выходы обнулены (с ними было
+        {{ '%+.1f'|format(summary.hold_ret) }}%)</div></div>
     <div><div class="k">честная оценка</div>
-      <div class="v {{ 'pos' if summary.avg_robust >= 0 else 'neg' }}">{{ '%+.1f'|format(summary.avg_robust) }}%</div></div>
+      <div class="v {{ 'pos' if summary.avg_robust_nt >= 0 else 'neg' }}">{{ '%+.1f'|format(summary.avg_robust_nt) }}%</div>
+      <div class="mini-note">медиана соседей конфига, без копеечных</div></div>
     <div><div class="k">в среднем в месяц</div>
-      <div class="v {{ 'pos' if summary.per_month >= 0 else 'neg' }}">{{ '%+.2f'|format(summary.per_month) }}%</div></div>
+      <div class="v {{ 'pos' if summary.per_month_nt >= 0 else 'neg' }}">{{ '%+.2f'|format(summary.per_month_nt) }}%</div>
+      <div class="mini-note">это и есть ожидание доходности</div></div>
     <div><div class="k">подтверждено</div>
-      <div class="v {{ 'pos' if summary.confirmed else '' }}">{{ summary.confirmed }} / {{ summary.n }}</div></div>
-    <div><div class="k">просадка портфеля</div><div class="v">{{ summary.hold_dd }}%</div></div>
+      <div class="v {{ 'pos' if summary.confirmed else 'neg' }}">{{ summary.confirmed }} / {{ summary.n }}</div>
+      <div class="mini-note">по 5 пунктам критерия</div></div>
+    <div><div class="k">держатся на копейках</div>
+      <div class="v {{ 'neg' if summary.on_artifact else '' }}">{{ summary.on_artifact }} / {{ summary.n }}</div>
+      <div class="mini-note">без «нулевых» циклов уходят в минус</div></div>
+    <div><div class="k">просадка портфеля</div><div class="v">{{ summary.hold_dd_nt }}%</div></div>
     <div><div class="k">запущено сейчас</div>
       <div class="v {{ 'pos' if summary.active else '' }}">{{ summary.active }} / {{ summary.n }}</div></div>
-    <div><div class="k">обучение — не доказательство</div>
-      <div class="v sm">{{ '%+.1f'|format(summary.train_ret) }}%{% if summary.insample_end %} · in-sample с реинвестом ${{ '%.0f'|format(summary.insample_start) }}→${{ '%.0f'|format(summary.insample_end) }}{% endif %}</div></div>
+  </div>
+  {% endif %}
+
+  {% if summary and summary.on_artifact %}
+  <div class="art">
+    <span class="ico">⚠</span>
+    <div class="nb">
+      <span class="t">У {{ summary.on_artifact }} из {{ summary.n }} ботов прибыли
+        нет — есть перенос стопа в безубыток.</span>
+      Такой цикл закрывается на <b>+0.001&nbsp;$</b>: формально «прибыльная
+      сделка», фактически ноль. Из-за них винрейт раздувался до 95–98%.
+      Всюду на сайте такие циклы теперь считаются нулём, а не победой —
+      поэтому цифры стали меньше, а вердикты изменились.
+      <details>
+        <summary>что именно считается «копеечным» выходом</summary>
+        <p>{{ honest.tiny_rule.text }}</p>
+        <p>{{ honest.tiny_rule.be_note }}</p>
+      </details>
+    </div>
   </div>
   {% endif %}
 
@@ -59,23 +82,29 @@
     <span class="ico">{{ '⚖' if summary else '⚠' }}</span>
     <div class="nb">
       {% if summary %}
-      <span class="t">Крупные цифры здесь — честная проверка, а не бэктест отбора.</span>
-      Из {{ summary.n }} ботов проверку пережили <b>{{ summary.confirmed }}</b>
+      <span class="t">Все цифры на странице — экзамен, очищенный от копеечных
+        выходов.</span>
+      Из {{ summary.n }} ботов проверку пережил
+      <b>{{ summary.confirmed }}</b>
       (частично — {{ summary.partial }}, не подтверждено — {{ summary.failed }}).
       Ожидаемая доходность портфеля — около
-      <b>{{ '%+.2f'|format(summary.per_month) }}%/мес</b>, а не сотни процентов
-      с прежних карточек.
+      <b>{{ '%+.2f'|format(summary.per_month_nt) }}%/мес</b>.
+      {% if summary.confirmed_old is not none and summary.confirmed_old != summary.confirmed %}
+      До поправки на копеечные выходы подтверждённых было
+      {{ summary.confirmed_old }}.{% endif %}
       <details>
         <summary>как считалось и почему верить холдоуту можно лишь частично</summary>
-        <p><b>Холдоут</b> = последние 28% истории
+        <p><b>Холдоут (экзамен)</b> = последние 28% истории
           ({{ summary.hold_start }} — {{ summary.hold_end }},
           {{ summary.hold_months }} мес), в подборе не участвовали;
-          <b>обучение</b> — {{ summary.train_start }} — {{ summary.train_end }}
-          ({{ summary.train_months }} мес), подбор его видел целиком.</p>
+          обучающий период {{ summary.train_start }} — {{ summary.train_end }}
+          ({{ summary.train_months }} мес) подбор видел целиком, поэтому его
+          результаты на этой странице не показываются вовсе.</p>
         <p><b>«Честная оценка»</b> — медиана
           {{ honest.method.n_pert }} возмущений генома ±{{ (honest.method.pert*100)|int }}%
-          на холдоуте: доход <i>типичного соседа</i> конфига. Сам конфиг стоит
-          там, где стоит, потому что его туда поставил подбор на этих же данных.</p>
+          на холдоуте, у каждого соседа копеечные выходы обнулены: доход
+          <i>типичного соседа</i> конфига. Сам конфиг стоит там, где стоит,
+          потому что его туда поставил подбор на этих же данных.</p>
         <p>{{ honest.caveat }}</p>
         <p>Самопроверки пересчёта: регрессия
           {{ 'OK' if honest.selfcheck.regression else 'ПРОВАЛ' }}, причинность
@@ -84,9 +113,9 @@
           <code>python build_bot_honest_data.py</code>, {{ honest.generated }}.</p>
       </details>
       {% else %}
-      <span class="t">Честные цифры ботов не посчитаны</span> — показаны цифры
-      обучающего периода, это гипотеза, а не результат. Запусти
-      <code>python build_bot_honest_data.py</code>.
+      <span class="t">Честные цифры ботов не посчитаны</span> — показывать
+      нечего: цифры обучающего периода с сайта убраны как недоказательные.
+      Запусти <code>python build_bot_honest_data.py</code>.
       {% endif %}
     </div>
   </div>
@@ -110,6 +139,8 @@
       <div class="list">
         {% for b in bots %}
         {% set h = b.honest %}
+        {% set t = b.tiny %}
+        {% set rn = (h.robust_no_tiny if h else none) %}
         <a class="list-row bot-row" href="/bot/{{ b.symbol }}/{{ b.mode }}">
           <span class="avatar avatar--neutral">{{ b.coin[:1] }}</span>
           <span class="lr-main">
@@ -118,8 +149,13 @@
             <span class="badge-row" style="margin-top:6px">
               {% if h %}
               <span class="badge {{ 'badge--on' if h.verdict.key == 'ok' else ('badge--watch' if h.verdict.key == 'part' else 'badge--off') }}"
-                    title="{{ h.verdict.status }} — {{ h.verdict.score }} пунктов критерия">
+                    title="{{ h.verdict.status }} — {{ h.verdict.score }} пунктов критерия из {{ h.verdict.n_crit }}">
                 {{ h.verdict.status|lower }} · {{ h.verdict.score }}</span>
+              {% if t and t.holds_on_artifact %}
+              <span class="badge badge--art"
+                    title="без копеечных выходов итог на экзамене {{ '%+.1f'|format(t.ret_without_tiny) }}%">
+                держится на копейках</span>
+              {% endif %}
               {% endif %}
               <span class="badge badge--info">{{ b.ver }}</span>
               <span class="badge">x{{ b.lev }}</span>
@@ -128,41 +164,39 @@
             </span>
             {% if h %}
             <span class="exam-mini">
-              <span><b class="{{ 'pos' if h.holdout.ret > 0 else 'neg' }}">{{ '%+.1f'|format(h.holdout.ret) }}%</b><span>холдоут</span></span>
-              <span><b class="{{ 'pos' if h.robust.median > 0 else 'neg' }}">{{ '%+.1f'|format(h.robust.median) }}%</b><span>честно</span></span>
+              <span><b class="{{ 'pos' if t.ret_without_tiny > 0 else 'neg' }}">{{ '%+.1f'|format(t.ret_without_tiny) }}%</b>
+                <span>экзамен без копеек</span></span>
+              <span><b class="{{ 'pos' if rn.median > 0 else 'neg' }}">{{ '%+.1f'|format(rn.median) }}%</b>
+                <span>честно</span></span>
+              <span><b>{{ t.wr_honest }}%</b><span>честный winrate</span></span>
+              <span><b class="flat">{{ t.tiny_share }}%</b><span>циклов в ноль</span></span>
               <span><b>{{ h.holdout.dd }}%</b><span>просадка</span></span>
-              <span><b>{{ h.holdout.wr }}%</b><span>winrate</span></span>
               <span><b>{{ h.n_trades.holdout }}</b><span>сделок</span></span>
-              <span><b>{{ '%+.1f'|format(h.benchmarks.untrained.holdout) }}%</b><span>необуч. сетка</span></span>
             </span>
-            <span class="lr-sub" style="margin-top:6px">честная проверка на холдоуте
+            <span class="lr-sub" style="margin-top:6px">экзамен
               {{ honest.periods.holdout.start }} — {{ honest.periods.holdout.end }}
               ({{ honest.periods.holdout.months }} мес){% if h.lev_by_holdout.rec %},
               плечо по холдоуту {{ h.lev_by_holdout.rec }}{% else %}, плечо по холдоуту:
-              НЕ ЗАПУСКАТЬ{% endif %}</span>
+              НЕ ЗАПУСКАТЬ{% endif %} · сырой winrate {{ t.wr }}% раздут
+              безубытком, из него честны {{ t.wr_honest }}%</span>
             {% for n in h.verdict.notes[:2] %}
             <span class="lr-sub" style="color:{{ 'var(--up)' if n.kind == 'good' else 'var(--warn)' }}">{{ n.text }}</span>
             {% endfor %}
-            <span class="train-sub">обучение {{ honest.periods.train.months }} мес
-              (не доказательство): {{ '%+.1f'|format(h.train.ret) }}%{% if b.an %} ·
-              полная история с реинвестом ${{ '%.0f'|format(b.an.final_usd) }} из $50
-              ({{ '%+.0f'|format(b.an.final_pct) }}%){% endif %}</span>
+            {% if h.verdict.changed %}
+            <span class="lr-sub muted-2">вердикт пересмотрен после поправки на
+              копеечные выходы: было «{{ h.verdict.status_old|lower }} {{ h.verdict.score_old }}»
+              → стало «{{ h.verdict.status|lower }} {{ h.verdict.score }}»</span>
+            {% endif %}
             {% else %}
-            <span class="lr-sub">{{ b.stats }}</span>
+            <span class="insample insample-block">{{ b.stats }}</span>
             {% endif %}
           </span>
           <span class="lr-exam">
             {% if h %}
-            <span class="r-big {{ 'pos' if h.robust.per_month > 0 else 'neg' }}">{{ '%+.2f'|format(h.robust.per_month) }}%</span>
+            <span class="r-big {{ 'pos' if rn.per_month > 0 else 'neg' }}">{{ '%+.2f'|format(rn.per_month) }}%</span>
             <span class="r-cap">честно, в месяц</span>
             {% else %}<span class="muted">—</span>{% endif %}
           </span>
-          {% if b.an and b.an.spark %}
-          <svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true">
-            <polyline points="{{ b.an.spark.pts }}"
-              stroke="{{ 'var(--up)' if b.an.spark.up else 'var(--down)' }}"></polyline>
-          </svg>
-          {% endif %}
           <span class="chev">›</span>
         </a>
         {% endfor %}
@@ -170,29 +204,55 @@
     </div>
     <p class="tv-hint">Крупная цифра справа — <b>честная оценка</b>: медиана
       {{ honest.method.n_pert if honest.method else 90 }} возмущённых копий
-      генома на холдоуте, в процентах за месяц. «Холдоут» — итог самого конфига
-      на тех же данных (фиксированная маржа $5 от $20). «Необуч. сетка» —
-      ручной конфиг из шапки config.py, которого никто не подбирал: если он
-      идёт вровень или лучше, отбор денег не добавил. Спарклайн — кривая
-      капитала за всю историю, включая обучающую часть.</p>
+      генома на холдоуте, у каждой копии копеечные выходы обнулены, в процентах
+      за месяц. «Экзамен без копеек» — итог самого конфига на невиданных данных,
+      когда циклы, закрытые в безубыток, считаются нулём (фиксированная маржа $5
+      от $20). «Циклов в ноль» — доля таких циклов: чем она выше, тем меньше
+      смысла в сыром winrate. Цифр обучающего периода на карточках нет: подбор
+      видел эти данные целиком, доказательством они не являются.</p>
   </div>
 
   <div class="card" id="moCard">
     <div class="h-card">Прибыль по месяцам · портфель
-      <span class="muted small" style="font-weight:400">все 5 ботов вместе,
-        доход месяца к концу предыдущего · вся история
-        {% if honest.periods %}{{ honest.periods.full.start }} — {{ honest.periods.full.end }},
-        из них первые {{ honest.periods.train.months }} мес — обучающий период{% endif %}</span></div>
+      <span class="muted small" style="font-weight:400">только экзамен
+        {% if honest.periods %}{{ honest.periods.holdout.start }} — {{ honest.periods.holdout.end }}{% endif %},
+        все 5 ботов вместе</span></div>
     <div class="mchart" id="moBox"></div>
-    <p class="tv-hint">Бары до {{ honest.periods.holdout.start if honest.periods else '' }} —
-      обучающий период (подбор их видел), после — холдоут.</p>
+    <p class="tv-hint">Обучающий период на графике не показан: подбор параметров
+      видел его целиком, и месяцы там нарисованы задним числом. Копеечные выходы
+      внутри этих баров ещё сидят — помесячная кривая считается по общей
+      прибыли, поэтому смотри на неё как на форму, а не как на обещание.</p>
   </div>
 
 </div>
 
 <script>
-/* помесячная доходность портфеля — из готовых кривых pnl_curves */
-TVK.monthChart("moBox", "pf_cons", { caption: "доход за месяц",
+/* Помесячная доходность портфеля — из готовых кривых pnl_curves.
+   Показываем ТОЛЬКО экзамен: месяцы обучающего периода отрезаем прямо в
+   данных (onData вызывается до отрисовки), иначе страница снова начинает
+   хвалиться подгонкой. */
+var HOLDOUT_FROM = "{{ honest.periods.holdout.start if honest.periods else '' }}";
+function cutTrain(d) {
+  if (!HOLDOUT_FROM || !d || !d.months) return;
+  var keep = d.months.filter(function (m) {
+    return String(m.label || "") >= HOLDOUT_FROM.slice(0, 7);
+  });
+  if (!keep.length) return;
+  d.months = keep;
+  var vals = keep.map(function (m) { return +m.pct || 0; });
+  var pos = vals.filter(function (v) { return v > 0; }).length;
+  var best = 0, worst = 0;
+  keep.forEach(function (m, i) {
+    if (vals[i] > vals[best]) best = i;
+    if (vals[i] < vals[worst]) worst = i;
+  });
+  d.summary = { pos: pos, total: keep.length,
+    best: { pct: vals[best], label: keep[best].label },
+    worst: { pct: vals[worst], label: keep[worst].label },
+    avg: vals.reduce(function (a, v) { return a + v; }, 0) / keep.length };
+}
+TVK.monthChart("moBox", "pf_cons", { caption: "доход за месяц · экзамен",
+  onData: cutTrain,
   onEmpty: function () { document.getElementById("moCard").style.display = "none"; } });
 </script>
 

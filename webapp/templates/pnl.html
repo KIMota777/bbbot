@@ -25,6 +25,11 @@
   .lchip .hon { flex:0 0 auto; font-style:normal; font-size:11px; font-weight:640;
     opacity:.85; padding:1px 5px; border-radius:5px; background:rgba(255,255,255,.06); }
   .lchip .hon::before { content:"честно "; font-weight:400; opacity:.6; }
+  /* режим «вся история»: итоги линий становятся цифрами обучающего периода —
+     гасим их и вешаем тот же значок ⚠, что и класс .insample по всему сайту */
+  .legend-grid.insample-mode .lchip b { color:var(--muted-2) !important; }
+  .legend-grid.insample-mode .lchip b::before { content:"⚠ "; font-size:10px;
+    opacity:.7; }
 </style>
 </head>
 <body>
@@ -37,30 +42,46 @@
     <p class="h-sub">По умолчанию показан <b>экзамен</b>: капитал стартует с
       $50 в момент, когда закончился подбор параметров — это то, что стратегия
       заработала бы, если бы её включили с этой точки. Переключатель «Вся
-      история» добавляет период обучения: там кривая нарисована задним числом
-      и как оценка доходности завышена.</p>
+      история» добавляет период обучения: там кривая нарисована задним числом,
+      как оценка доходности она завышена и помечена значком ⚠.</p>
   </header>
+
+  <div class="art" id="tinyNote" style="display:none">
+    <span class="ico">⚠</span>
+    <div class="nb">
+      <span class="t">Кривые на этом графике ещё НЕ очищены от копеечных
+        выходов.</span>
+      <span id="tinyText"></span>
+    </div>
+  </div>
 
   <div class="note warn">
     <span class="ico">⚖</span>
     <div class="nb">
-      <span class="t">Кривые ботов — обучающий период внутри</span>, их
-      финальные $ и % не являются доказательством доходности.
+      <span class="t">Линии считаются с реинвестом и включают циклы, закрытые
+        в ноль</span> — сами по себе их финальные $ и % доказательством
+      доходности не являются.
       <span id="honestNote"></span>
       <details>
         <summary>подробнее</summary>
         <p>Walk-forward-экзамены во всех волнах отбора ботов были устроены с
           изъяном: обучающая выборка всегда начиналась с начала истории, поэтому
           «экзаменационный» отрезок раннего фолда попадал внутрь обучающих данных
-          позднего. Кривая на графике идёт по всей истории — первые ~72% её длины
-          подбор параметров видел.</p>
+          позднего. В режиме «Вся история» первые ~72% длины кривой подбор
+          параметров видел.</p>
+        <p>Второй изъян, общий для обоих режимов: перенос стопа в безубыток
+          закрывает цикл на +0.001&nbsp;$. Формально это прибыльная сделка,
+          фактически ноль, и у части ботов такие циклы дают больше половины
+          «побед». <code>build_pnl_curves.py</code> их не вычитает, поэтому
+          решения принимаются по таблице «Честные итоги ботов» ниже, где
+          копеечные выходы обнулены.</p>
         <p>Честная перепроверка ботов посчитана отдельно
           (<code>python build_bot_honest_data.py</code>): холдоут — последние 28%
           истории, плюс тест устойчивости параметров и сравнение со случайными
-          геномами. Её итоги — в плитках и в таблице «Честные итоги ботов».</p>
+          геномами.</p>
         <p>Для сигнальных сетапов BTC проверку переделали заново (вложенная
-          валидация с неприкосновенным holdout) — из 8 вариантов подтвердились
-          только два. Поэтому сигналы показаны пунктиром и в портфельные линии
+          валидация с неприкосновенным holdout) — из 8 вариантов не подтвердился
+          ни один. Поэтому сигналы показаны пунктиром и в портфельные линии
           <b>не входят</b>.</p>
         <p>Реинвест умножает не только прибыль, но и любую ошибку бэктеста.
           Портфель «с ребалансом» предполагает перераспределение капитала раз в
@@ -82,7 +103,7 @@
     <div class="row-between" style="margin-bottom:12px">
       <div class="seg" id="segPeriod" title="что показывать: только невиданные данные или всю историю">
         <button class="on" data-p="honest">Экзамен (реальные)</button>
-        <button data-p="all">Вся история</button>
+        <button data-p="all" title="цифры обучающего периода — не доказательство">⚠ Вся история</button>
       </div>
       <div class="seg" id="segMode">
         <button class="on" data-m="usd">$ доллары</button>
@@ -122,23 +143,27 @@
     <div class="h-card">Линии графика
       <span class="muted small" style="font-weight:400">итоги линий следуют
         за переключателем периода; «честно» в плашке — медиана возмущений
-        параметров на экзамене</span></div>
+        параметров на экзамене, копеечные выходы обнулены</span></div>
     <div class="legend-grid" id="legend"></div>
     <p class="tv-hint">Пересчёт кривых: <code>python build_pnl_curves.py</code>,
-      честных цифр: <code>python build_bot_honest_data.py</code></p>
+      честных цифр: <code>python build_bot_honest_data.py</code>. Итог линии
+      («$» слева) копеечные выходы ещё содержит, плашка «честно» — уже нет.</p>
   </div>
 
   <div class="card" id="moCard">
     <div class="row-between" style="margin-bottom:12px">
       <div class="h-card" style="margin:0">Прибыль портфеля по месяцам
-        <span class="muted small" style="font-weight:400">вся история; бары до
-          2025-09-04 — обучающий период</span></div>
+        <span class="muted small" style="font-weight:400">только экзамен,
+          с 2025-09</span></div>
       <div class="seg" id="segPf">
         <button class="on" data-k="pf_cons">Портфель</button>
         <button data-k="pf_reb">С ребалансом</button>
       </div>
     </div>
     <div class="mchart" id="moBox"></div>
+    <p class="tv-hint">Месяцы обучающего периода отрезаны: подбор параметров
+      видел их целиком, и «месяцев в плюсе» там считалось бы по подгонке.
+      Копеечные выходы внутри баров ещё сидят.</p>
   </div>
 
 </div>
@@ -230,10 +255,9 @@ async function load() {
     };
     registry.push(rec);
 
-    if (isPf) tiles.insertAdjacentHTML("beforeend",
-      `<div class="tile"><b class="muted">${fmtUsd(s.final_usd)}</b>
-       <span>${s.label}: ${s.final_pct >= 0 ? "+" : ""}${s.final_pct}%, DD ${s.dd}% —
-       вся история, in-sample</span></div>`);
+    // Плитки с in-sample итогом портфеля («вся история, +N%») убраны:
+    // это была крупная цифра подгонки. Итоги линий остались в легенде и
+    // следуют за переключателем периода (по умолчанию — экзамен).
   }
   BOUNDS = [tMin, tMax];
 
@@ -244,7 +268,8 @@ async function load() {
   const spx = d.series.find(s => s.key === "bench_spx");
   if (spx) tiles.insertAdjacentHTML("beforeend",
     `<div class="tile"><b>${fmtUsd(spx.final_usd)}</b>
-     <span>для сравнения: S&amp;P 500 холд $50 (+${spx.final_pct}%)</span></div>`);
+     <span>для сравнения: S&amp;P 500 холд $50 (+${spx.final_pct}%) —
+     рыночный факт, не бэктест</span></div>`);
   tiles.insertAdjacentHTML("afterbegin",
     `<div class="tile"><b>$50 × ${strat.length}</b>
      <span>старт: по $50 на стратегию ($${d.total} всего)</span></div>`);
@@ -298,14 +323,18 @@ async function load() {
     TVK.fit(chart);
     rng.refresh();
     showFinals();
+    // в режиме «вся история» итоги линий — цифры обучающего периода:
+    // гасим их и помечаем ⚠, чтобы они не читались как результат
+    $("legend").classList.toggle("insample-mode", period !== "honest");
     const lp = $("legPeriod");
     if (lp) lp.textContent = period === "honest"
       ? "· экзамен: только невиданные данные"
-      : "· вся история, обучающий период внутри";
+      : "· ⚠ вся история, обучающий период внутри — не доказательство";
     const note = $("hdNote");
     if (note) note.textContent = period === "honest"
       ? "показан только экзамен: капитал стартует с $50 на границе обучения — это то, что стратегия заработала бы, начав торговать с этой точки"
-      : (d.holdout_note || "");
+      : "⚠ обучающий период внутри: первые ~72% кривой подбор параметров видел, "
+        + "как оценка доходности эти цифры завышены. " + (d.holdout_note || "");
   };
 
   // легенда-оверлей: три главные линии прямо на графике (коротко!)
@@ -381,57 +410,127 @@ async function loadHonest() {
   const P = h.periods, S = h.summary, pf = h.portfolio;
   const sign = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
   const cls = v => v > 0 ? "pos" : "neg";
+  const pfN = pf.holdout_no_tiny || pf.holdout;      // экзамен без копеечных
+  const pm = S.avg_per_month_no_tiny !== undefined
+    ? S.avg_per_month_no_tiny : S.avg_per_month;
+  const rb = S.avg_robust_no_tiny !== undefined
+    ? S.avg_robust_no_tiny : S.avg_robust;
 
-  /* плитки: честные цифры идут ПЕРЕД in-sample */
+  /* плитки — ТОЛЬКО honest и притом без копеечных выходов */
   $("tiles").insertAdjacentHTML("afterbegin",
-    `<div class="tile"><b class="${cls(pf.holdout.ret)}">${sign(pf.holdout.ret)}</b>
-      <span>портфель ботов на холдоуте (${P.holdout.months} мес, DD ${pf.holdout.dd}%)</span></div>
-     <div class="tile"><b class="${cls(S.avg_robust)}">${sign(S.avg_robust)}</b>
-      <span>честная оценка = ${S.avg_per_month >= 0 ? "+" : ""}${S.avg_per_month}%/мес</span></div>
+    `<div class="tile"><b class="${cls(pfN.ret)}">${sign(pfN.ret)}</b>
+      <span>портфель ботов на экзамене без копеечных выходов
+      (${P.holdout.months} мес, DD ${pfN.dd}%)
+      <span class="mini-note">с ними считалось ${sign(pf.holdout.ret)}</span></span></div>
+     <div class="tile"><b class="${cls(rb)}">${sign(rb)}</b>
+      <span>честная оценка = ${pm >= 0 ? "+" : ""}${pm}%/мес
+      <span class="mini-note">медиана соседей конфига, копеечные обнулены</span></span></div>
      <div class="tile"><b class="${S.confirmed ? "pos" : "neg"}">${S.confirmed} / ${S.n}</b>
-      <span>ботов пережили честную проверку</span></div>`);
+      <span>ботов пережили честную проверку
+      <span class="mini-note">по 5 пунктам критерия${S.confirmed_old !== undefined
+        ? "; до поправки было " + S.confirmed_old : ""}</span></span></div>
+     ${S.on_artifact ? `<div class="tile"><b class="neg">${S.on_artifact} / ${S.n}</b>
+      <span>держатся на копеечных выходах
+      <span class="mini-note">без «нулевых» циклов уходят в минус</span></span></div>` : ""}`);
 
-  $("honestNote").innerHTML = ` Честно: портфель <b class="${cls(pf.holdout.ret)}">`
-    + `${sign(pf.holdout.ret)}</b> за ${P.holdout.months} мес холдоута, ожидание `
-    + `<b class="${cls(S.avg_per_month)}">${S.avg_per_month >= 0 ? "+" : ""}`
-    + `${S.avg_per_month}%/мес</b>, подтверждено ${S.confirmed} из ${S.n}.`;
+  $("honestNote").innerHTML = ` Честно: портфель <b class="${cls(pfN.ret)}">`
+    + `${sign(pfN.ret)}</b> за ${P.holdout.months} мес экзамена без копеечных `
+    + `выходов, ожидание <b class="${cls(pm)}">${pm >= 0 ? "+" : ""}${pm}%/мес</b>, `
+    + `подтверждён ${S.confirmed} из ${S.n}.`;
+
+  /* плашка про то, что сами кривые копеечные выходы ещё содержат */
+  if (S.on_artifact) {
+    $("tinyNote").style.display = "";
+    $("tinyText").innerHTML =
+      `${h.tiny_rule.text} <br>Поэтому у ${S.on_artifact} из ${S.n} ботов линия `
+      + "выше рисует прибыль, которой нет: смотри таблицу «Честные итоги "
+      + "ботов» — там столбец «Экзамен без копеечных».";
+  }
 
   $("honestCard").style.display = "";
-  $("honestPeriod").textContent = `холдоут ${P.holdout.start} — ${P.holdout.end}`
-    + ` (${P.holdout.months} мес) против обучения ${P.train.start} — ${P.train.end}`
-    + ` (${P.train.months} мес)`;
+  $("honestPeriod").textContent = `экзамен ${P.holdout.start} — ${P.holdout.end}`
+    + ` (${P.holdout.months} мес); копеечные выходы (|PnL| < $`
+    + `${h.tiny_rule.thr_usd}) считаются нулём`;
   const badge = v => v.key === "ok" ? "badge--on"
     : (v.key === "part" ? "badge--watch" : "badge--off");
   $("honestTbl").innerHTML =
-    "<thead><tr><th>Бот</th><th>Вердикт</th><th>Холдоут</th><th>Честно, %/мес</th>"
-    + "<th>Необуч. сетка</th><th>Сделок</th><th>Обучение</th>"
-    + "<th>Кривая на графике</th></tr></thead><tbody>"
-    + (h.order || Object.keys(h.bots)).map(k => h.bots[k]).map(b => `<tr>
+    "<thead><tr><th>Бот</th><th>Вердикт</th><th>Экзамен без копеечных</th>"
+    + "<th>Честно, %/мес</th><th>Честный WR</th><th>Циклов в ноль</th>"
+    + "<th>Необуч. сетка</th><th>Сделок</th></tr></thead><tbody>"
+    + (h.order || Object.keys(h.bots)).map(k => h.bots[k]).map(b => {
+        const t = (b.tiny || {}).holdout || {};
+        const rn = b.robust_no_tiny || b.robust;
+        const art = t.holds_on_artifact
+          ? ' <span class="badge badge--art">на копейках</span>' : "";
+        return `<tr>
         <td>${b.coin} x${b.lev}</td>
-        <td><span class="badge ${badge(b.verdict)}">${b.verdict.status.toLowerCase()} ${b.verdict.score}</span></td>
-        <td class="${cls(b.holdout.ret)}">${sign(b.holdout.ret)}</td>
-        <td class="${cls(b.robust.median)}">${b.robust.per_month >= 0 ? "+" : ""}${b.robust.per_month}%</td>
+        <td><span class="badge ${badge(b.verdict)}">${b.verdict.status.toLowerCase()} ${b.verdict.score}</span>${art}</td>
+        <td class="${cls(t.ret_without_tiny)}"><b>${sign(t.ret_without_tiny)}</b>
+          <span class="mini-note">с копеечными ${sign(t.ret)}</span></td>
+        <td class="${cls(rn.median)}">${rn.per_month >= 0 ? "+" : ""}${rn.per_month}%</td>
+        <td>${t.wr_honest}%<span class="mini-note">сырой ${t.wr}%</span></td>
+        <td class="flat">${t.tiny_share}%</td>
         <td>${sign(b.benchmarks.untrained.holdout)}</td>
-        <td>${b.n_trades.holdout}</td>
-        <td class="muted">${sign(b.train.ret)}</td>
-        <td class="muted">${sign(b.site_pnl_pct)}</td></tr>`).join("")
+        <td>${b.n_trades.holdout}</td></tr>`;
+      }).join("")
     + `<tr><td><b>портфель</b></td><td></td>
-        <td class="${cls(pf.holdout.ret)}"><b>${sign(pf.holdout.ret)}</b></td>
-        <td class="${cls(S.avg_per_month)}"><b>${S.avg_per_month >= 0 ? "+" : ""}${S.avg_per_month}%</b></td>
-        <td></td><td></td><td class="muted">${sign(pf.train.ret)}</td><td></td></tr>`
+        <td class="${cls(pfN.ret)}"><b>${sign(pfN.ret)}</b></td>
+        <td class="${cls(pm)}"><b>${pm >= 0 ? "+" : ""}${pm}%</b></td>
+        <td></td><td></td><td></td><td></td></tr>`
     + "</tbody>";
+  /* «честно» в плашке линии бота — из bots_honest и притом БЕЗ копеечных
+     выходов (в pnl_curves.json этой поправки нет) */
+  for (const r of registry) {
+    const key = String(r.s.key);
+    if (!key.startsWith("bot_")) continue;
+    const b = h.bots[key.slice(4)];
+    if (!b) continue;
+    const rn = b.robust_no_tiny || b.robust;
+    const t = (b.tiny || {}).holdout || {};
+    let el = r.chipEl.querySelector(".hon");
+    if (!el) {
+      el = document.createElement("i");
+      r.chipEl.insertBefore(el, r.chipEl.querySelector("b"));
+    }
+    el.className = "hon " + (rn.median >= 0 ? "pos" : "neg");
+    el.textContent = (rn.median >= 0 ? "+" : "") + rn.median + "%";
+    el.title = "честная оценка без копеечных выходов: медиана "
+      + h.method.n_pert + " возмущений параметров на экзамене"
+      + (t.holds_on_artifact ? " · ВНИМАНИЕ: без копеечных выходов бот в минусе"
+                             : "");
+    if (t.holds_on_artifact) r.chipEl.title = "держится на копеечных выходах";
+  }
+
   $("honestHint").innerHTML =
-    "«Холдоут» — итог конфига на последних 28% истории (фикс. маржа $5 от $20). "
-    + `«Честно» — медиана ${h.method.n_pert} возмущённых копий генома ±`
-    + `${Math.round(h.method.pert * 100)}% на том же холдоуте, в процентах за месяц: `
-    + "это то, чего разумно ждать, когда рынок сдвинет оптимум. «Кривая на графике» — "
-    + "итог той самой линии выше (вся история, реинвест): именно её раньше "
-    + "показывали крупно. " + h.caveat;
+    "«Экзамен без копеечных» — итог конфига на последних 28% истории "
+    + "(фикс. маржа $5 от $20), где циклы с |PnL| меньше 1% маржи считаются "
+    + "нулём. «Честно» — медиана " + h.method.n_pert + " возмущённых копий "
+    + `генома ±${Math.round(h.method.pert * 100)}% на том же экзамене, у каждой `
+    + "копии копеечные выходы обнулены: это то, чего разумно ждать, когда рынок "
+    + "сдвинет оптимум. Столбцов «Обучение» и «Кривая на графике» здесь больше "
+    + "нет — обе цифры считались на данных, которые подбор видел. " + h.caveat;
 }
 
-/* прибыль по месяцам: портфель / портфель с ребалансом */
+/* прибыль по месяцам: портфель / портфель с ребалансом.
+   Обучающие месяцы отрезаем прямо в данных (onData зовётся до отрисовки) и
+   пересчитываем итоговую строку — иначе «месяцев в плюсе» берётся с подгонки. */
+const HOLDOUT_MONTH = "2025-09";
+function cutTrainMonths(d) {
+  if (!d || !d.months) return;
+  const keep = d.months.filter(m => String(m.label || "") >= HOLDOUT_MONTH);
+  if (!keep.length) return;
+  d.months = keep;
+  const v = keep.map(m => +m.pct || 0);
+  let bi = 0, wi = 0;
+  v.forEach((x, i) => { if (x > v[bi]) bi = i; if (x < v[wi]) wi = i; });
+  d.summary = { pos: v.filter(x => x > 0).length, total: keep.length,
+    best: { pct: v[bi], label: keep[bi].label },
+    worst: { pct: v[wi], label: keep[wi].label },
+    avg: v.reduce((a, x) => a + x, 0) / keep.length };
+}
 function loadMonths(key) {
-  TVK.monthChart("moBox", key, { caption: "доход портфеля за месяц",
+  TVK.monthChart("moBox", key, { caption: "доход портфеля за месяц · экзамен",
+    onData: cutTrainMonths,
     onEmpty: () => { $("moCard").style.display = "none"; } });
 }
 $("segPf").onclick = e => {
