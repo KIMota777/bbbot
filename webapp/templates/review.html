@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ревью исследования</title>
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  /* Документ + липкое оглавление слева. Всё, что можно, взято из app.css;
+     здесь только типографика длинного текста, которой на других страницах нет. */
+  .rv-wrap { display: grid; grid-template-columns: 250px minmax(0, 1fr);
+    gap: 26px; align-items: start; }
+
+  .rv-toc { position: sticky; top: 14px; max-height: calc(100vh - 28px);
+    overflow-y: auto; background: var(--card); border: 1px solid var(--line-soft);
+    border-radius: var(--r-lg); padding: 14px 12px; }
+  .rv-toc::-webkit-scrollbar { width: 6px; }
+  .rv-toc::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .rv-toc .cap { font-size: 10.5px; font-weight: 640; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--muted-2); padding: 0 8px 8px; }
+  .rv-toc a { display: block; padding: 5px 8px; border-radius: 7px;
+    font-size: 12.5px; line-height: 1.4; color: var(--muted);
+    text-decoration: none; transition: background var(--t), color var(--t); }
+  .rv-toc a:hover { background: rgba(255,255,255,.045); color: var(--ink); }
+  .rv-toc a.lvl2 { font-weight: 590; color: var(--ink); margin-top: 4px; }
+  .rv-toc a.lvl3 { padding-left: 18px; font-size: 12px; }
+  .rv-toc a.on { background: var(--accent-bg); color: #9fb8ff; }
+
+  .rv-doc { min-width: 0; background: var(--card);
+    border: 1px solid var(--line-soft); border-radius: var(--r-lg);
+    padding: 26px 30px 32px; }
+  .rv-doc > :first-child { margin-top: 0; }
+
+  .rv-h1 { font-size: 25px; font-weight: 700; letter-spacing: -.6px;
+    color: var(--ink-hi); margin: 0 0 6px; line-height: 1.2; }
+  .rv-h2 { font-size: 19px; font-weight: 660; letter-spacing: -.35px;
+    color: var(--ink-hi); margin: 34px 0 10px; padding-top: 16px;
+    border-top: 1px solid var(--line-soft); scroll-margin-top: 14px; }
+  .rv-h3 { font-size: 15px; font-weight: 620; letter-spacing: -.2px;
+    color: var(--ink-hi); margin: 24px 0 8px; scroll-margin-top: 14px; }
+  .rv-h4 { font-size: 13.5px; font-weight: 620; color: var(--ink);
+    margin: 18px 0 6px; scroll-margin-top: 14px; }
+
+  .rv-p { margin: 0 0 12px; font-size: 14px; line-height: 1.68;
+    color: var(--ink); max-width: 82ch; }
+  .rv-p b { color: var(--ink-hi); font-weight: 640; }
+  .rv-p i { color: var(--muted); font-style: italic; }
+
+  .rv-list { margin: 0 0 13px; padding-left: 22px; max-width: 82ch; }
+  .rv-list li { font-size: 14px; line-height: 1.62; color: var(--ink);
+    margin-bottom: 6px; }
+  .rv-list li::marker { color: var(--muted-2); }
+  .rv-list b { color: var(--ink-hi); font-weight: 640; }
+
+  .rv-doc code { font-family: var(--mono); font-size: 12.5px;
+    background: var(--bg-elev); border: 1px solid var(--line-soft);
+    border-radius: 5px; padding: 1px 5px; color: var(--info); }
+  .rv-code { background: var(--bg-elev); border: 1px solid var(--line-soft);
+    border-radius: var(--r-md); padding: 13px 15px; overflow-x: auto;
+    margin: 0 0 14px; }
+  .rv-code code { background: none; border: 0; padding: 0; color: var(--ink);
+    font-size: 12.5px; line-height: 1.65; white-space: pre; }
+
+  .rv-tbl { margin: 0; }
+  .rv-doc .tbl-wrap { margin: 0 0 16px; border: 1px solid var(--line-soft);
+    border-radius: var(--r-md); background: var(--bg-elev); }
+  .rv-tbl tbody tr { cursor: default; }
+  .rv-tbl td, .rv-tbl th { white-space: normal; }
+  .rv-tbl td:first-child { min-width: 90px; }
+
+  .rv-hr { border: 0; border-top: 1px solid var(--line-soft); margin: 22px 0; }
+
+  .rv-miss { text-align: center; padding: 40px 20px; color: var(--muted); }
+
+  @media (max-width: 1000px) {
+    .rv-wrap { grid-template-columns: 1fr; }
+    .rv-toc { position: static; max-height: none; }
+    .rv-doc { padding: 20px 16px 24px; }
+    .rv-h1 { font-size: 21px; }
+    .rv-h2 { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+{% set nav = 'review' %}{% include '_nav.html' %}
+
+<div class="wrap stack">
+
+  <header>
+    <h1 class="h-page">Ревью исследования</h1>
+    <p class="h-sub">Полный разбор пятнадцати волн проверок: что построено, что
+      работает, что нет и можно ли на этом заработать. Документ живёт в файле
+      <code>REVIEW.md</code> в корне проекта — страница рендерит его на лету,
+      поэтому правка файла сразу видна здесь.</p>
+  </header>
+
+  {% if body %}
+  <div class="stripe">
+    <div><div class="k">разделов</div><div class="v">{{ meta.sections }}</div></div>
+    <div><div class="k">объём</div><div class="v">{{ meta.kb }}<small>КБ</small></div></div>
+    <div><div class="k">строк</div><div class="v">{{ meta.lines }}</div></div>
+    <div><div class="k">знаков</div><div class="v">{{ '{:,}'.format(meta.chars)|replace(',', ' ') }}</div></div>
+    <div><div class="k">обновлён</div><div class="v" style="font-size:14px">{{ meta.mtime }}</div></div>
+  </div>
+
+  <div class="note">
+    <span class="ico">ⓘ</span>
+    <div class="nb"><span class="t">Каждое число здесь взято из файла отчёта в
+      корне проекта.</span> Если цифра получена на обучающем периоде — это
+      сказано прямо в строке. Хроника волн — <a href="/evolution">на отдельной
+      странице</a>, отвергнутые гипотезы — <a href="/archive">в архиве</a>.</div>
+  </div>
+
+  <div class="rv-wrap">
+    <nav class="rv-toc" id="toc">
+      <div class="cap">Оглавление</div>
+      {% for lvl, txt, sid in toc %}{% if lvl in (2, 3) %}
+      <a href="#{{ sid }}" class="lvl{{ lvl }}" data-t="{{ sid }}">{{ txt }}</a>
+      {% endif %}{% endfor %}
+    </nav>
+
+    <article class="rv-doc" id="doc">{{ body|safe }}</article>
+  </div>
+
+  <p class="tv-hint">Все цифры воспроизводятся запуском соответствующего скрипта
+    из корня проекта; вывод каждой волны лежит рядом в файле
+    <code>*_out.txt</code>. Список источников — в конце документа.</p>
+  {% else %}
+  <div class="stub">
+    <div class="ic">📄</div>
+    <h2>REVIEW.md не найден</h2>
+    <p>Документ должен лежать в корне проекта рядом с <code>config.py</code>.
+      Страница читает его при каждом открытии и ничего не кэширует.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+/* подсветка текущего раздела в оглавлении */
+(function () {
+  const links = [...document.querySelectorAll("#toc a")];
+  if (!links.length) return;
+  const heads = links.map(a => document.getElementById(a.dataset.t))
+                     .filter(Boolean);
+  let cur = null;
+  function sync() {
+    const y = window.scrollY + 90;
+    let act = heads[0];
+    for (const h of heads) if (h.offsetTop <= y) act = h;
+    if (act === cur) return;
+    cur = act;
+    for (const a of links) a.classList.toggle("on", a.dataset.t === act.id);
+    const on = document.querySelector("#toc a.on");
+    if (on && window.innerWidth > 1000) {
+      const box = document.getElementById("toc");
+      const top = on.offsetTop - box.clientHeight / 2;
+      if (Math.abs(box.scrollTop - top) > box.clientHeight / 3)
+        box.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    }
+  }
+  addEventListener("scroll", sync, { passive: true });
+  sync();
+})();
+</script>
+</body>
+</html>

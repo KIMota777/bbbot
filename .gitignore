@@ -1,36 +1,45 @@
-# кэши рыночных данных (скачиваются заново при первом запуске скриптов)
+# --- кэши рыночных данных (скачиваются заново при первом запуске) ---
 history_*.json
+# объёмы свечей, ~48 МБ (комментарий обязан быть отдельной строкой:
+# в .gitignore текст после # в конце строки входит в сам шаблон)
+volcache_*.json
 funding_*.json
 oi_*.json
 daily_pct5.json
 fng_history.json
 webapp/cache_*.json
 
-# логи ботов/помощника/сервера
+# --- логи ---
 *.log
+# вывод фоновых процессов (run_hidden.py)
+logs/
 webapp/srv*.log
 
-# временные выводы смоук-тестов
+# --- состояние живых процессов (у каждого запуска своё) ---
+webapp/data/botstate_*.json
+webapp/data/advisor_heartbeat.txt
+webapp/data/signals.json
+webapp/data/user_signals.json
+
+# --- временные выводы прогонов и смоук-тестов ---
 o_*.txt
 e_*.txt
-o1.txt
-o2.txt
-o3.txt
-e1.txt
-e2.txt
-e3.txt
+o[0-9].txt
+e[0-9].txt
 adv_o.txt
 adv_e.txt
 out.txt
 err.txt
 out2.txt
 err2.txt
+repro_seed*.txt
+winners_seed*.json
+winners_backup_*.json
 
-# python
+# --- python ---
 __pycache__/
 *.pyc
 
-# ключи никогда не хранятся в файлах (только переменные окружения),
-# но на всякий случай:
+# --- ключи только в переменных окружения; на всякий случай ---
 .env
 *.key

@@ -1,0 +1,883 @@
+{
+  "dump_long@240": {
+    "title": "капитуляция-лонг: слив + разворотная свеча (итог волны)",
+    "interval_min": 240,
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "LTCUSDT",
+      "DOGEUSDT"
+    ],
+    "genome": {
+      "rsi_idx": 2,
+      "window": 13,
+      "cooldown": 0,
+      "hold_days": 30,
+      "trend_gate": 0,
+      "trend_len": 200,
+      "break_days": 20,
+      "break_buf_atr": 0.0,
+      "pull_slow": 200,
+      "pull_fast": 20,
+      "pull_max_atr": 1.5,
+      "drop_frac": 0.06,
+      "drop_days": 2,
+      "rsi_os": 30,
+      "need_candle": 1,
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "stop_mode": 2,
+      "swing_bars": 8,
+      "stop_atr_k": 1.5,
+      "buf_atr": 0.3,
+      "stop_cap": 0.15,
+      "grid_levels": 2,
+      "grid_step_atr": 0.8,
+      "grid_mult": 1.3,
+      "tp_mode": 0,
+      "tp_r": 2.0,
+      "tp_atr": 3.0,
+      "trail_bars": 60,
+      "be_after_r": 0.0,
+      "storm_gate": 0,
+      "storm_day": 0.07,
+      "storm_week": 0.15,
+      "storm_atr_rank": 0.85,
+      "storm_mode": 0,
+      "fund_gate": 0,
+      "fund_thr": 0.005,
+      "aroon_gate": 0,
+      "aroon_n": 25,
+      "aroon_thr": 30
+    },
+    "enabled": false,
+    "watch": true,
+    "rec_lev": 0,
+    "rec_lev_forward_test": 3,
+    "rec_lev_max": 5,
+    "verdict": "НЕ БОЕВОЙ ЗАПУСК, только наблюдение/форвард-тест: на экзамене знак положительный и лучше всех эталонов, но преимущество НЕ доказано, а зеркальный сетап на том же окне тоже в плюсе",
+    "reason": "holdout 63 сделок, exp_R +0.237 (95% ДИ [-0.131, +0.605], t=+1.26); случайный вход ТОЙ ЖЕ волатильности +0.123R, перевес всего +0.114R (t=+0.54); зеркальный rally_short на том же окне +0.861R — значит померен прибор, а не направление; нужен |t|>=3.71 после поправки на 246 проверок волны",
+    "repro_runs": 0,
+    "repro_passes": 0,
+    "repro_note": "калибровка детерминированная (перебор 16 вариантов), повторов отбора нет; 5 зерна использованы для эталонов, конфигурация обошла случайный вход на 5 зёрнах из 5",
+    "config": {
+      "stop": "1.5*ATR",
+      "filter": "без фильтра",
+      "entry": "сетка 2x0.8ATR",
+      "lev_tested": 5,
+      "chosen_by": "лучший exp_R на ОБУЧАЮЩЕЙ части из 16 объявленных вариантов; holdout в выборе не участвовал",
+      "elements": [
+        {
+          "element": "ТФ 4ч",
+          "evidence": "v12: dump_long@240 прошёл экзамен (+0.544R, PF 1.58); 1ч слабее (+0.330R). ТФ не переподбирался."
+        },
+        {
+          "element": "падение >=6% за 2 сут",
+          "evidence": "ядро сетапа, DEFAULTS3 «из учебника», совпадает с idea_test.py; не подбиралось"
+        },
+        {
+          "element": "RSI14 < 30",
+          "evidence": "ядро сетапа; RSI14<25 давал -0.065R (t=-0.16), RSI21<35 +0.038R (t=+0.16) — не значимо"
+        },
+        {
+          "element": "зелёная свеча",
+          "evidence": "ядро сетапа, не подбиралось"
+        },
+        {
+          "element": "стоп 1.5*ATR",
+          "evidence": "выбран калибровкой на ОБУЧЕНИИ из 4 вариантов: -0.008R против -0.107R у «за минимумом падения» и -0.064R у 2*ATR; независимо: в замере уровней atr1.5 единственный с плюсом на holdout (+0.013R)"
+        },
+        {
+          "element": "потолок стопа 15%",
+          "evidence": "дефолт 6% выбрасывал половину капитуляций (263->134) — самые волатильные, то есть менял состав событий"
+        },
+        {
+          "element": "тейк 2R",
+          "evidence": "не подбиралось (DEFAULTS3); тейк 1R даёт WR 50.8%, но exp_R -0.019 — обмен винрейта на размер, не прибыль"
+        },
+        {
+          "element": "сетка 2 колена x0.8 ATR",
+          "evidence": "УПРАВЛЕНИЕ РИСКОМ, не преимущество: просадка 35.6%->10.3%, ликвидаций 0, но тот же прирост (+0.10..+0.13R) она даёт СЛУЧАЙНОМУ входу на обоих окнах"
+        },
+        {
+          "element": "плечо x5 максимум, x3 для форвард-теста",
+          "evidence": "лестница плеча: x3 -> разорение 0.0%, все 169 сделок проходят; x10 -> разорение 36%; x20 -> берётся 63 сделки из 169 и доход -8.6%; x25 -> 25 сделок и -11.1%"
+        },
+        {
+          "element": "фильтры индикаторов — нет",
+          "evidence": "53 проверки, 0 пережили Бонферрони; три лучших сменили знак на holdout"
+        },
+        {
+          "element": "смартмани — нет",
+          "evidence": "ордер-блок -0.272/-0.371R (t=-2.85), тот же знак на случайных входах; BOS: 95% медвежьи"
+        },
+        {
+          "element": "объёмный отскок — нет",
+          "evidence": "знак ОБРАТНЫЙ: на объёме -0.237R против +0.049R в пустоте (t=-2.03), holdout -0.627 против -0.019 (t=-2.82); как ЗАПРЕТ проверен и дал +0.031R — шум"
+        },
+        {
+          "element": "безубыток — нет",
+          "evidence": "в прошлом рисовал винрейт, не заработок"
+        },
+        {
+          "element": "трейлинг — нет",
+          "evidence": "не проверялся в этой волне; включать непроверенное в итог нельзя"
+        }
+      ],
+      "rejected": [
+        {
+          "element": "плечо x20-25 (просьба владельца)",
+          "evidence": "штатный стоп шире предела 0.8*(1/плечо-0.005): при x20 берётся часть сигналов, при x25 почти ни одного; exp_R от плеча не зависит"
+        },
+        {
+          "element": "сетка как источник прибыли",
+          "evidence": "сетка даёт СЛУЧАЙНОМУ входу тот же прирост, что и сигналу — это механика цели от средней, а не знание; оставлена только как управление просадкой"
+        },
+        {
+          "element": "фильтры EMA/RSI/MACD/ADX/смартмани",
+          "evidence": "53 проверки, 0 пережили поправку; три лучших сменили знак на holdout"
+        },
+        {
+          "element": "отскок от горизонтальных объёмов",
+          "evidence": "знак ОБРАТНЫЙ (-0.237R против +0.049R); как запрет проверен (фильтр пустоты) и прироста сверх шума не дал"
+        }
+      ]
+    },
+    "holdout": {
+      "n": 63,
+      "wr": 42.9,
+      "exp_r": 0.237,
+      "sum_r": 14.93,
+      "pf": 1.45,
+      "ret": 13.1,
+      "dd": 10.3,
+      "liq": 0,
+      "t": 1.26,
+      "p": 0.2069,
+      "ci95": [
+        -0.131,
+        0.605
+      ],
+      "boot_share_neg": 18.9,
+      "med_stop_pct": 4.3,
+      "med_hold_h": 27.2,
+      "best_quarter_share": 114.0,
+      "quarters_positive": "2/4",
+      "trades_per_month": 5.9,
+      "exit_kinds": {
+        "stop": 36,
+        "tp": 27
+      },
+      "period": "2025-09-07..2026-07-26",
+      "lev": 5
+    },
+    "benchmarks": {
+      "base_dump_long": {
+        "n": 32,
+        "wr": 28.1,
+        "exp_r": -0.199,
+        "ret": -7.1,
+        "pf": 0.73
+      },
+      "random_entry": {
+        "n": 296,
+        "exp_r": -0.124,
+        "wr": 31.4,
+        "ret": -36.2,
+        "seeds": [
+          11,
+          23,
+          37,
+          41,
+          53
+        ],
+        "exp_r_spread": [
+          -0.299,
+          0.025
+        ]
+      },
+      "random_same_volatility": {
+        "n": 247,
+        "exp_r": 0.123,
+        "wr": 39.3,
+        "ret": -11.4,
+        "note": "главный эталон: ATR того же уровня, +-25%"
+      },
+      "random_near_dump": {
+        "n": 280,
+        "exp_r": -0.401,
+        "note": "заведомо плохой эталон, вход внутрь падения"
+      },
+      "buy_hold": {
+        "BTCUSDT": -41.8,
+        "ETHUSDT": -55.5,
+        "SOLUSDT": -63.5,
+        "LTCUSDT": -58.4,
+        "DOGEUSDT": -68.3,
+        "СРЕДНЕЕ": -57.5
+      },
+      "mirror_rally_short": {
+        "n": 25,
+        "exp_r": 0.861,
+        "ret": 8.7,
+        "note": "зеркальный сетап тем же прибором на том же окне: тоже в плюсе, значит направление не доказано"
+      },
+      "edge_vs_base": 0.436,
+      "edge_vs_random": 0.361,
+      "edge_vs_random_same_vol": 0.114
+    },
+    "significance": {
+      "wave_checks": 246,
+      "bonferroni_t": 3.71,
+      "t_vs_zero": 1.26,
+      "t_vs_base": 1.43,
+      "t_vs_random": 1.76,
+      "t_vs_random_same_vol": 0.54,
+      "passed": false
+    },
+    "risk": {
+      "ladder": {
+        "x2": {
+          "n": 169,
+          "liq": 0,
+          "exp_r": 0.247,
+          "ret": 11.8,
+          "dd": 4.1,
+          "ruined_coins": 0,
+          "p_ruin": 0.0,
+          "max_stop_pct": 39.6
+        },
+        "x3": {
+          "n": 169,
+          "liq": 0,
+          "exp_r": 0.247,
+          "ret": 17.7,
+          "dd": 5.9,
+          "ruined_coins": 0,
+          "p_ruin": 0.0,
+          "max_stop_pct": 26.3
+        },
+        "x5": {
+          "n": 169,
+          "liq": 0,
+          "exp_r": 0.247,
+          "ret": 29.6,
+          "dd": 9.0,
+          "ruined_coins": 0,
+          "p_ruin": 0.1,
+          "max_stop_pct": 15.6
+        },
+        "x10": {
+          "n": 155,
+          "liq": 0,
+          "exp_r": 0.19,
+          "ret": 23.4,
+          "dd": 20.0,
+          "ruined_coins": 0,
+          "p_ruin": 36.1,
+          "max_stop_pct": 7.6
+        },
+        "x20": {
+          "n": 63,
+          "liq": 0,
+          "exp_r": 0.037,
+          "ret": -8.6,
+          "dd": 19.1,
+          "ruined_coins": 0,
+          "p_ruin": 63.3,
+          "max_stop_pct": 3.6
+        },
+        "x25": {
+          "n": 25,
+          "liq": 0,
+          "exp_r": 0.014,
+          "ret": -11.1,
+          "dd": 18.8,
+          "ruined_coins": 0,
+          "p_ruin": 58.9,
+          "max_stop_pct": 2.8
+        }
+      },
+      "margin_per_cycle": 5.0,
+      "start_per_symbol": 20.0,
+      "owner_request_lev": "x20-25 отклонено, см. ladder",
+      "grid_request": "сетка оставлена как управление просадкой, не как источник прибыли"
+    },
+    "stats": {
+      "n": 106,
+      "wr": 43.4,
+      "exp_r": 0.253,
+      "sum_r": 26.84,
+      "pf": 1.33,
+      "ret": 16.5,
+      "dd": 6.1,
+      "period": "2023-06-03..2025-09-07",
+      "in_sample_warning": "обучающая часть, использована для выбора конфигурации — не доказательство"
+    },
+    "calibration": [
+      {
+        "stop": "1.5*ATR",
+        "filter": "без фильтра",
+        "entry": "сетка 2x0.8ATR",
+        "n": 106,
+        "wr": 43.4,
+        "exp_r": 0.253,
+        "sum_r": 26.84
+      },
+      {
+        "stop": "1.5*ATR",
+        "filter": "фильтр пустоты",
+        "entry": "сетка 2x0.8ATR",
+        "n": 88,
+        "wr": 42.0,
+        "exp_r": 0.211,
+        "sum_r": 18.6
+      },
+      {
+        "stop": "2.0*ATR (дефолт)",
+        "filter": "фильтр пустоты",
+        "entry": "сетка 2x0.8ATR",
+        "n": 86,
+        "wr": 39.5,
+        "exp_r": 0.142,
+        "sum_r": 12.21
+      },
+      {
+        "stop": "2.0*ATR (дефолт)",
+        "filter": "без фильтра",
+        "entry": "сетка 2x0.8ATR",
+        "n": 103,
+        "wr": 38.8,
+        "exp_r": 0.12,
+        "sum_r": 12.36
+      },
+      {
+        "stop": "2.0*ATR (дефолт)",
+        "filter": "фильтр пустоты",
+        "entry": "одиночный",
+        "n": 84,
+        "wr": 36.9,
+        "exp_r": 0.05,
+        "sum_r": 4.19
+      },
+      {
+        "stop": "1.5*ATR",
+        "filter": "без фильтра",
+        "entry": "одиночный",
+        "n": 106,
+        "wr": 34.9,
+        "exp_r": -0.008,
+        "sum_r": -0.9
+      },
+      {
+        "stop": "1.5*ATR",
+        "filter": "фильтр пустоты",
+        "entry": "одиночный",
+        "n": 88,
+        "wr": 34.1,
+        "exp_r": -0.018,
+        "sum_r": -1.54
+      },
+      {
+        "stop": "минимум падения",
+        "filter": "фильтр пустоты",
+        "entry": "сетка 2x0.8ATR",
+        "n": 82,
+        "wr": 35.4,
+        "exp_r": -0.048,
+        "sum_r": -3.91
+      },
+      {
+        "stop": "минимум падения",
+        "filter": "без фильтра",
+        "entry": "сетка 2x0.8ATR",
+        "n": 98,
+        "wr": 34.7,
+        "exp_r": -0.06,
+        "sum_r": -5.86
+      },
+      {
+        "stop": "свинг 8 баров",
+        "filter": "фильтр пустоты",
+        "entry": "сетка 2x0.8ATR",
+        "n": 83,
+        "wr": 34.9,
+        "exp_r": -0.06,
+        "sum_r": -4.99
+      },
+      {
+        "stop": "2.0*ATR (дефолт)",
+        "filter": "без фильтра",
+        "entry": "одиночный",
+        "n": 101,
+        "wr": 33.7,
+        "exp_r": -0.064,
+        "sum_r": -6.44
+      },
+      {
+        "stop": "свинг 8 баров",
+        "filter": "без фильтра",
+        "entry": "сетка 2x0.8ATR",
+        "n": 99,
+        "wr": 34.3,
+        "exp_r": -0.07,
+        "sum_r": -6.94
+      },
+      {
+        "stop": "минимум падения",
+        "filter": "фильтр пустоты",
+        "entry": "одиночный",
+        "n": 80,
+        "wr": 32.5,
+        "exp_r": -0.084,
+        "sum_r": -6.71
+      },
+      {
+        "stop": "свинг 8 баров",
+        "filter": "фильтр пустоты",
+        "entry": "одиночный",
+        "n": 81,
+        "wr": 32.1,
+        "exp_r": -0.096,
+        "sum_r": -7.78
+      },
+      {
+        "stop": "минимум падения",
+        "filter": "без фильтра",
+        "entry": "одиночный",
+        "n": 96,
+        "wr": 32.3,
+        "exp_r": -0.107,
+        "sum_r": -10.25
+      },
+      {
+        "stop": "свинг 8 баров",
+        "filter": "без фильтра",
+        "entry": "одиночный",
+        "n": 97,
+        "wr": 32.0,
+        "exp_r": -0.117,
+        "sum_r": -11.32
+      }
+    ],
+    "by_symbol": {
+      "BTCUSDT": {
+        "symbol": "BTCUSDT",
+        "interval_min": 240,
+        "enabled": false,
+        "watch": true,
+        "verdict": "НЕ БОЕВОЙ ЗАПУСК, только наблюдение/форвард-тест: на экзамене знак положительный и лучше всех эталонов, но преимущество НЕ доказано, а зеркальный сетап на том же окне тоже в плюсе",
+        "rec_lev": 0,
+        "reason": "holdout: n=13, exp_R=+0.096, PF=0.87, доходность -3.0% при просадке 10.3%; «купил и держал» -41.8%",
+        "holdout": {
+          "n": 13,
+          "wr": 38.5,
+          "exp_r": 0.096,
+          "sum_r": 1.25,
+          "pf": 0.87,
+          "ret": -3.0,
+          "dd": 10.3,
+          "liq": 0,
+          "t": 0.24,
+          "period": "2025-09-07..2026-07-26",
+          "exit_kinds": {
+            "stop": 8,
+            "tp": 5
+          },
+          "lev": 5
+        },
+        "benchmarks": {
+          "buy_hold_ret": -41.8
+        },
+        "stats": {
+          "n": 12,
+          "wr": 50.0,
+          "exp_r": 0.441,
+          "sum_r": 5.29,
+          "pf": 1.68,
+          "ret": 11.3,
+          "dd": 5.7,
+          "period": "2023-06-03..2025-09-07",
+          "in_sample_warning": "обучающая часть, не доказательство"
+        },
+        "genome": {
+          "rsi_idx": 2,
+          "window": 13,
+          "cooldown": 0,
+          "hold_days": 30,
+          "trend_gate": 0,
+          "trend_len": 200,
+          "break_days": 20,
+          "break_buf_atr": 0.0,
+          "pull_slow": 200,
+          "pull_fast": 20,
+          "pull_max_atr": 1.5,
+          "drop_frac": 0.06,
+          "drop_days": 2,
+          "rsi_os": 30,
+          "need_candle": 1,
+          "reg_bull": 1,
+          "reg_range": 1,
+          "reg_bear": 1,
+          "stop_mode": 2,
+          "swing_bars": 8,
+          "stop_atr_k": 1.5,
+          "buf_atr": 0.3,
+          "stop_cap": 0.15,
+          "grid_levels": 2,
+          "grid_step_atr": 0.8,
+          "grid_mult": 1.3,
+          "tp_mode": 0,
+          "tp_r": 2.0,
+          "tp_atr": 3.0,
+          "trail_bars": 60,
+          "be_after_r": 0.0,
+          "storm_gate": 0,
+          "storm_day": 0.07,
+          "storm_week": 0.15,
+          "storm_atr_rank": 0.85,
+          "storm_mode": 0,
+          "fund_gate": 0,
+          "fund_thr": 0.005,
+          "aroon_gate": 0,
+          "aroon_n": 25,
+          "aroon_thr": 30
+        }
+      },
+      "ETHUSDT": {
+        "symbol": "ETHUSDT",
+        "interval_min": 240,
+        "enabled": false,
+        "watch": true,
+        "verdict": "НЕ БОЕВОЙ ЗАПУСК, только наблюдение/форвард-тест: на экзамене знак положительный и лучше всех эталонов, но преимущество НЕ доказано, а зеркальный сетап на том же окне тоже в плюсе",
+        "rec_lev": 0,
+        "reason": "holdout: n=13, exp_R=+0.343, PF=1.93, доходность +26.4% при просадке 15.4%; «купил и держал» -55.5%",
+        "holdout": {
+          "n": 13,
+          "wr": 46.2,
+          "exp_r": 0.343,
+          "sum_r": 4.46,
+          "pf": 1.93,
+          "ret": 26.4,
+          "dd": 15.4,
+          "liq": 0,
+          "t": 0.82,
+          "period": "2025-09-07..2026-07-26",
+          "exit_kinds": {
+            "stop": 7,
+            "tp": 6
+          },
+          "lev": 5
+        },
+        "benchmarks": {
+          "buy_hold_ret": -55.5
+        },
+        "stats": {
+          "n": 22,
+          "wr": 40.9,
+          "exp_r": 0.174,
+          "sum_r": 3.84,
+          "pf": 1.11,
+          "ret": 5.3,
+          "dd": 16.8,
+          "period": "2023-06-03..2025-09-07",
+          "in_sample_warning": "обучающая часть, не доказательство"
+        },
+        "genome": {
+          "rsi_idx": 2,
+          "window": 13,
+          "cooldown": 0,
+          "hold_days": 30,
+          "trend_gate": 0,
+          "trend_len": 200,
+          "break_days": 20,
+          "break_buf_atr": 0.0,
+          "pull_slow": 200,
+          "pull_fast": 20,
+          "pull_max_atr": 1.5,
+          "drop_frac": 0.06,
+          "drop_days": 2,
+          "rsi_os": 30,
+          "need_candle": 1,
+          "reg_bull": 1,
+          "reg_range": 1,
+          "reg_bear": 1,
+          "stop_mode": 2,
+          "swing_bars": 8,
+          "stop_atr_k": 1.5,
+          "buf_atr": 0.3,
+          "stop_cap": 0.15,
+          "grid_levels": 2,
+          "grid_step_atr": 0.8,
+          "grid_mult": 1.3,
+          "tp_mode": 0,
+          "tp_r": 2.0,
+          "tp_atr": 3.0,
+          "trail_bars": 60,
+          "be_after_r": 0.0,
+          "storm_gate": 0,
+          "storm_day": 0.07,
+          "storm_week": 0.15,
+          "storm_atr_rank": 0.85,
+          "storm_mode": 0,
+          "fund_gate": 0,
+          "fund_thr": 0.005,
+          "aroon_gate": 0,
+          "aroon_n": 25,
+          "aroon_thr": 30
+        }
+      },
+      "SOLUSDT": {
+        "symbol": "SOLUSDT",
+        "interval_min": 240,
+        "enabled": false,
+        "watch": true,
+        "verdict": "НЕ БОЕВОЙ ЗАПУСК, только наблюдение/форвард-тест: на экзамене знак положительный и лучше всех эталонов, но преимущество НЕ доказано, а зеркальный сетап на том же окне тоже в плюсе",
+        "rec_lev": 0,
+        "reason": "holdout: n=15, exp_R=+0.361, PF=1.81, доходность +28.4% при просадке 13.5%; «купил и держал» -63.5%",
+        "holdout": {
+          "n": 15,
+          "wr": 46.7,
+          "exp_r": 0.361,
+          "sum_r": 5.42,
+          "pf": 1.81,
+          "ret": 28.4,
+          "dd": 13.5,
+          "liq": 0,
+          "t": 0.93,
+          "period": "2025-09-07..2026-07-26",
+          "exit_kinds": {
+            "stop": 8,
+            "tp": 7
+          },
+          "lev": 5
+        },
+        "benchmarks": {
+          "buy_hold_ret": -63.5
+        },
+        "stats": {
+          "n": 24,
+          "wr": 45.8,
+          "exp_r": 0.341,
+          "sum_r": 8.18,
+          "pf": 1.57,
+          "ret": 35.4,
+          "dd": 18.3,
+          "period": "2023-06-03..2025-09-07",
+          "in_sample_warning": "обучающая часть, не доказательство"
+        },
+        "genome": {
+          "rsi_idx": 2,
+          "window": 13,
+          "cooldown": 0,
+          "hold_days": 30,
+          "trend_gate": 0,
+          "trend_len": 200,
+          "break_days": 20,
+          "break_buf_atr": 0.0,
+          "pull_slow": 200,
+          "pull_fast": 20,
+          "pull_max_atr": 1.5,
+          "drop_frac": 0.06,
+          "drop_days": 2,
+          "rsi_os": 30,
+          "need_candle": 1,
+          "reg_bull": 1,
+          "reg_range": 1,
+          "reg_bear": 1,
+          "stop_mode": 2,
+          "swing_bars": 8,
+          "stop_atr_k": 1.5,
+          "buf_atr": 0.3,
+          "stop_cap": 0.15,
+          "grid_levels": 2,
+          "grid_step_atr": 0.8,
+          "grid_mult": 1.3,
+          "tp_mode": 0,
+          "tp_r": 2.0,
+          "tp_atr": 3.0,
+          "trail_bars": 60,
+          "be_after_r": 0.0,
+          "storm_gate": 0,
+          "storm_day": 0.07,
+          "storm_week": 0.15,
+          "storm_atr_rank": 0.85,
+          "storm_mode": 0,
+          "fund_gate": 0,
+          "fund_thr": 0.005,
+          "aroon_gate": 0,
+          "aroon_n": 25,
+          "aroon_thr": 30
+        }
+      },
+      "LTCUSDT": {
+        "symbol": "LTCUSDT",
+        "interval_min": 240,
+        "enabled": false,
+        "watch": true,
+        "verdict": "НЕ БОЕВОЙ ЗАПУСК, только наблюдение/форвард-тест: на экзамене знак положительный и лучше всех эталонов, но преимущество НЕ доказано, а зеркальный сетап на том же окне тоже в плюсе",
+        "rec_lev": 0,
+        "reason": "holdout: n=12, exp_R=+0.193, PF=1.63, доходность +17.1% при просадке 8.3%; «купил и держал» -58.4%",
+        "holdout": {
+          "n": 12,
+          "wr": 41.7,
+          "exp_r": 0.193,
+          "sum_r": 2.31,
+          "pf": 1.63,
+          "ret": 17.1,
+          "dd": 8.3,
+          "liq": 0,
+          "t": 0.45,
+          "period": "2025-09-07..2026-07-26",
+          "exit_kinds": {
+            "stop": 7,
+            "tp": 5
+          },
+          "lev": 5
+        },
+        "benchmarks": {
+          "buy_hold_ret": -58.4
+        },
+        "stats": {
+          "n": 21,
+          "wr": 42.9,
+          "exp_r": 0.228,
+          "sum_r": 4.79,
+          "pf": 1.22,
+          "ret": 10.8,
+          "dd": 17.1,
+          "period": "2023-06-03..2025-09-07",
+          "in_sample_warning": "обучающая часть, не доказательство"
+        },
+        "genome": {
+          "rsi_idx": 2,
+          "window": 13,
+          "cooldown": 0,
+          "hold_days": 30,
+          "trend_gate": 0,
+          "trend_len": 200,
+          "break_days": 20,
+          "break_buf_atr": 0.0,
+          "pull_slow": 200,
+          "pull_fast": 20,
+          "pull_max_atr": 1.5,
+          "drop_frac": 0.06,
+          "drop_days": 2,
+          "rsi_os": 30,
+          "need_candle": 1,
+          "reg_bull": 1,
+          "reg_range": 1,
+          "reg_bear": 1,
+          "stop_mode": 2,
+          "swing_bars": 8,
+          "stop_atr_k": 1.5,
+          "buf_atr": 0.3,
+          "stop_cap": 0.15,
+          "grid_levels": 2,
+          "grid_step_atr": 0.8,
+          "grid_mult": 1.3,
+          "tp_mode": 0,
+          "tp_r": 2.0,
+          "tp_atr": 3.0,
+          "trail_bars": 60,
+          "be_after_r": 0.0,
+          "storm_gate": 0,
+          "storm_day": 0.07,
+          "storm_week": 0.15,
+          "storm_atr_rank": 0.85,
+          "storm_mode": 0,
+          "fund_gate": 0,
+          "fund_thr": 0.005,
+          "aroon_gate": 0,
+          "aroon_n": 25,
+          "aroon_thr": 30
+        }
+      },
+      "DOGEUSDT": {
+        "symbol": "DOGEUSDT",
+        "interval_min": 240,
+        "enabled": false,
+        "watch": true,
+        "verdict": "НЕ БОЕВОЙ ЗАПУСК, только наблюдение/форвард-тест: на экзамене знак положительный и лучше всех эталонов, но преимущество НЕ доказано, а зеркальный сетап на том же окне тоже в плюсе",
+        "rec_lev": 0,
+        "reason": "holdout: n=10, exp_R=+0.149, PF=0.89, доходность -3.6% при просадке 21.5%; «купил и держал» -68.3%",
+        "holdout": {
+          "n": 10,
+          "wr": 40.0,
+          "exp_r": 0.149,
+          "sum_r": 1.49,
+          "pf": 0.89,
+          "ret": -3.6,
+          "dd": 21.5,
+          "liq": 0,
+          "t": 0.32,
+          "period": "2025-09-07..2026-07-26",
+          "exit_kinds": {
+            "stop": 6,
+            "tp": 4
+          },
+          "lev": 5
+        },
+        "benchmarks": {
+          "buy_hold_ret": -68.3
+        },
+        "stats": {
+          "n": 27,
+          "wr": 40.7,
+          "exp_r": 0.176,
+          "sum_r": 4.74,
+          "pf": 1.26,
+          "ret": 19.7,
+          "dd": 16.6,
+          "period": "2023-06-03..2025-09-07",
+          "in_sample_warning": "обучающая часть, не доказательство"
+        },
+        "genome": {
+          "rsi_idx": 2,
+          "window": 13,
+          "cooldown": 0,
+          "hold_days": 30,
+          "trend_gate": 0,
+          "trend_len": 200,
+          "break_days": 20,
+          "break_buf_atr": 0.0,
+          "pull_slow": 200,
+          "pull_fast": 20,
+          "pull_max_atr": 1.5,
+          "drop_frac": 0.06,
+          "drop_days": 2,
+          "rsi_os": 30,
+          "need_candle": 1,
+          "reg_bull": 1,
+          "reg_range": 1,
+          "reg_bear": 1,
+          "stop_mode": 2,
+          "swing_bars": 8,
+          "stop_atr_k": 1.5,
+          "buf_atr": 0.3,
+          "stop_cap": 0.15,
+          "grid_levels": 2,
+          "grid_step_atr": 0.8,
+          "grid_mult": 1.3,
+          "tp_mode": 0,
+          "tp_r": 2.0,
+          "tp_atr": 3.0,
+          "trail_bars": 60,
+          "be_after_r": 0.0,
+          "storm_gate": 0,
+          "storm_day": 0.07,
+          "storm_week": 0.15,
+          "storm_atr_rank": 0.85,
+          "storm_mode": 0,
+          "fund_gate": 0,
+          "fund_thr": 0.005,
+          "aroon_gate": 0,
+          "aroon_n": 25,
+          "aroon_thr": 30
+        }
+      }
+    }
+  }
+}

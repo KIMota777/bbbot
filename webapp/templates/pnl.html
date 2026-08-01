@@ -4,197 +4,445 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PnL-график</title>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/lightweight-charts.js"></script>
+{% include '_chartkit.html' %}
 <style>
-  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
-    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
-  body { background:var(--bg); color:var(--ink); margin:0;
-    font:15px/1.55 "Segoe UI", system-ui, sans-serif; padding:28px 18px 60px; }
-  .wrap { max-width:1200px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
-  nav { display:flex; gap:16px; }
-  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
-  nav a.active { color:var(--accent); }
-  nav a:hover { color:var(--ink); }
-  h1 { font-size:24px; margin:0; }
-  .sub { color:var(--muted); margin:0; max-width:84ch; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
-  #chart { height:560px; }
-  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
-  .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:13px 16px; }
-  .tile .v { font:700 22px Consolas, monospace; font-variant-numeric:tabular-nums; }
-  .tile .l { color:var(--muted); font-size:12px; margin-top:2px; }
-  .legend { display:flex; flex-wrap:wrap; gap:8px; }
-  .chip { display:flex; align-items:center; gap:8px; background:#0e1013;
-    border:1px solid var(--line); border-radius:8px; padding:7px 12px;
-    cursor:pointer; user-select:none; font-size:13px;
-    font-variant-numeric:tabular-nums; transition:opacity .15s; }
-  .chip.off { opacity:.35; }
-  .chip.pf { border-color:#5a4a1a; }
-  .chip .sw { width:14px; height:4px; border-radius:2px; }
-  .chip b { min-width:76px; text-align:right; }
-  .pos { color:var(--up); } .neg { color:var(--down); }
-  .hint { color:var(--muted); font-size:12px; }
-  .hover-ts { color:var(--accent); font-size:12.5px; font-weight:600; min-height:16px; }
-  .tgl { background:#0e1013; color:var(--muted); border:1px solid var(--line);
-    border-radius:7px; padding:6px 13px; font:600 12.5px "Segoe UI", sans-serif;
-    cursor:pointer; }
-  .tgl.on { color:var(--accent); border-color:var(--accent); }
-  .note { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--accent);
-    border-radius:8px; padding:11px 15px; font-size:13px; color:var(--muted); max-width:84ch; }
+  .legend-grid { display:grid; gap:8px;
+    grid-template-columns:repeat(auto-fill,minmax(232px,1fr)); }
+  .lchip { display:flex; align-items:center; gap:9px; background:var(--bg-elev);
+    border:1px solid var(--line-soft); border-radius:10px; padding:8px 12px;
+    cursor:pointer; user-select:none; font-size:12.5px;
+    font-variant-numeric:tabular-nums; transition:opacity .2s, border-color .2s; }
+  .lchip:hover { border-color:var(--line); }
+  .lchip.off { opacity:.32; }
+  .lchip.hid { display:none; }
+  .lchip.pf { border-color:rgba(41,98,255,.4); }
+  .lchip .sw { width:14px; height:3px; border-radius:2px; flex:0 0 auto; }
+  .lchip .nm { flex:1 1 auto; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+  .lchip b { flex:0 0 auto; min-width:74px; text-align:right; font-weight:640; }
+  .lchip .hon { flex:0 0 auto; font-style:normal; font-size:11px; font-weight:640;
+    opacity:.85; padding:1px 5px; border-radius:5px; background:rgba(255,255,255,.06); }
+  .lchip .hon::before { content:"честно "; font-weight:400; opacity:.6; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <nav><a href="/">Боты</a><a href="/signals">Сигналы BTC</a><a class="active" href="/pnl">PnL-график</a><a href="/evolution">Эволюция</a><a href="/archive">Архив</a></nav>
-  <h1>💰 Реальная картина: $50 на каждую стратегию, с реинвестом</h1>
-  <p class="sub">7 линий — 5 ботов и 2 рабочих сигнальных сетапа, каждая стартует с собственных $50 (маржа сделки = 25% текущего капитала стратегии — та же доля риска, что в отборе). Плюс две портфельные линии от $350 и пунктиром — бенчмарки «купил на $50 и держал»: золото, серебро, S&P 500 (те реально случились, а стратегии — бэктест). Наведи на график — срез по времени; клик по плашке — скрыть линию.</p>
+{% set nav = 'pnl' %}{% include '_nav.html' %}
+
+<div class="wrap stack">
+
+  <header>
+    <h1 class="h-page">$50 на стратегию, с реинвестом</h1>
+    <p class="h-sub">По умолчанию показан <b>экзамен</b>: капитал стартует с
+      $50 в момент, когда закончился подбор параметров — это то, что стратегия
+      заработала бы, если бы её включили с этой точки. Переключатель «Вся
+      история» добавляет период обучения: там кривая нарисована задним числом
+      и как оценка доходности завышена.</p>
+  </header>
+
+  <div class="note warn">
+    <span class="ico">⚖</span>
+    <div class="nb">
+      <span class="t">Кривые ботов — обучающий период внутри</span>, их
+      финальные $ и % не являются доказательством доходности.
+      <span id="honestNote"></span>
+      <details>
+        <summary>подробнее</summary>
+        <p>Walk-forward-экзамены во всех волнах отбора ботов были устроены с
+          изъяном: обучающая выборка всегда начиналась с начала истории, поэтому
+          «экзаменационный» отрезок раннего фолда попадал внутрь обучающих данных
+          позднего. Кривая на графике идёт по всей истории — первые ~72% её длины
+          подбор параметров видел.</p>
+        <p>Честная перепроверка ботов посчитана отдельно
+          (<code>python build_bot_honest_data.py</code>): холдоут — последние 28%
+          истории, плюс тест устойчивости параметров и сравнение со случайными
+          геномами. Её итоги — в плитках и в таблице «Честные итоги ботов».</p>
+        <p>Для сигнальных сетапов BTC проверку переделали заново (вложенная
+          валидация с неприкосновенным holdout) — из 8 вариантов подтвердились
+          только два. Поэтому сигналы показаны пунктиром и в портфельные линии
+          <b>не входят</b>.</p>
+        <p>Реинвест умножает не только прибыль, но и любую ошибку бэктеста.
+          Портфель «с ребалансом» предполагает перераспределение капитала раз в
+          месяц. Сначала DRY_RUN и честная перепроверка, потом деньги.</p>
+      </details>
+    </div>
+  </div>
 
   <div class="tiles" id="tiles"></div>
 
+  <div class="card" id="honestCard" style="display:none">
+    <div class="h-card">Честные итоги ботов
+      <span class="muted small" style="font-weight:400" id="honestPeriod"></span></div>
+    <div class="tbl-wrap"><table class="tbl" id="honestTbl"></table></div>
+    <p class="tv-hint" id="honestHint"></p>
+  </div>
+
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-      <div class="hover-ts" id="hoverTs">Итоговые значения (наведи на график для среза по времени)</div>
-      <div style="display:flex;gap:6px">
-        <button class="tgl on" id="tglUsd">$ доллары</button>
-        <button class="tgl" id="tglPct">% от старта</button>
+    <div class="row-between" style="margin-bottom:12px">
+      <div class="seg" id="segPeriod" title="что показывать: только невиданные данные или всю историю">
+        <button class="on" data-p="honest">Экзамен (реальные)</button>
+        <button data-p="all">Вся история</button>
+      </div>
+      <div class="seg" id="segMode">
+        <button class="on" data-m="usd">$ доллары</button>
+        <button data-m="pct">% от старта</button>
+      </div>
+      <div class="seg" id="segView">
+        <button class="on" data-v="all">Всё</button>
+        <button data-v="pf">Только портфель</button>
+        <button data-v="st">Только стратегии</button>
       </div>
     </div>
-    <div id="chart"></div>
+    <div class="tv">
+      <div class="tv-toolbar">
+        <span class="pills" id="rng"></span>
+        <span class="sep"></span>
+        <div class="seg" id="segScale">
+          <button class="on" data-s="lin">линейная</button>
+          <button data-s="log">лог</button>
+        </div>
+        <span class="muted small" id="hoverTs" style="margin-left:auto">итоговые значения</span>
+      </div>
+      <div class="tv-chart" id="chart">
+        <div class="tv-legend">
+          <div class="sym">Капитал стратегий, реинвест
+            <span class="muted-2" style="font-weight:400" id="legPeriod">· экзамен: только невиданные данные</span></div>
+          <div class="ohlc wrapline" id="leg"><span>наведи курсор — срез по времени</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="tv-hint" id="hdNote" style="color:var(--warn)"></p>
+    <p class="tv-hint">Клик по плашке ниже — скрыть/показать линию. Логарифмическая
+      шкала доступна в режиме «$»: на ней одинаковый процент роста выглядит
+      одинаково в любой точке кривой.</p>
   </div>
 
   <div class="card">
-    <div class="legend" id="legend"></div>
-    <p class="hint" style="margin:10px 0 0">Пересчёт: <code>python build_pnl_curves.py</code></p>
+    <div class="h-card">Линии графика
+      <span class="muted small" style="font-weight:400">итоги линий следуют
+        за переключателем периода; «честно» в плашке — медиана возмущений
+        параметров на экзамене</span></div>
+    <div class="legend-grid" id="legend"></div>
+    <p class="tv-hint">Пересчёт кривых: <code>python build_pnl_curves.py</code>,
+      честных цифр: <code>python build_bot_honest_data.py</code></p>
   </div>
 
-  <div class="note">
-    ⚠ <b>Честные оговорки.</b> Реинвест умножает не только прибыль, но и любую ошибку бэктеста — конфиги отбирались на этих же 3.2 годах (walk-forward защищал, но не полностью). Портфель «с ребалансом» предполагает перераспределение капитала раз в месяц. В реале будет хуже симуляции — трезвая рамка: даже треть от этих кривых на живом рынке — отличный результат. Сначала DRY_RUN, потом деньги.
+  <div class="card" id="moCard">
+    <div class="row-between" style="margin-bottom:12px">
+      <div class="h-card" style="margin:0">Прибыль портфеля по месяцам
+        <span class="muted small" style="font-weight:400">вся история; бары до
+          2025-09-04 — обучающий период</span></div>
+      <div class="seg" id="segPf">
+        <button class="on" data-k="pf_cons">Портфель</button>
+        <button data-k="pf_reb">С ребалансом</button>
+      </div>
+    </div>
+    <div class="mchart" id="moBox"></div>
   </div>
+
 </div>
 
 <script>
-const el = document.getElementById("chart");
-const chart = LightweightCharts.createChart(el, {
-  layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
-  grid: { vertLines: { color: "#22252b" }, horzLines: { color: "#22252b" } },
-  timeScale: { timeVisible: false },
-  rightPriceScale: { scaleMargins: { top: 0.08, bottom: 0.08 } },
-  height: 560, autoSize: true,
+const C = TVK.P;
+const $ = id => document.getElementById(id);
+const chart = TVK.create("chart", 540, {
+  timeScale: { timeVisible: false, borderColor: C.line },
   crosshair: { mode: LightweightCharts.CrosshairMode.Magnet },
+  rightPriceScale: { minimumWidth: 78, scaleMargins: { top: .08, bottom: .08 } },
 });
 
 const registry = [];
-let mode = "usd";  // "usd" | "pct"
-const fmtUsd = v => "$" + v.toFixed(v >= 1000 ? 0 : 2);
-const fmtPct = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+let mode = "usd", view = "all", scale = "lin", period = "honest";
+const fmtUsd = v => TVK.fmtUsd(v);
+const fmtPct = v => TVK.fmtPct(v, 1);
 const fmtVal = v => mode === "usd" ? fmtUsd(v) : fmtPct(v);
+const rng = TVK.ranges("rng", chart, () => bounds(), { def: 0 });
+let BOUNDS = [];
+function bounds() { return BOUNDS; }
+
+function inView(s) {
+  if (view === "all") return true;
+  if (view === "pf") return s.group === "portfolio";
+  return s.group === "bot" || s.group === "signal";   // «только стратегии»
+}
+function applyView() {
+  for (const r of registry) {
+    const vis = inView(r.s) && r.visible;
+    r.series.applyOptions({ visible: vis });
+    r.chipEl.classList.toggle("hid", !inView(r.s));
+  }
+}
 
 async function load() {
   const d = await (await fetch("/api/pnl_curves")).json();
-  const legend = document.getElementById("legend");
-  const tiles = document.getElementById("tiles");
+  const legend = $("legend"), tiles = $("tiles");
+  let tMin = null, tMax = null;
 
   for (const s of d.series) {
     const isPf = s.group === "portfolio";
     const isBench = s.group === "bench";
-    const start = isPf ? d.total : d.sleeve;  // 350 или 50
+    const start = isPf ? d.total : d.sleeve;
     const line = chart.addLineSeries({
-      color: s.color, lineWidth: isPf ? 3 : (isBench ? 1.5 : 2),
-      lineStyle: isBench ? LightweightCharts.LineStyle.Dashed
+      color: s.color, lineWidth: isPf ? 3 : (isBench || s.dashed ? 1.5 : 2),
+      lineStyle: (isBench || s.dashed) ? LightweightCharts.LineStyle.Dashed
                          : LightweightCharts.LineStyle.Solid,
-      priceLineVisible: false,
-      lastValueVisible: false, crosshairMarkerRadius: 3,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerRadius: 3,
     });
-    s._usd = s.points.map(p => ({ time: p[0], value: p[1] }));
-    s._pct = s.points.map(p => ({ time: p[0],
-      value: +((p[1] / start - 1) * 100).toFixed(2) }));
+    // Два набора точек: «экзамен» — капитал стартует с $50 на границе
+    // обучения (это и есть реальный результат), «вся история» — включая
+    // период, на котором параметры подбирались.
+    // TVK.points схлопывает дубликаты времени: иначе библиотека роняет
+    // всю страницу.
+    s._usd = TVK.points(s.points);
+    s._pct = s._usd.map(p => ({ time: p.time,
+      value: +((p.value / start - 1) * 100).toFixed(2) }));
+    s._h_usd = TVK.points(s.honest_points || s.points);
+    s._h_pct = s._h_usd.map(p => ({ time: p.time,
+      value: +((p.value / start - 1) * 100).toFixed(2) }));
     s._start = start;
-    line.setData(s._usd);
+    line.setData(s._h_usd);          // по умолчанию — честный отрезок
+    if (s._usd.length) {
+      tMin = tMin === null ? s._usd[0].time : Math.min(tMin, s._usd[0].time);
+      tMax = tMax === null ? s._usd[s._usd.length - 1].time
+                           : Math.max(tMax, s._usd[s._usd.length - 1].time);
+    }
 
+    // рядом с in-sample итогом сразу показываем честный — иначе крупный
+    // процент слева читается как реальный результат
+    const H = (d.honest || {})[s.key];
+    const hon = H && H.honest_pct !== undefined && H.honest_pct !== null
+      ? `<i class="hon ${H.honest_pct >= 0 ? "pos" : "neg"}"
+           title="честная оценка: медиана 90 возмущений параметров на экзамене">
+           ${H.honest_pct >= 0 ? "+" : ""}${H.honest_pct}%</i>` : "";
     const chip = document.createElement("div");
-    chip.className = "chip" + (isPf ? " pf" : "");
+    chip.className = "lchip" + (isPf ? " pf" : "");
     chip.innerHTML = `<span class="sw" style="background:${s.color}"></span>
-      <span>${s.label}</span><b class="${s.final_pct >= 0 ? "pos" : "neg"}"></b>`;
+      <span class="nm">${s.label}</span>${hon}<b class="${s.final_pct >= 0 ? "pos" : "neg"}"></b>`;
     const valEl = chip.querySelector("b");
     valEl.textContent = fmtUsd(s.final_usd);
     legend.appendChild(chip);
     const rec = { s, series: line, visible: true, chipEl: chip, valEl };
     chip.onclick = () => {
       rec.visible = !rec.visible;
-      line.applyOptions({ visible: rec.visible });
       chip.classList.toggle("off", !rec.visible);
+      applyView();
     };
     registry.push(rec);
 
-    if (isPf) {
-      tiles.insertAdjacentHTML("beforeend", `<div class="tile">
-        <div class="v ${s.final_pct >= 0 ? "pos" : "neg"}">${fmtUsd(s.final_usd)}</div>
-        <div class="l">${s.label} (${s.final_pct >= 0 ? "+" : ""}${s.final_pct}%, DD ${s.dd}%)</div>
-      </div>`);
-    }
+    if (isPf) tiles.insertAdjacentHTML("beforeend",
+      `<div class="tile"><b class="muted">${fmtUsd(s.final_usd)}</b>
+       <span>${s.label}: ${s.final_pct >= 0 ? "+" : ""}${s.final_pct}%, DD ${s.dd}% —
+       вся история, in-sample</span></div>`);
   }
-  const strat = d.series.filter(s => s.group === "bot" || s.group === "signal");
-  const best = strat.slice().sort((a, b) => b.final_usd - a.final_usd)[0];
-  tiles.insertAdjacentHTML("beforeend", `<div class="tile">
-    <div class="v pos">${fmtUsd(best.final_usd)}</div>
-    <div class="l">лучшая одиночная: ${best.label} (из $50)</div>
-  </div>`);
-  const spx = d.series.find(s => s.key === "bench_spx");
-  if (spx) tiles.insertAdjacentHTML("beforeend", `<div class="tile">
-    <div class="v">${fmtUsd(spx.final_usd)}</div>
-    <div class="l">для сравнения: S&P 500 холд $50 (+${spx.final_pct}%)</div>
-  </div>`);
-  tiles.insertAdjacentHTML("afterbegin", `<div class="tile">
-    <div class="v">$50 × ${strat.length}</div>
-    <div class="l">старт: по $50 на стратегию ($${d.total} всего)</div>
-  </div>`);
+  BOUNDS = [tMin, tMax];
 
-  chart.timeScale().fitContent();
+  // «лучшая одиночная» — только среди того, что входит в портфель:
+  // хвалиться неподтверждённой линией нельзя
+  const strat = d.series.filter(s => (s.group === "bot" || s.group === "signal")
+                                     && s.in_portfolio !== false);
+  const spx = d.series.find(s => s.key === "bench_spx");
+  if (spx) tiles.insertAdjacentHTML("beforeend",
+    `<div class="tile"><b>${fmtUsd(spx.final_usd)}</b>
+     <span>для сравнения: S&amp;P 500 холд $50 (+${spx.final_pct}%)</span></div>`);
+  tiles.insertAdjacentHTML("afterbegin",
+    `<div class="tile"><b>$50 × ${strat.length}</b>
+     <span>старт: по $50 на стратегию ($${d.total} всего)</span></div>`);
+
+  // ГРАНИЦА ЭКЗАМЕНА: слева параметры подбирались (подгонка), справа —
+  // данные, которых отбор не видел. Рисуем отдельной серией из двух точек
+  // по краям шкалы цен: вертикальной линии в библиотеке нет, а маркер на
+  // оси времени не читается.
+  if (d.holdout_from && registry.length) {
+    const all = registry.flatMap(r => r.s._usd.map(p => p.value));
+    const lo = Math.min(...all), hi = Math.max(...all);
+    // именно гистограмма с ОДНИМ столбцом: две точки линии с одинаковым
+    // временем библиотека не принимает и роняет всю страницу
+    const div = chart.addHistogramSeries({
+      color: "rgba(120,123,134,.28)", priceLineVisible: false,
+      lastValueVisible: false, priceScaleId: "",
+    });
+    div.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+    div.setData([{ time: d.holdout_from, value: hi * 1.02 }]);
+    void lo;
+    const note = $("hdNote");
+    if (note && d.holdout_note) note.textContent = d.holdout_note;
+  }
+
+  TVK.fit(chart);
+  rng.refresh();
+
+  // какой набор точек показывать: честный отрезок или вся история
+  const seriesData = s => period === "honest"
+    ? (mode === "usd" ? s._h_usd : s._h_pct)
+    : (mode === "usd" ? s._usd : s._pct);
+  const finUsd = s => period === "honest"
+    ? (s.honest_usd !== undefined ? s.honest_usd : s.final_usd) : s.final_usd;
+  const finPct = s => period === "honest"
+    ? (s.honest_pct !== undefined ? s.honest_pct : s.final_pct) : s.final_pct;
 
   const showFinals = () => {
     for (const r of registry) {
-      r.valEl.textContent = mode === "usd" ? fmtUsd(r.s.final_usd)
-                                           : fmtPct(r.s.final_pct);
-      r.valEl.className = r.s.final_pct >= 0 ? "pos" : "neg";
+      r.valEl.textContent = mode === "usd" ? fmtUsd(finUsd(r.s)) : fmtPct(finPct(r.s));
+      r.valEl.className = finPct(r.s) >= 0 ? "pos" : "neg";
     }
   };
 
+  $("segPeriod").onclick = e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    for (const x of $("segPeriod").querySelectorAll("button"))
+      x.classList.toggle("on", x === b);
+    period = b.dataset.p;
+    for (const r of registry) r.series.setData(seriesData(r.s));
+    TVK.fit(chart);
+    rng.refresh();
+    showFinals();
+    const lp = $("legPeriod");
+    if (lp) lp.textContent = period === "honest"
+      ? "· экзамен: только невиданные данные"
+      : "· вся история, обучающий период внутри";
+    const note = $("hdNote");
+    if (note) note.textContent = period === "honest"
+      ? "показан только экзамен: капитал стартует с $50 на границе обучения — это то, что стратегия заработала бы, начав торговать с этой точки"
+      : (d.holdout_note || "");
+  };
+
+  // легенда-оверлей: три главные линии прямо на графике (коротко!)
+  const SHORT = { pf_cons: "портфель", pf_reb: "с ребалансом", bench_spx: "S&P 500" };
+  const legItems = registry.filter(r => SHORT[r.s.key])
+    .map(r => ({ series: r.series, label: SHORT[r.s.key], color: r.s.color,
+                 fmt: v => fmtVal(v) }));
+  const overlay = legItems.length
+    ? TVK.lineLegend(chart, "leg", legItems, { idle: "наведи курсор — срез по времени" })
+    : null;
+
   chart.subscribeCrosshairMove(param => {
-    const tsEl = document.getElementById("hoverTs");
+    const tsEl = $("hoverTs");
     if (!param.time) {
-      tsEl.textContent = "Итоговые значения (наведи на график для среза по времени)";
+      tsEl.textContent = "итоговые значения";
       showFinals();
       return;
     }
-    tsEl.textContent = "Срез: " + new Date(param.time * 1000).toLocaleDateString("ru");
+    tsEl.textContent = "срез: " + new Date(param.time * 1000).toLocaleDateString("ru");
     for (const r of registry) {
       const v = param.seriesData.get(r.series);
       if (v && v.value !== undefined) {
         r.valEl.textContent = fmtVal(v.value);
         const brk = mode === "usd" ? r.s._start : 0;
         r.valEl.className = v.value >= brk ? "pos" : "neg";
-      } else {
-        r.valEl.textContent = "·";
-      }
+      } else r.valEl.textContent = "·";
     }
   });
 
-  const bUsd = document.getElementById("tglUsd");
-  const bPct = document.getElementById("tglPct");
-  const setMode = m => {
-    mode = m;
-    bUsd.classList.toggle("on", m === "usd");
-    bPct.classList.toggle("on", m === "pct");
-    for (const r of registry) {
-      r.series.setData(m === "usd" ? r.s._usd : r.s._pct);
-    }
-    chart.timeScale().fitContent();
-    showFinals();
+  $("segMode").onclick = e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    for (const x of $("segMode").querySelectorAll("button")) x.classList.toggle("on", x === b);
+    mode = b.dataset.m;
+    for (const r of registry) r.series.setData(seriesData(r.s));
+    // на процентах есть нули и минусы — логарифм там неприменим
+    setScale(mode === "usd" ? scale : "lin", mode !== "usd");
+    showFinals();          // масштаб времени сохраняем — так удобнее сравнивать
   };
-  bUsd.onclick = () => setMode("usd");
-  bPct.onclick = () => setMode("pct");
+  $("segView").onclick = e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    for (const x of $("segView").querySelectorAll("button")) x.classList.toggle("on", x === b);
+    view = b.dataset.v;
+    applyView();
+  };
+  showFinals();
+  if (overlay) overlay.paint(null, "наведи курсор — срез по времени");
 }
-load();
+
+function setScale(s, lock) {
+  scale = s;
+  chart.priceScale("right").applyOptions({
+    mode: s === "log" ? LightweightCharts.PriceScaleMode.Logarithmic
+                      : LightweightCharts.PriceScaleMode.Normal });
+  for (const x of $("segScale").querySelectorAll("button")) {
+    x.classList.toggle("on", x.dataset.s === s);
+    x.disabled = !!lock && x.dataset.s === "log";
+    x.style.opacity = (!!lock && x.dataset.s === "log") ? .4 : "";
+    x.title = lock ? "логарифм доступен только в режиме «$»" : "";
+  }
+}
+$("segScale").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b || b.disabled) return;
+  setScale(b.dataset.s, mode !== "usd");
+};
+
+/* ---------- честные итоги ботов (build_bot_honest_data.py) ---------- */
+async function loadHonest() {
+  const h = await (await fetch("/api/bots_honest")).json();
+  if (!h.available) return;
+  const P = h.periods, S = h.summary, pf = h.portfolio;
+  const sign = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+  const cls = v => v > 0 ? "pos" : "neg";
+
+  /* плитки: честные цифры идут ПЕРЕД in-sample */
+  $("tiles").insertAdjacentHTML("afterbegin",
+    `<div class="tile"><b class="${cls(pf.holdout.ret)}">${sign(pf.holdout.ret)}</b>
+      <span>портфель ботов на холдоуте (${P.holdout.months} мес, DD ${pf.holdout.dd}%)</span></div>
+     <div class="tile"><b class="${cls(S.avg_robust)}">${sign(S.avg_robust)}</b>
+      <span>честная оценка = ${S.avg_per_month >= 0 ? "+" : ""}${S.avg_per_month}%/мес</span></div>
+     <div class="tile"><b class="${S.confirmed ? "pos" : "neg"}">${S.confirmed} / ${S.n}</b>
+      <span>ботов пережили честную проверку</span></div>`);
+
+  $("honestNote").innerHTML = ` Честно: портфель <b class="${cls(pf.holdout.ret)}">`
+    + `${sign(pf.holdout.ret)}</b> за ${P.holdout.months} мес холдоута, ожидание `
+    + `<b class="${cls(S.avg_per_month)}">${S.avg_per_month >= 0 ? "+" : ""}`
+    + `${S.avg_per_month}%/мес</b>, подтверждено ${S.confirmed} из ${S.n}.`;
+
+  $("honestCard").style.display = "";
+  $("honestPeriod").textContent = `холдоут ${P.holdout.start} — ${P.holdout.end}`
+    + ` (${P.holdout.months} мес) против обучения ${P.train.start} — ${P.train.end}`
+    + ` (${P.train.months} мес)`;
+  const badge = v => v.key === "ok" ? "badge--on"
+    : (v.key === "part" ? "badge--watch" : "badge--off");
+  $("honestTbl").innerHTML =
+    "<thead><tr><th>Бот</th><th>Вердикт</th><th>Холдоут</th><th>Честно, %/мес</th>"
+    + "<th>Необуч. сетка</th><th>Сделок</th><th>Обучение</th>"
+    + "<th>Кривая на графике</th></tr></thead><tbody>"
+    + (h.order || Object.keys(h.bots)).map(k => h.bots[k]).map(b => `<tr>
+        <td>${b.coin} x${b.lev}</td>
+        <td><span class="badge ${badge(b.verdict)}">${b.verdict.status.toLowerCase()} ${b.verdict.score}</span></td>
+        <td class="${cls(b.holdout.ret)}">${sign(b.holdout.ret)}</td>
+        <td class="${cls(b.robust.median)}">${b.robust.per_month >= 0 ? "+" : ""}${b.robust.per_month}%</td>
+        <td>${sign(b.benchmarks.untrained.holdout)}</td>
+        <td>${b.n_trades.holdout}</td>
+        <td class="muted">${sign(b.train.ret)}</td>
+        <td class="muted">${sign(b.site_pnl_pct)}</td></tr>`).join("")
+    + `<tr><td><b>портфель</b></td><td></td>
+        <td class="${cls(pf.holdout.ret)}"><b>${sign(pf.holdout.ret)}</b></td>
+        <td class="${cls(S.avg_per_month)}"><b>${S.avg_per_month >= 0 ? "+" : ""}${S.avg_per_month}%</b></td>
+        <td></td><td></td><td class="muted">${sign(pf.train.ret)}</td><td></td></tr>`
+    + "</tbody>";
+  $("honestHint").innerHTML =
+    "«Холдоут» — итог конфига на последних 28% истории (фикс. маржа $5 от $20). "
+    + `«Честно» — медиана ${h.method.n_pert} возмущённых копий генома ±`
+    + `${Math.round(h.method.pert * 100)}% на том же холдоуте, в процентах за месяц: `
+    + "это то, чего разумно ждать, когда рынок сдвинет оптимум. «Кривая на графике» — "
+    + "итог той самой линии выше (вся история, реинвест): именно её раньше "
+    + "показывали крупно. " + h.caveat;
+}
+
+/* прибыль по месяцам: портфель / портфель с ребалансом */
+function loadMonths(key) {
+  TVK.monthChart("moBox", key, { caption: "доход портфеля за месяц",
+    onEmpty: () => { $("moCard").style.display = "none"; } });
+}
+$("segPf").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  for (const x of $("segPf").querySelectorAll("button")) x.classList.toggle("on", x === b);
+  loadMonths(b.dataset.k);
+};
+loadMonths("pf_cons");
+/* честные плитки вставляем после того, как load() построит остальные */
+load().then(loadHonest).catch(e => console.error(e));
 </script>
 </body>
 </html>

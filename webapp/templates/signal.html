@@ -3,164 +3,245 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }}</title>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<title>{{ title }} · архивный вид (движок v1)</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/lightweight-charts.js"></script>
+{% include '_chartkit.html' %}
 <style>
-  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
-    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
-  body { background:var(--bg); color:var(--ink); margin:0;
-    font:15px/1.55 "Segoe UI", system-ui, sans-serif; padding:28px 18px 60px; }
-  .wrap { max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:18px; }
-  nav { display:flex; gap:16px; }
-  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
-  nav a:hover { color:var(--ink); }
-  h1 { font-size:24px; margin:2px 0 0; }
-  .b { font-size:11px; border-radius:99px; padding:3px 10px; font-weight:600;
-    white-space:nowrap; display:inline-block; }
-  .b.long { background:#1d3a2c; color:var(--up); }
-  .b.short { background:#3a2430; color:#e08bb0; }
-  .b.lev { background:var(--line); color:var(--muted); }
-  .stats { color:var(--accent); font-size:13.5px; font-weight:600; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
-  #chart { height:480px; }
-  h3 { margin:0 0 8px; font-size:15px; }
-  .muted { color:var(--muted); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  td,th { padding:6px 9px; border-bottom:1px solid var(--line); text-align:right;
-    font-variant-numeric:tabular-nums; white-space:nowrap; }
-  th { color:var(--muted); font-weight:600; font-size:12px; }
-  td:first-child, th:first-child { text-align:left; }
-  tr:last-child td { border-bottom:none; }
-  .pos { color:var(--up); } .neg { color:var(--down); }
-  .scroll { overflow-x:auto; max-height:420px; overflow-y:auto; }
-  .mini { height:190px; }
-  .kpi { display:flex; gap:22px; margin-bottom:10px; flex-wrap:wrap; }
-  .kpi div b { font-size:19px; }
-  .kpi div span { color:var(--muted); font-size:12px; display:block; }
+  .selbox { background:var(--bg-elev); border:1px solid var(--line-soft);
+    border-radius:var(--r-md); padding:11px 14px; margin-top:12px;
+    font-size:12.5px; display:none; }
+  .selbox.show { display:block; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div>
-    <nav><a href="/signals">← Сигналы BTC</a><a href="/pnl">PnL-график</a><a href="/">Боты</a></nav>
-    <h1>{{ title }}</h1>
-    <div style="margin-top:6px">
-      <span class="b {{ 'long' if name.endswith('long') else 'short' }}">{{ 'LONG' if name.endswith('long') else 'SHORT' }}</span>
-      <span class="b lev">x{{ rec.get('rec_lev', 15) }} · R:R 1:3 · сигнал на 4ч, исполнение на 15м</span>
+{% set nav = 'signals' %}{% include '_nav.html' %}
+
+<div class="wrap stack">
+
+  {% set V2 = ['sweep_long', 'dump_long', 'bounce_short', 'rally_short'] %}
+
+  <header>
+    <div class="badge-row" style="margin-bottom:10px">
+      <a href="/signals" class="badge" style="text-decoration:none">‹ сигналы BTC</a>
+      <span class="badge badge--watch">архивный вид · движок v1</span>
+      <span class="badge {{ 'badge--long' if name.endswith('long') else 'badge--short' }}">{{ 'LONG' if name.endswith('long') else 'SHORT' }}</span>
+      <span class="badge">x{{ rec.get('rec_lev', 15) }}</span>
+      <span class="badge">R:R 1:3 · сигнал 4ч, исполнение 15м</span>
     </div>
-    <p class="stats">Бэктест 3.2г: {{ st.get('ret','?') }}% | {{ st.get('n','?') }} сделок | WR {{ st.get('wr','?') }}% | DD {{ st.get('dd','?') }}% | ср. удержание {{ st.get('avg_hold_h','?') }}ч</p>
+    <h1 class="h-page">{{ title }}</h1>
+    <p class="h-sub">Страница первого движка (волна 4), оставлена только для
+      сравнения. Здесь нет ни holdout, ни контроля случайным входом — всё, что
+      ниже, посчитано на том же периоде, на котором сетап настраивался.</p>
+  </header>
+
+  <div class="note danger">
+    <span class="ico">⚠</span>
+    <div class="nb"><span class="t">Это архив, а не рабочая страница.</span>
+      Ни одной цифре отсюда нельзя верить как доказательству.
+      {% if name in V2 %}
+      Актуальный вид того же сетапа на движке v2 —
+      <a href="/signal/{{ name }}@240">открыть</a>.
+      {% else %}
+      Версии v2 у этого сетапа нет: он снят со страницы сигналов.
+      {% endif %}
+      <details>
+        <summary>чем архив отличается от актуальной страницы</summary>
+        <p>Движок v1 не выделял неприкосновенный holdout, не считал контроль
+          случайным входом и не проверял воспроизводимость при смене зерна
+          отбора. Такой набор проверок появился только в волне 6 —
+          см. <a href="/evolution">хронику исследования</a>.</p>
+      </details>
+    </div>
   </div>
 
+  <div class="stripe">
+    <div><div class="k">итог</div>
+      <div class="v {{ 'pos' if (st.get('ret', 0) or 0) >= 0 else 'neg' }}">{{ st.get('ret','?') }}%</div></div>
+    <div><div class="k">сделок</div><div class="v">{{ st.get('n','?') }}</div></div>
+    <div><div class="k">winrate</div><div class="v">{{ st.get('wr','?') }}%</div></div>
+    <div><div class="k">просадка</div><div class="v">{{ st.get('dd','?') }}%</div></div>
+    <div><div class="k">ср. удержание</div><div class="v">{{ st.get('avg_hold_h','?') }}ч</div></div>
+  </div>
+  <p class="tv-hint" style="margin-top:-8px">Вся история 3.2 года = обучающий
+    период движка v1. Честного экзамена у этих цифр нет.</p>
+
   <div class="card">
-    <h3>BTC/USDT 4ч — все входы и выходы сетапа за 3.2 года <span class="muted" id="cnt"></span></h3>
-    <div id="chart"></div>
-    <p class="muted" style="font-size:12px">▲/▼ — вход · ● — выход (зелёный тейк, красный стоп, серый таймаут; подпись — итог в R). Жёлтая метка — активный сигнал, если есть. Зум колёсиком, прокрутка перетаскиванием.</p>
+    <div class="h-card">BTC/USDT 4ч — входы и выходы сетапа
+      <span class="muted small" style="font-weight:400" id="cnt"></span></div>
+    <div class="tv">
+      <div class="tv-toolbar">
+        <span class="pills" id="rng"></span>
+        <span class="sep"></span>
+        <button class="btn" id="btnClear">показать всё</button>
+      </div>
+      <div class="tv-chart" id="chart">
+        <div class="tv-legend">
+          <div class="sym">BTC/USDT · 4ч</div>
+          <div class="ohlc" id="legOhlc"><span>наведи курсор на свечу</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend-row">
+      <span>▲/▼ вход · ● выход (подпись — итог в R)</span>
+      <span><i style="background:#2962ff"></i>активный сигнал</span>
+    </div>
+    <div class="selbox" id="selInfo"></div>
+  </div>
+
+  <div class="card" id="moCard">
+    <div class="h-card">Прибыль по месяцам
+      <span class="muted small" style="font-weight:400">реинвест от $50</span></div>
+    <div class="mchart" id="moBox"></div>
   </div>
 
   <div class="card" id="analyticsCard" style="display:none">
-    <h3>📊 Аналитика за 3.2 года <span class="muted">(реинвест от $50, маржа 25% капитала)</span></h3>
-    <div class="kpi" id="an_tiles"></div>
-    <h3 style="margin-top:14px">Капитал, $ <span class="muted" id="an_final"></span></h3>
-    <div class="mini" id="eqChart"></div>
-    <h3 style="margin-top:14px">Просадка от пика, %</h3>
-    <div class="mini" id="ddChart"></div>
-    <h3 style="margin-top:14px">Доходность по месяцам, %</h3>
-    <div class="mini" id="moChart"></div>
-    <div class="kpi" id="an_tiles2" style="margin-top:12px"></div>
+    <div class="h-card">Капитал и просадка
+      <span class="muted small" style="font-weight:400" id="an_final"></span></div>
+    <div class="tiles" id="an_tiles"></div>
+    <div class="h-sec">Капитал, $</div>
+    <div class="tv"><div class="tv-chart small" id="eqChart">
+      <div class="tv-legend"><div class="ohlc" id="eqLeg"></div></div></div></div>
+    <div class="h-sec">Просадка от пика, %</div>
+    <div class="tv"><div class="tv-chart small" id="ddChart">
+      <div class="tv-legend"><div class="ohlc" id="ddLeg"></div></div></div></div>
+    <div class="tiles" id="an_tiles2" style="margin-top:14px"></div>
   </div>
 
   <div class="card">
-    <h3>Сделки бэктеста (последние сверху)</h3>
-    <div class="scroll">
-      <table id="trades"><tr><th>Вход</th><th>Напр.</th><th>Цена входа</th><th>Стоп</th><th>Тейк</th><th>Исход</th><th>R</th><th>Удерж, ч</th></tr></table>
-    </div>
+    <div class="h-card">Сделки бэктеста
+      <span class="muted small" style="font-weight:400">клик по строке — зум и линии входа/стопа/тейка</span></div>
+    <div class="tbl-wrap tall"><table class="tbl" id="trades"></table></div>
   </div>
+
 </div>
 
 <script>
 const NAME = "{{ name }}";
-const el = document.getElementById("chart");
-const chart = LightweightCharts.createChart(el, {
-  layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
-  grid: { vertLines: { color: "#22252b" }, horzLines: { color: "#22252b" } },
-  timeScale: { timeVisible: true, secondsVisible: false },
-  height: 480, autoSize: true,
-});
-const series = chart.addCandlestickSeries({
-  upColor: "#46C186", downColor: "#E06B5E",
-  wickUpColor: "#46C186", wickDownColor: "#E06B5E", borderVisible: false,
-});
-
+const C = TVK.P;
+const $ = id => document.getElementById(id);
 const BAR = 4 * 3600;
 const snap = t => Math.floor(t / BAR) * BAR;
 
+const chart = TVK.create("chart", 480);
+const series = chart.addCandlestickSeries({
+  upColor: C.up, downColor: C.down, wickUpColor: C.up, wickDownColor: C.down,
+  borderVisible: false,
+});
+TVK.candleLegend(chart, series, "legOhlc", { digits: 1 });
+
+let CANDLES = [], TRADES = [], LINES = [];
+const rng = TVK.ranges("rng", chart,
+  () => CANDLES.length ? [CANDLES[0].time, CANDLES[CANDLES.length - 1].time] : [],
+  { def: 0, onFit: clearSel });
+
+function clearLines() {
+  for (const l of LINES) { try { series.removePriceLine(l); } catch (e) {} }
+  LINES = [];
+}
+function addLine(price, color, title) {
+  if (!isFinite(Number(price))) return;
+  LINES.push(series.createPriceLine({ price: +price, color: color, lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+    title: title }));
+}
+function clearSel(keepZoom) {
+  clearLines();
+  $("selInfo").classList.remove("show");
+  for (const tr of $("trades").querySelectorAll("tr.sel")) tr.classList.remove("sel");
+  if (!keepZoom) rng.set(0);          // «показать всё» = и зум сбросить
+}
+$("btnClear").onclick = () => clearSel();
+
+function selectTrade(t) {
+  clearLines();
+  addLine(t.entry, C.accent, "вход");
+  addLine(t.stop, C.down, "стоп");
+  addLine(t.tp, C.up, "тейк");
+  const a = t.entry_ts, b = t.exit_ts || t.entry_ts;
+  const pad = Math.max(12 * BAR, (b - a) * 0.6);
+  if (CANDLES.length) {
+    try {
+      chart.timeScale().setVisibleRange({
+        from: Math.max(CANDLES[0].time, a - pad),
+        to: Math.min(CANDLES[CANDLES.length - 1].time, b + pad) });
+    } catch (e) {}
+  }
+  for (const tr of $("trades").querySelectorAll("tr.sel")) tr.classList.remove("sel");
+  const row = $("trades").querySelector('tr[data-i="' + t._i + '"]');
+  if (row) row.classList.add("sel");
+  const kv = (k, v, c) => "<div><span>" + k + '</span> <b class="' + (c || "")
+    + '">' + v + "</b></div>";
+  $("selInfo").classList.add("show");
+  $("selInfo").innerHTML = '<div class="kv">'
+    + kv("сделка", "#" + (t._i + 1) + " " + (t.side === "L" ? "LONG" : "SHORT"))
+    + kv("вход", TVK.fmtDT(t.entry_ts) + " по " + t.entry)
+    + kv("выход", TVK.fmtDT(t.exit_ts) + " — " + outcome(t.reason))
+    + kv("стоп / тейк", t.stop + " / " + t.tp)
+    + kv("итог", (t.r >= 0 ? "+" : "") + t.r + "R", t.r >= 0 ? "pos" : "neg")
+    + kv("удержание", t.hold_h + "ч")
+    + "</div>";
+}
+const outcome = r => r === "tp" ? "ТЕЙК" : r === "stop" ? "СТОП"
+  : r === "liq" ? "ЛИКВИДАЦИЯ" : "ТАЙМАУТ";
+
 async function load() {
   const d = await (await fetch(`/api/signal_chart/${NAME}`)).json();
-  series.setData(d.candles);
-  document.getElementById("cnt").textContent = `(${d.trades.length} сделок)`;
+  CANDLES = TVK.bars(d.candles);
+  series.setData(CANDLES);
+  TRADES = (d.trades || []).map((t, i) => Object.assign({ _i: i }, t));
+  $("cnt").textContent = `${TRADES.length} сделок`;
 
   const markers = [];
-  for (const t of d.trades) {
+  for (const t of TRADES) {
     const long = t.side === "L" || t.side === "LONG";
     markers.push({ time: snap(t.entry_ts), position: long ? "belowBar" : "aboveBar",
-      color: long ? "#46C186" : "#E06B5E",
-      shape: long ? "arrowUp" : "arrowDown", text: "вход" });
-    const col = t.reason === "tp" ? "#46C186" :
-                t.reason === "stop" ? "#E06B5E" :
-                t.reason === "liq" ? "#ff3030" : "#9A9DA6";
-    markers.push({ time: snap(t.exit_ts), position: "aboveBar", color: col,
-      shape: "circle",
-      text: (t.reason === "tp" ? "тейк " : t.reason === "stop" ? "стоп " :
-             t.reason === "liq" ? "ЛИКВ " : "таймаут ") +
-            (t.r >= 0 ? "+" : "") + t.r + "R" });
+      color: long ? C.up : C.down, shape: long ? "arrowUp" : "arrowDown", text: "" });
+    const col = t.reason === "tp" ? C.up : t.reason === "stop" ? C.down :
+                t.reason === "liq" ? C.liq : C.muted;
+    markers.push({ time: snap(t.exit_ts), position: long ? "aboveBar" : "belowBar",
+      color: col, shape: "circle", size: 0.8,
+      text: (t.r >= 0 ? "+" : "") + t.r + "R" });
   }
   if (d.active) {
     markers.push({ time: snap(Math.floor(d.active.bar_ts / 1000)),
       position: d.active.side === "LONG" ? "belowBar" : "aboveBar",
-      color: "#E3A83E", shape: d.active.side === "LONG" ? "arrowUp" : "arrowDown",
-      text: "АКТИВЕН: вход " + d.active.entry });
+      color: C.accent, shape: d.active.side === "LONG" ? "arrowUp" : "arrowDown",
+      text: "сигнал" });
   }
   markers.sort((a, b) => a.time - b.time);
   series.setMarkers(markers);
-  chart.timeScale().fitContent();
+  TVK.fit(chart);
+  rng.refresh();
 
-  const tbl = document.getElementById("trades");
-  tbl.innerHTML = "<tr><th>Вход</th><th>Напр.</th><th>Цена входа</th><th>Стоп</th><th>Тейк</th><th>Исход</th><th>R</th><th>Удерж, ч</th></tr>" +
-    d.trades.slice().reverse().map(t => {
+  $("trades").innerHTML =
+    "<thead><tr><th>Вход</th><th>Напр.</th><th>Цена входа</th><th>Стоп</th><th>Тейк</th><th>Исход</th><th>R</th><th>Удерж, ч</th></tr></thead><tbody>"
+    + TRADES.slice().reverse().map(t => {
       const cls = t.r > 0 ? "pos" : "neg";
-      const outcome = t.reason === "tp" ? "ТЕЙК" : t.reason === "stop" ? "СТОП" :
-                      t.reason === "liq" ? "ЛИКВИДАЦИЯ" : "ТАЙМАУТ";
-      return `<tr><td>${new Date(t.entry_ts * 1000).toLocaleString("ru")}</td>
-        <td>${t.side === "L" ? "LONG" : "SHORT"}</td>
+      return `<tr data-i="${t._i}"><td>${TVK.fmtDT(t.entry_ts)}</td>
+        <td class="${t.side === "L" ? "pos" : "neg"}">${t.side === "L" ? "LONG" : "SHORT"}</td>
         <td>${t.entry}</td><td>${t.stop}</td><td>${t.tp}</td>
-        <td class="${t.reason === "tp" ? "pos" : t.reason === "stop" ? "neg" : ""}">${outcome}</td>
+        <td class="${t.reason === "tp" ? "pos" : t.reason === "stop" ? "neg" : ""}">${outcome(t.reason)}</td>
         <td class="${cls}">${t.r >= 0 ? "+" : ""}${t.r}</td>
         <td>${t.hold_h}</td></tr>`;
-    }).join("");
+    }).join("") + "</tbody>";
+  $("trades").onclick = e => {
+    const tr = e.target.closest("tr[data-i]");
+    if (tr) selectTrade(TRADES[+tr.dataset.i]);
+  };
 }
 load();
-
-function miniChart(id) {
-  const c = LightweightCharts.createChart(document.getElementById(id), {
-    layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
-    grid: { vertLines: { color: "#22252b" }, horzLines: { color: "#22252b" } },
-    timeScale: { timeVisible: false }, height: 190, autoSize: true,
-    rightPriceScale: { scaleMargins: { top: 0.12, bottom: 0.08 } },
-  });
-  return c;
-}
 
 async function loadAnalytics() {
   const d = await (await fetch(`/api/analytics/sig_${NAME}`)).json();
   if (!d.available) return;
-  document.getElementById("analyticsCard").style.display = "";
+  $("analyticsCard").style.display = "";
   const s = d.stats;
-  document.getElementById("an_final").textContent =
+  $("an_final").textContent =
     `$50 → $${s.final_usd} (${s.final_pct >= 0 ? "+" : ""}${s.final_pct}%)`;
-
   const tile = (v, l, cls) =>
-    `<div><b class="${cls || ""}">${v}</b><span>${l}</span></div>`;
-  document.getElementById("an_tiles").innerHTML =
+    `<div class="tile"><b class="${cls || ""}">${v}</b><span>${l}</span></div>`;
+  $("an_tiles").innerHTML =
     tile("$" + s.final_usd, "итог из $50", s.final_pct >= 0 ? "pos" : "neg") +
     tile(s.profit_factor ?? "∞", "profit factor",
          (s.profit_factor ?? 9) >= 1.5 ? "pos" : "") +
@@ -168,7 +249,7 @@ async function loadAnalytics() {
     tile(s.wr + "%", `winrate (${s.wins} из ${s.trades})`) +
     tile(`${s.n_tp} / ${s.n_stop} / ${s.n_timeout}`, "тейков / стопов / таймаутов") +
     tile(s.avg_hold_h + "ч", "среднее удержание");
-  document.getElementById("an_tiles2").innerHTML =
+  $("an_tiles2").innerHTML =
     tile("+" + s.avg_win, "средняя прибыльная, $") +
     tile(s.avg_loss, "средняя убыточная, $", "neg") +
     tile(s.max_win_streak + " / " + s.max_loss_streak, "макс. серия побед / убытков") +
@@ -176,27 +257,31 @@ async function loadAnalytics() {
          "лучший / худший месяц") +
     tile(s.months_pos + " из " + s.months_total, "месяцев в плюсе");
 
-  const eqC = miniChart("eqChart");
-  const eqS = eqC.addAreaSeries({ lineColor: "#E3A83E", lineWidth: 2,
-    topColor: "rgba(227,168,62,.25)", bottomColor: "rgba(227,168,62,0)",
+  const eqC = TVK.mini("eqChart", 190);
+  const eqS = eqC.addAreaSeries({ lineColor: C.accent, lineWidth: 2,
+    topColor: "rgba(41,98,255,.25)", bottomColor: "rgba(41,98,255,0)",
     priceLineVisible: false });
-  eqS.setData(d.equity.map(p => ({ time: p[0], value: p[1] })));
-  eqC.timeScale().fitContent();
+  eqS.setData(TVK.points(d.equity));
+  TVK.fit(eqC);
+  TVK.lineLegend(eqC, "eqLeg", [{ series: eqS, label: "капитал", color: C.accent,
+    fmt: v => TVK.fmtUsd(v, 2) }], { idle: "наведи курсор" });
 
-  const ddC = miniChart("ddChart");
-  const ddS = ddC.addAreaSeries({ lineColor: "#E06B5E", lineWidth: 1,
-    topColor: "rgba(224,107,94,0)", bottomColor: "rgba(224,107,94,.3)",
+  const ddC = TVK.mini("ddChart", 190);
+  const ddS = ddC.addAreaSeries({ lineColor: C.down, lineWidth: 1,
+    topColor: "rgba(239,83,80,0)", bottomColor: "rgba(239,83,80,.3)",
     priceLineVisible: false });
-  ddS.setData(d.drawdown.map(p => ({ time: p[0], value: p[1] })));
-  ddC.timeScale().fitContent();
-
-  const moC = miniChart("moChart");
-  const moS = moC.addHistogramSeries({ priceLineVisible: false });
-  moS.setData(d.monthly.map(p => ({ time: p[0], value: p[1],
-    color: p[1] >= 0 ? "#46C186" : "#E06B5E" })));
-  moC.timeScale().fitContent();
+  ddS.setData(TVK.points(d.drawdown));
+  TVK.fit(ddC);
+  TVK.lineLegend(ddC, "ddLeg", [{ series: ddS, label: "просадка", color: C.down,
+    fmt: v => TVK.fmtN(v, 1) + "%" }], { idle: "наведи курсор" });
+  TVK.sync(eqC, ddC);
 }
 loadAnalytics();
+
+/* месяцы — из аналитики СТАРОГО движка (analytics_sig_*.json); если её нет,
+   карточку прячем: подставлять сюда цифры движка v2 было бы обманом */
+TVK.monthChart("moBox", "an_sig_" + NAME, { caption: "доход за месяц",
+  onEmpty: () => { $("moCard").style.display = "none"; } });
 </script>
 </body>
 </html>

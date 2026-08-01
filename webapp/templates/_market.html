@@ -1,0 +1,105 @@
+{# Плашка состояния рынка BTC (движок v2.2, эндпоинт /api/market_now).
+   Считается на последнем ЗАКРЫТОМ баре 4ч, кэш на сервере 60 с. #}
+<div class="mkt" id="mktPlate" style="display:none">
+  <div class="mkt-flag" id="mktFlag">
+    <div>
+      <div class="ttl" id="mktFlagTtl">СПОКОЙНО</div>
+      <div class="txt" id="mktFlagTxt">рынок без экстремальных движений</div>
+    </div>
+  </div>
+  <div class="mkt-cell">
+    <div class="k">режим рынка</div>
+    <div class="v" id="mktRegime">—</div>
+  </div>
+  <div class="mkt-cell">
+    <div class="k">за сутки</div>
+    <div class="v" id="mktD">—</div>
+  </div>
+  <div class="mkt-cell">
+    <div class="k">за неделю</div>
+    <div class="v" id="mktW">—</div>
+  </div>
+  <div class="mkt-cell">
+    <div class="k">ранг волатильности</div>
+    <div class="v" id="mktA">—</div>
+    <div class="mkt-bar"><i id="mktABar" style="width:0%"></i></div>
+  </div>
+  <div class="mkt-cell">
+    <div class="k">BTC · закрытие 4ч</div>
+    <div class="v" id="mktPx">—</div>
+  </div>
+</div>
+<div class="note" id="mktNoteBox" style="display:none;margin-top:-6px">
+  <span class="ico">ⓘ</span>
+  <div class="nb">
+    <span id="mktNoteHead"></span>
+    <details><summary>как считается шторм</summary>
+      <p id="mktNote" style="margin:0"></p>
+    </details>
+  </div>
+</div>
+
+<script>
+(async function loadMarket() {
+  const $m = id => document.getElementById(id);
+  // включено ли ворото «шторм» у сетапа(ов) этой страницы — от этого
+  // зависит, блокирует шторм входы на самом деле или это просто контекст
+  const STORM_GATE = {{ 'true' if storm_gate|default(false) else 'false' }};
+  const STORM_TXT = {{ (storm_gate_txt|default(''))|tojson }};
+  let d;
+  try {
+    d = await (await fetch("/api/market_now")).json();
+  } catch (e) { return; }
+  if (!d || !d.available) {
+    $m("mktNoteBox").style.display = "";
+    $m("mktNoteHead").textContent = "Состояние рынка не посчитано"
+      + (d && d.error ? ": " + d.error : "") + ".";
+    return;
+  }
+  const pct = v => (v >= 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
+  const cl = v => v > 0 ? "pos" : v < 0 ? "neg" : "";
+  $m("mktPlate").style.display = "";
+  $m("mktRegime").textContent = d.regime_ru;
+  $m("mktD").innerHTML = '<span class="' + cl(d.ret_1d) + '">' + pct(d.ret_1d) + "</span>";
+  $m("mktW").innerHTML = '<span class="' + cl(d.ret_7d) + '">' + pct(d.ret_7d) + "</span>";
+  const rank = Math.max(0, Math.min(1, d.atr_rank || 0));
+  $m("mktA").innerHTML = (rank * 100).toFixed(0) + "<small> перцентиль за 90 дней</small>";
+  const bar = $m("mktABar");
+  bar.style.width = (rank * 100).toFixed(0) + "%";
+  bar.style.background = rank >= (d.thr ? d.thr.atr_rank : 0.85)
+    ? "var(--down)" : rank >= 0.5 ? "var(--warn)" : "var(--up)";
+  $m("mktPx").textContent = d.price === null || d.price === undefined ? "—"
+    : "$" + Number(d.price).toLocaleString("ru", { maximumFractionDigits: 0 });
+  if (d.storm) {
+    $m("mktPlate").classList.add("storm");
+    $m("mktFlagTtl").textContent = "⚡ ШТОРМ";
+    $m("mktFlagTxt").innerHTML = (d.storm_dir < 0 ? "резкий обвал" :
+      d.storm_dir > 0 ? "резкая ракета" : "аномальная волатильность")
+      + " · сила " + Number(d.storm_strength).toFixed(2) + " от порога<br>"
+      + (STORM_GATE ? "<b>входы блокируются</b> — ворото «шторм» включено"
+                    : "входы НЕ блокируются: ворото «шторм» выключено");
+  } else {
+    $m("mktFlagTtl").textContent = "СПОКОЙНО";
+    $m("mktFlagTxt").innerHTML = "рынок без экстремальных движений<br>сила "
+      + Number(d.storm_strength).toFixed(2) + " от порога шторма";
+  }
+  // одна строка сверху, подробности — под «подробнее»
+  const t = d.thr || {};
+  const head = [];
+  if (d.stale) head.push("⚠ данные устарели на "
+    + Math.round(d.age_min / 60) + " ч");
+  if (d.live_error) head.push("свежие свечи с биржи не получены — считано по кэшу");
+  head.push(STORM_TXT ? STORM_TXT
+    : (STORM_GATE ? "ворото «шторм» включено — входы в шторм ограничены"
+                  : "ворото «шторм» выключено — плашка как контекст рынка"));
+  $m("mktNoteHead").innerHTML = head.join(" · ");
+  const parts = ["Шторм = ход за сутки > " + (t.day * 100).toFixed(0)
+    + "% ИЛИ за неделю > " + (t.week * 100).toFixed(0)
+    + "% ИЛИ ранг дневного ATR > " + (t.atr_rank * 100).toFixed(0)
+    + " перцентиля (пороги необученного семени DEFAULTS2)."];
+  if (d.stale) parts.push("Последний закрытый бар был "
+    + Math.round(d.age_min / 60) + " ч назад (кэш свечей не обновлён).");
+  $m("mktNoteBox").style.display = "";
+  $m("mktNote").textContent = parts.join(" ");
+})();
+</script>

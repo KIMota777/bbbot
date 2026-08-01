@@ -1,0 +1,697 @@
+{
+  "meta": {
+    "schema": "setups_grid/1 (поля сетапа — как в signal_setups2.json)",
+    "generated": "2026-07-31 16:59:00",
+    "source": "simple_grid.py / simple_grid_check.py",
+    "holdout": "2025-09-04..2026-07-23",
+    "holdout_days": 322,
+    "holdout_frac": 0.28,
+    "params": {
+      "rsi_p": 14,
+      "rsi_th": 30,
+      "levels": 3,
+      "step_atr": 0.7,
+      "tp": 0.025,
+      "stop": 0.08
+    },
+    "lev": 2,
+    "trend_filter": true,
+    "rules": "торговый = риск(нет слива, разорение<5%/год, DD p95<30%) И прибыль(holdout>0, медиана возмущений>0, >=60% возмущений в плюс) И не хуже случайного входа И переживает стоп по закрытию свечи И нужный депозит <= $100 И ворота механики (среднее по 5 монетам>0 и >=3 монет в плюсе)",
+    "mechanics_gate": {
+      "passed": false,
+      "mean_coin_ret": -0.6,
+      "coins_positive": 3
+    },
+    "portfolio": {
+      "ret": -0.6,
+      "dd": 10.4,
+      "cycles": 514,
+      "mean_coin_ret": -0.6,
+      "pert_median": -5.0,
+      "pert_share_pos": 0.067
+    },
+    "note": "Параметры не оптимизировались: взяты из середины устойчивых областей grid_plateau/grid_anatomy/grid_ruin. Карта плато измерялась в том числе на этом холдоуте, поэтому его неприкосновенность частичная."
+  },
+  "setups": {
+    "DOGEUSDT": {
+      "title": "простая сетка усреднения DOGE (RSI+фильтр тренда)",
+      "symbol": "DOGEUSDT",
+      "interval_min": 15,
+      "params": {
+        "rsi_p": 14,
+        "rsi_th": 30,
+        "levels": 3,
+        "step_atr": 0.7,
+        "tp": 0.025,
+        "stop": 0.08
+      },
+      "lev": 2,
+      "mult": 1.5,
+      "trend_filter": true,
+      "margin_fraction": 0.25,
+      "enabled": false,
+      "watch": true,
+      "verdict": "наблюдение",
+      "reason": "holdout +1.7% за 10.7 мес; без слива; разорение за год 0.0%; DD p95 22%; возмущений в плюс 10% (медиана -6.4%); не хуже случайного входа (-8.0%); НЕ переживает стоп по закрытию (-0.6%); t(ср.R)=+0.13; нужен депозит $48; ворота механики не пройдены (край есть не на всех монетах)",
+      "flags": {
+        "risk": true,
+        "profit": false,
+        "null": true,
+        "stress": false,
+        "lot": true,
+        "mechanics": false
+      },
+      "holdout": {
+        "n": 111,
+        "wr": 90.1,
+        "exp_r": 0.0006,
+        "pf": 1.04,
+        "sum_r": 0.07,
+        "ret": 1.7,
+        "dd": 10.1,
+        "t_exp_r": 0.13,
+        "tp": 100,
+        "stop": 11,
+        "liq": 0,
+        "ruined": false,
+        "months": 10.7,
+        "period": "2025-09-04..2026-07-23",
+        "by_side": {
+          "n_long": 43,
+          "exp_r_long": -0.0101,
+          "pnl_long": -2.18,
+          "n_short": 68,
+          "exp_r_short": 0.0074,
+          "pnl_short": 2.52
+        },
+        "by_regime": {
+          "bull": {
+            "n": 19,
+            "exp_r": -0.0024
+          },
+          "range": {
+            "n": 41,
+            "exp_r": -0.0112
+          },
+          "bear": {
+            "n": 51,
+            "exp_r": 0.0112
+          }
+        }
+      },
+      "risk": {
+        "ruin_year_pct": 0.0,
+        "dd_p95": 22.4,
+        "dd_p50": 12.3,
+        "cycles_per_year": 126,
+        "med_year_ret": 1.0,
+        "ruins_holdout": 0,
+        "min_deposit_usd": 48,
+        "ladder": {
+          "x2": {
+            "ret": 1.7,
+            "dd": 10.1,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 22.4
+          },
+          "x3": {
+            "ret": 2.6,
+            "dd": 14.7,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 32.3
+          },
+          "x5": {
+            "ret": 4.3,
+            "dd": 23.2,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 50.0
+          }
+        },
+        "min_order_ok": true
+      },
+      "stress": {
+        "stop_at_close": -0.6,
+        "slip_03": 0.3,
+        "slip_10": -3.1,
+        "stops": 11,
+        "stops_pierced": 4
+      },
+      "robustness": {
+        "n": 30,
+        "share_pos": 0.1,
+        "median": -6.4,
+        "p10": -14.5,
+        "p90": -0.0,
+        "ruins": 0,
+        "base_percentile": 93
+      },
+      "benchmark": {
+        "buy_hold": -67.4,
+        "buy_hold_dd": 77.4,
+        "untrained_grid": 50.3,
+        "untrained_grid_lev": 10,
+        "untrained_grid_x2": 10.1,
+        "bot": 38.3,
+        "bot_lev": 10,
+        "bot_x2": 7.7,
+        "random_entry_median": -8.0,
+        "no_trend_filter": -16.1
+      },
+      "stats": {
+        "train_ret": -7.1,
+        "train_n": 332,
+        "train_wr": 87.3,
+        "train_period": "2023-09-07..2025-09-04",
+        "in_sample_warning": false
+      }
+    },
+    "LTCUSDT": {
+      "title": "простая сетка усреднения LTC (RSI+фильтр тренда)",
+      "symbol": "LTCUSDT",
+      "interval_min": 15,
+      "params": {
+        "rsi_p": 14,
+        "rsi_th": 30,
+        "levels": 3,
+        "step_atr": 0.7,
+        "tp": 0.025,
+        "stop": 0.08
+      },
+      "lev": 2,
+      "mult": 1.5,
+      "trend_filter": true,
+      "margin_fraction": 0.25,
+      "enabled": false,
+      "watch": true,
+      "verdict": "наблюдение",
+      "reason": "holdout +18.4% за 10.7 мес; без слива; разорение за год 0.0%; DD p95 20%; возмущений в плюс 100% (медиана +13.7%); не хуже случайного входа (-3.3%); переживает стоп по закрытию (+10.3%); t(ср.R)=+1.79; нужен депозит $48; ворота механики не пройдены (край есть не на всех монетах)",
+      "flags": {
+        "risk": true,
+        "profit": true,
+        "null": true,
+        "stress": true,
+        "lot": true,
+        "mechanics": false
+      },
+      "holdout": {
+        "n": 103,
+        "wr": 93.2,
+        "exp_r": 0.0071,
+        "pf": 1.8,
+        "sum_r": 0.74,
+        "ret": 18.4,
+        "dd": 13.2,
+        "t_exp_r": 1.79,
+        "tp": 95,
+        "stop": 7,
+        "liq": 0,
+        "ruined": false,
+        "months": 10.7,
+        "period": "2025-09-04..2026-07-23",
+        "by_side": {
+          "n_long": 29,
+          "exp_r_long": -0.0052,
+          "pnl_long": -0.76,
+          "n_short": 74,
+          "exp_r_short": 0.012,
+          "pnl_short": 4.44
+        },
+        "by_regime": {
+          "bull": {
+            "n": 5,
+            "exp_r": -0.0571
+          },
+          "range": {
+            "n": 42,
+            "exp_r": 0.0139
+          },
+          "bear": {
+            "n": 56,
+            "exp_r": 0.0078
+          }
+        }
+      },
+      "risk": {
+        "ruin_year_pct": 0.0,
+        "dd_p95": 19.7,
+        "dd_p50": 10.5,
+        "cycles_per_year": 117,
+        "med_year_ret": 23.3,
+        "ruins_holdout": 0,
+        "min_deposit_usd": 48,
+        "ladder": {
+          "x2": {
+            "ret": 18.4,
+            "dd": 13.2,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 19.7
+          },
+          "x3": {
+            "ret": 27.6,
+            "dd": 19.5,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 28.2
+          },
+          "x5": {
+            "ret": 46.0,
+            "dd": 31.5,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 44.9
+          }
+        },
+        "min_order_ok": true
+      },
+      "stress": {
+        "stop_at_close": 10.3,
+        "slip_03": 17.6,
+        "slip_10": 15.7,
+        "stops": 7,
+        "stops_pierced": 3
+      },
+      "robustness": {
+        "n": 30,
+        "share_pos": 1.0,
+        "median": 13.7,
+        "p10": 4.5,
+        "p90": 18.9,
+        "ruins": 0,
+        "base_percentile": 83
+      },
+      "benchmark": {
+        "buy_hold": -57.8,
+        "buy_hold_dd": 70.8,
+        "untrained_grid": 24.6,
+        "untrained_grid_lev": 5,
+        "untrained_grid_x2": 9.8,
+        "bot": 6.5,
+        "bot_lev": 5,
+        "bot_x2": 2.6,
+        "random_entry_median": -3.3,
+        "no_trend_filter": 14.2
+      },
+      "stats": {
+        "train_ret": 2.6,
+        "train_n": 262,
+        "train_wr": 88.5,
+        "train_period": "2023-09-07..2025-09-04",
+        "in_sample_warning": false
+      }
+    },
+    "BTCUSDT": {
+      "title": "простая сетка усреднения BTC (RSI+фильтр тренда)",
+      "symbol": "BTCUSDT",
+      "interval_min": 15,
+      "params": {
+        "rsi_p": 14,
+        "rsi_th": 30,
+        "levels": 3,
+        "step_atr": 0.7,
+        "tp": 0.025,
+        "stop": 0.08
+      },
+      "lev": 2,
+      "mult": 1.5,
+      "trend_filter": true,
+      "margin_fraction": 0.25,
+      "enabled": false,
+      "watch": false,
+      "verdict": "не годится",
+      "reason": "holdout -11.0% за 10.7 мес; без слива; разорение за год 0.0%; DD p95 33% > 30% ПОРОГ; возмущений в плюс 7% (медиана -7.5%); ХУЖЕ случайного входа (-10.3%); НЕ переживает стоп по закрытию (-12.2%); t(ср.R)=-0.83; нужен депозит $616; ворота механики не пройдены (край есть не на всех монетах)",
+      "flags": {
+        "risk": false,
+        "profit": false,
+        "null": false,
+        "stress": false,
+        "lot": false,
+        "mechanics": false
+      },
+      "holdout": {
+        "n": 67,
+        "wr": 86.6,
+        "exp_r": -0.0066,
+        "pf": 0.71,
+        "sum_r": -0.44,
+        "ret": -11.0,
+        "dd": 15.5,
+        "t_exp_r": -0.83,
+        "tp": 57,
+        "stop": 9,
+        "liq": 0,
+        "ruined": false,
+        "months": 10.7,
+        "period": "2025-09-04..2026-07-23",
+        "by_side": {
+          "n_long": 23,
+          "exp_r_long": -0.0252,
+          "pnl_long": -2.89,
+          "n_short": 44,
+          "exp_r_short": 0.0031,
+          "pnl_short": 0.69
+        },
+        "by_regime": {
+          "bull": {
+            "n": 8,
+            "exp_r": -0.0324
+          },
+          "range": {
+            "n": 29,
+            "exp_r": -0.0225
+          },
+          "bear": {
+            "n": 30,
+            "exp_r": 0.0157
+          }
+        }
+      },
+      "risk": {
+        "ruin_year_pct": 0.0,
+        "dd_p95": 33.2,
+        "dd_p50": 20.5,
+        "cycles_per_year": 76,
+        "med_year_ret": -12.8,
+        "ruins_holdout": 0,
+        "min_deposit_usd": 616,
+        "ladder": {
+          "x2": {
+            "ret": -11.0,
+            "dd": 15.5,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 33.2
+          },
+          "x3": {
+            "ret": -16.5,
+            "dd": 22.7,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 46.0
+          },
+          "x5": {
+            "ret": -27.5,
+            "dd": 36.1,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 65.0
+          }
+        },
+        "min_order_ok": false
+      },
+      "stress": {
+        "stop_at_close": -12.2,
+        "slip_03": -12.4,
+        "slip_10": -15.5,
+        "stops": 9,
+        "stops_pierced": 4
+      },
+      "robustness": {
+        "n": 30,
+        "share_pos": 0.067,
+        "median": -7.5,
+        "p10": -11.0,
+        "p90": -1.5,
+        "ruins": 0,
+        "base_percentile": 10
+      },
+      "benchmark": {
+        "buy_hold": -40.7,
+        "buy_hold_dd": 53.8,
+        "untrained_grid": -79.6,
+        "untrained_grid_lev": 15,
+        "untrained_grid_x2": -7.6,
+        "bot": -1.7,
+        "bot_lev": 15,
+        "bot_x2": -0.2,
+        "random_entry_median": -10.3,
+        "no_trend_filter": -7.8
+      },
+      "stats": {
+        "train_ret": -18.3,
+        "train_n": 178,
+        "train_wr": 87.6,
+        "train_period": "2023-09-07..2025-09-04",
+        "in_sample_warning": false
+      }
+    },
+    "ETHUSDT": {
+      "title": "простая сетка усреднения ETH (RSI+фильтр тренда)",
+      "symbol": "ETHUSDT",
+      "interval_min": 15,
+      "params": {
+        "rsi_p": 14,
+        "rsi_th": 30,
+        "levels": 3,
+        "step_atr": 0.7,
+        "tp": 0.025,
+        "stop": 0.08
+      },
+      "lev": 2,
+      "mult": 1.5,
+      "trend_filter": true,
+      "margin_fraction": 0.25,
+      "enabled": false,
+      "watch": false,
+      "verdict": "не годится",
+      "reason": "holdout +4.2% за 10.7 мес; без слива; разорение за год 0.0%; DD p95 30% > 30% ПОРОГ; возмущений в плюс 17% (медиана -6.2%); не хуже случайного входа (-12.7%); переживает стоп по закрытию (+3.6%); t(ср.R)=+0.30; нужен депозит $180; ворота механики не пройдены (край есть не на всех монетах)",
+      "flags": {
+        "risk": false,
+        "profit": false,
+        "null": true,
+        "stress": true,
+        "lot": false,
+        "mechanics": false
+      },
+      "holdout": {
+        "n": 110,
+        "wr": 90.9,
+        "exp_r": 0.0015,
+        "pf": 1.1,
+        "sum_r": 0.17,
+        "ret": 4.2,
+        "dd": 16.5,
+        "t_exp_r": 0.3,
+        "tp": 99,
+        "stop": 10,
+        "liq": 0,
+        "ruined": false,
+        "months": 10.7,
+        "period": "2025-09-04..2026-07-23",
+        "by_side": {
+          "n_long": 37,
+          "exp_r_long": -0.0189,
+          "pnl_long": -3.5,
+          "n_short": 73,
+          "exp_r_short": 0.0119,
+          "pnl_short": 4.35
+        },
+        "by_regime": {
+          "bull": {
+            "n": 8,
+            "exp_r": -0.0299
+          },
+          "range": {
+            "n": 56,
+            "exp_r": -0.0005
+          },
+          "bear": {
+            "n": 46,
+            "exp_r": 0.0095
+          }
+        }
+      },
+      "risk": {
+        "ruin_year_pct": 0.0,
+        "dd_p95": 30.4,
+        "dd_p50": 15.3,
+        "cycles_per_year": 125,
+        "med_year_ret": 5.1,
+        "ruins_holdout": 0,
+        "min_deposit_usd": 180,
+        "ladder": {
+          "x2": {
+            "ret": 4.2,
+            "dd": 16.5,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 30.4
+          },
+          "x3": {
+            "ret": 6.4,
+            "dd": 24.5,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 41.7
+          },
+          "x5": {
+            "ret": 10.6,
+            "dd": 40.0,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 61.2
+          }
+        },
+        "min_order_ok": false
+      },
+      "stress": {
+        "stop_at_close": 3.6,
+        "slip_03": 2.8,
+        "slip_10": -0.6,
+        "stops": 10,
+        "stops_pierced": 5
+      },
+      "robustness": {
+        "n": 30,
+        "share_pos": 0.167,
+        "median": -6.2,
+        "p10": -12.9,
+        "p90": 3.6,
+        "ruins": 0,
+        "base_percentile": 90
+      },
+      "benchmark": {
+        "buy_hold": -56.1,
+        "buy_hold_dd": 68.1,
+        "untrained_grid": -31.0,
+        "untrained_grid_lev": 5,
+        "untrained_grid_x2": -12.4,
+        "bot": 23.5,
+        "bot_lev": 5,
+        "bot_x2": 9.4,
+        "random_entry_median": -12.7,
+        "no_trend_filter": 4.7
+      },
+      "stats": {
+        "train_ret": -30.2,
+        "train_n": 237,
+        "train_wr": 87.3,
+        "train_period": "2023-09-07..2025-09-04",
+        "in_sample_warning": false
+      }
+    },
+    "SOLUSDT": {
+      "title": "простая сетка усреднения SOL (RSI+фильтр тренда)",
+      "symbol": "SOLUSDT",
+      "interval_min": 15,
+      "params": {
+        "rsi_p": 14,
+        "rsi_th": 30,
+        "levels": 3,
+        "step_atr": 0.7,
+        "tp": 0.025,
+        "stop": 0.08
+      },
+      "lev": 2,
+      "mult": 1.5,
+      "trend_filter": true,
+      "margin_fraction": 0.25,
+      "enabled": false,
+      "watch": false,
+      "verdict": "не годится",
+      "reason": "holdout -16.6% за 10.7 мес; без слива; разорение за год 0.0%; DD p95 42% > 30% ПОРОГ; возмущений в плюс 0% (медиана -16.5%); ХУЖЕ случайного входа (-13.7%); НЕ переживает стоп по закрытию (-18.1%); t(ср.R)=-1.05; нужен депозит $72; ворота механики не пройдены (край есть не на всех монетах)",
+      "flags": {
+        "risk": false,
+        "profit": false,
+        "null": false,
+        "stress": false,
+        "lot": true,
+        "mechanics": false
+      },
+      "holdout": {
+        "n": 123,
+        "wr": 87.8,
+        "exp_r": -0.0054,
+        "pf": 0.71,
+        "sum_r": -0.66,
+        "ret": -16.6,
+        "dd": 23.3,
+        "t_exp_r": -1.05,
+        "tp": 107,
+        "stop": 15,
+        "liq": 0,
+        "ruined": false,
+        "months": 10.7,
+        "period": "2025-09-04..2026-07-23",
+        "by_side": {
+          "n_long": 41,
+          "exp_r_long": -0.0217,
+          "pnl_long": -4.45,
+          "n_short": 82,
+          "exp_r_short": 0.0028,
+          "pnl_short": 1.13
+        },
+        "by_regime": {
+          "bull": {
+            "n": 10,
+            "exp_r": -0.0367
+          },
+          "range": {
+            "n": 58,
+            "exp_r": -0.0117
+          },
+          "bear": {
+            "n": 55,
+            "exp_r": 0.007
+          }
+        }
+      },
+      "risk": {
+        "ruin_year_pct": 0.0,
+        "dd_p95": 42.4,
+        "dd_p50": 24.4,
+        "cycles_per_year": 139,
+        "med_year_ret": -17.8,
+        "ruins_holdout": 0,
+        "min_deposit_usd": 72,
+        "ladder": {
+          "x2": {
+            "ret": -16.6,
+            "dd": 23.3,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 42.4
+          },
+          "x3": {
+            "ret": -24.8,
+            "dd": 34.7,
+            "ruin_year_pct": 0.0,
+            "dd_p95": 56.4
+          },
+          "x5": {
+            "ret": -41.4,
+            "dd": 57.1,
+            "ruin_year_pct": 1.9,
+            "dd_p95": 76.3
+          }
+        },
+        "min_order_ok": true
+      },
+      "stress": {
+        "stop_at_close": -18.1,
+        "slip_03": -18.6,
+        "slip_10": -23.5,
+        "stops": 15,
+        "stops_pierced": 6
+      },
+      "robustness": {
+        "n": 30,
+        "share_pos": 0.0,
+        "median": -16.5,
+        "p10": -26.9,
+        "p90": -7.3,
+        "ruins": 0,
+        "base_percentile": 50
+      },
+      "benchmark": {
+        "buy_hold": -62.5,
+        "buy_hold_dd": 76.0,
+        "untrained_grid": 4.5,
+        "untrained_grid_lev": 5,
+        "untrained_grid_x2": 1.8,
+        "bot": 11.4,
+        "bot_lev": 5,
+        "bot_x2": 4.6,
+        "random_entry_median": -13.7,
+        "no_trend_filter": -23.5
+      },
+      "stats": {
+        "train_ret": -22.7,
+        "train_n": 320,
+        "train_wr": 87.8,
+        "train_period": "2023-09-07..2025-09-04",
+        "in_sample_warning": false
+      }
+    }
+  }
+}

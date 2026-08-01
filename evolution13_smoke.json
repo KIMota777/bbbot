@@ -1,0 +1,192 @@
+{
+  "policy_genome": {
+    "allow_counter": 1,
+    "counter_min": 0.0,
+    "storm_policy": 2,
+    "storm_scale": 1.14792613293563,
+    "priority_mode": 2,
+    "router_cooldown": 8
+  },
+  "policy_text": "контр-тренд ВКЛ (запас >= 0.00); шторм: шторм игнорируем (пороги x1.15); приоритет: сила сигнала; кулдаун 8 баров",
+  "holdout": {
+    "n": 50,
+    "wr": 26.0,
+    "exp_r": -0.085,
+    "sum_r": -4.26,
+    "pf": 0.91,
+    "dd": 53.7,
+    "ret": -23.5,
+    "tp": 13,
+    "stop": 37
+  },
+  "benchmarks": {
+    "одиночный sweep_long": {
+      "n": 8,
+      "wr": 37.5,
+      "exp_r": -0.271,
+      "sum_r": -2.17,
+      "pf": 0.65,
+      "dd": 26.2,
+      "ret": -11.1,
+      "tp": 0,
+      "stop": 5
+    },
+    "одиночный dump_long": {
+      "n": 21,
+      "wr": 14.3,
+      "exp_r": -0.675,
+      "sum_r": -14.17,
+      "pf": 0.36,
+      "dd": 75.4,
+      "ret": -75.4,
+      "tp": 2,
+      "stop": 18
+    },
+    "одиночный bounce_short": {
+      "n": 35,
+      "wr": 40.0,
+      "exp_r": 0.481,
+      "sum_r": 16.83,
+      "pf": 1.7,
+      "dd": 22.7,
+      "ret": 103.6,
+      "tp": 14,
+      "stop": 21
+    },
+    "одиночный rally_short": {
+      "n": 4,
+      "wr": 50.0,
+      "exp_r": 0.824,
+      "sum_r": 3.3,
+      "pf": 2.73,
+      "dd": 5.3,
+      "ret": 14.3,
+      "tp": 2,
+      "stop": 2
+    },
+    "наивный роутер": {
+      "n": 14,
+      "wr": 7.1,
+      "exp_r": -0.841,
+      "sum_r": -11.77,
+      "pf": 0.19,
+      "dd": 75.9,
+      "ret": -75.9,
+      "tp": 1,
+      "stop": 13
+    },
+    "необученная политика": {
+      "n": 42,
+      "wr": 40.5,
+      "exp_r": 0.441,
+      "sum_r": 18.51,
+      "pf": 1.62,
+      "dd": 23.0,
+      "ret": 105.2,
+      "tp": 16,
+      "stop": 25
+    }
+  },
+  "best_benchmark": "одиночный bounce_short",
+  "edge": -0.566,
+  "passed": false,
+  "fail_reasons": [
+    "holdout: expectancy -0.085R не > 0",
+    "holdout: PF 0.91 < 1.2",
+    "holdout: сумма -4.26R не > 0",
+    "нет преимущества над лучшим бенчмарком «одиночный bounce_short» (-0.566R)"
+  ],
+  "ladder": [
+    {
+      "lev": 10,
+      "ret": -15.6,
+      "dd": 39.5,
+      "n": 50,
+      "wr": 26.0,
+      "exp_r": -0.085,
+      "pf": 0.91
+    },
+    {
+      "lev": 15,
+      "ret": -23.5,
+      "dd": 53.7,
+      "n": 50,
+      "wr": 26.0,
+      "exp_r": -0.085,
+      "pf": 0.91
+    },
+    {
+      "lev": 20,
+      "ret": -31.3,
+      "dd": 65.5,
+      "n": 50,
+      "wr": 26.0,
+      "exp_r": -0.085,
+      "pf": 0.91
+    }
+  ],
+  "rec_lev": 10,
+  "caution": true,
+  "trades_by_setup": {
+    "sweep_long": 1,
+    "dump_long": 18,
+    "bounce_short": 27,
+    "rally_short": 4
+  },
+  "r_by_setup": {
+    "sweep_long": -1.078,
+    "dump_long": -12.503,
+    "bounce_short": 6.026,
+    "rally_short": 3.297
+  },
+  "switches": 23,
+  "signals": 749,
+  "blocked": {
+    "busy": 556,
+    "cooldown": 88,
+    "policy": 0,
+    "storm": 0
+  },
+  "inner_oos": {
+    "n": 64,
+    "wr": 40.6,
+    "exp_r": 0.426,
+    "sum_r": 27.28,
+    "pf": 1.68,
+    "dd": 30.7,
+    "ret": 167.8,
+    "tp": 23,
+    "stop": 37
+  },
+  "src_fold": 2,
+  "train_fitness": 16.43,
+  "train_n": 83,
+  "hold_start_bar": 19871,
+  "n_bars": 27599,
+  "interval_min": 60,
+  "smoke": true,
+  "setup_genomes_from": "evolution12_winners.json",
+  "ga": {
+    "pop": 24,
+    "gens": 8,
+    "elite": 7,
+    "seed": 47,
+    "lev": 15,
+    "days": 1150,
+    "hold_frac": 0.28,
+    "folds": [
+      [
+        0,
+        9934,
+        14901
+      ],
+      [
+        0,
+        14901,
+        19868
+      ]
+    ],
+    "runs": 262
+  },
+  "elapsed_s": 4.7
+}

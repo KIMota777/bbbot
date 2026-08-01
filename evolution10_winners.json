@@ -1,0 +1,1578 @@
+{
+  "range_long": {
+    "genome": {
+      "rsi_idx": 1,
+      "window": 60,
+      "zone": 0.1047369117363267,
+      "rsi_os": 34,
+      "buf_atr": 0.4,
+      "stop_mode": 0,
+      "swing_bars": 10,
+      "stop_atr_k": 1.536240245341976,
+      "stop_cap": 0.02354387521050346,
+      "poke_atr": 0.9511510331681088,
+      "age": 15,
+      "drop_frac": 0.051016438673796995,
+      "drop_days": 4,
+      "hold_days": 10,
+      "cooldown": 5,
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 0,
+      "counter_rsi_shift": 9,
+      "counter_zone_mult": 0.537067570679017,
+      "with_rsi_shift": 4,
+      "entry_mode": 1,
+      "retest_atr": 0.34110654751249614,
+      "retest_bars": 48
+    },
+    "oos_mean": 6.955775,
+    "oos_folds": [
+      21.3361375,
+      13.0893875,
+      -13.5582
+    ],
+    "oos_fold_trades": [
+      5,
+      8,
+      9
+    ],
+    "n_oos_trades": 22,
+    "oos_floor_ok": true,
+    "oos_candidates": 15,
+    "oos_candidates_passed": 15,
+    "cand_from_fold": 3,
+    "cand_train_fit": 12.776091954022988,
+    "cand_train_n": 34,
+    "train_floor_failed_folds": [],
+    "base_oos_mean": -72.05175416666667,
+    "base_oos_folds": [
+      2.358675,
+      -109.09859374999999,
+      -109.41534375
+    ],
+    "base_n_oos_trades": 73,
+    "beats_base": true,
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 66.0,
+        "dd": 12.0,
+        "n": 43,
+        "wr": 48.8,
+        "avg_hold_h": 19.3,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 35,
+        "exp_r": 0.766,
+        "pf": 2.01,
+        "tpm": 1.16,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 99.0,
+        "dd": 14.5,
+        "n": 43,
+        "wr": 48.8,
+        "avg_hold_h": 19.3,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 35,
+        "exp_r": 0.766,
+        "pf": 2.01,
+        "tpm": 1.16,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 132.0,
+        "dd": 16.3,
+        "n": 43,
+        "wr": 48.8,
+        "avg_hold_h": 19.3,
+        "med": 0.0,
+        "p25": 0.0,
+        "pos_share": 35,
+        "exp_r": 0.766,
+        "pf": 2.01,
+        "tpm": 1.16,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 20,
+    "caution": false,
+    "caution_why": "",
+    "train_fitness": [
+      {
+        "fit": -979.0,
+        "n": 21
+      },
+      {
+        "fit": 12.55,
+        "n": 26
+      },
+      {
+        "fit": 12.78,
+        "n": 34
+      }
+    ],
+    "regime": {
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 0,
+      "counter_rsi_shift": 9,
+      "counter_zone_mult": 0.537,
+      "with_rsi_shift": 4,
+      "stop_mode": 0,
+      "entry_mode": 1,
+      "thresholds": {
+        "bull": {
+          "allowed": true,
+          "rsi": 38.0,
+          "zone": 0.105,
+          "rsi_cmp": 38.0,
+          "zone_cmp": 0.105,
+          "cmp": "RSI<=38 и зона<=0.10"
+        },
+        "range": {
+          "allowed": true,
+          "rsi": 34.0,
+          "zone": 0.105,
+          "rsi_cmp": 34.0,
+          "zone_cmp": 0.105,
+          "cmp": "RSI<=34 и зона<=0.10"
+        },
+        "bear": {
+          "allowed": false,
+          "rsi": 25.0,
+          "zone": 0.056,
+          "rsi_cmp": 25.0,
+          "zone_cmp": 0.056,
+          "cmp": "режим запрещён"
+        }
+      },
+      "signals_by_regime": {
+        "bull": 32,
+        "range": 158,
+        "bear": 0
+      },
+      "trades_by_regime": {
+        "bull": {
+          "n": 7,
+          "wr": 42.9,
+          "avg_r": 0.56,
+          "pnl": 4.69
+        },
+        "range": {
+          "n": 36,
+          "wr": 50.0,
+          "avg_r": 0.806,
+          "pnl": 15.11
+        },
+        "bear": {
+          "n": 0,
+          "wr": 0.0,
+          "avg_r": 0.0,
+          "pnl": 0.0
+        }
+      }
+    },
+    "full": {
+      "lev": 15,
+      "n": 43,
+      "wr": 48.8,
+      "ret": 99.0,
+      "dd": 14.5,
+      "tpm": 1.162,
+      "exp_r": 0.766,
+      "pf": 2.01,
+      "avg_hold_h": 19.3,
+      "reasons": {
+        "stop": 22,
+        "tp": 21
+      },
+      "stop_then_tp": 10,
+      "n_stop": 22,
+      "avg_mae_r": 0.868,
+      "avg_mfe_r": 2.075,
+      "avg_mfe_after_tp_r": 6.767,
+      "signals": 190,
+      "blocked_busy": 35,
+      "blocked_cooldown": 56,
+      "blocked_ruined": 0,
+      "bars_eval": 6798,
+      "n_near": 40,
+      "near_avg_r": -0.532,
+      "top_rejects": [
+        [
+          "зона",
+          5171
+        ],
+        [
+          "режим",
+          1386
+        ],
+        [
+          "RSI",
+          31
+        ],
+        [
+          "ретест не налился",
+          28
+        ],
+        [
+          "стоп вне лимита на фактическом входе",
+          28
+        ]
+      ],
+      "gate_solo": {
+        "зона": 6472,
+        "RSI": 6066,
+        "ширина стопа": 5944,
+        "режим": 1386
+      }
+    },
+    "ga": {
+      "pop": 56,
+      "gens": 24,
+      "elite": 7,
+      "seed": 47,
+      "lev": 15,
+      "cand_per_fold": 5,
+      "min_oos_trades": 12,
+      "days": 1150
+    },
+    "folds": [
+      [
+        0,
+        3233,
+        4311
+      ],
+      [
+        0,
+        4311,
+        5389
+      ],
+      [
+        0,
+        5389,
+        6899
+      ]
+    ],
+    "smoke": false,
+    "elapsed_s": 150.9
+  },
+  "range_short": {
+    "genome": {
+      "rsi_idx": 3,
+      "window": 102,
+      "zone": 0.2605676348332448,
+      "rsi_os": 37,
+      "buf_atr": 1.0424610038592779,
+      "stop_mode": 3,
+      "swing_bars": 7,
+      "stop_atr_k": 3.2262011883099904,
+      "stop_cap": 0.02281193335646337,
+      "poke_atr": 0.14686366526979727,
+      "age": 5,
+      "drop_frac": 0.0282140189582031,
+      "drop_days": 4,
+      "hold_days": 9,
+      "cooldown": 6,
+      "reg_bull": 0,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "counter_rsi_shift": 6,
+      "counter_zone_mult": 0.7932883348176826,
+      "with_rsi_shift": 10,
+      "entry_mode": 1,
+      "retest_atr": 0.642627582250197,
+      "retest_bars": 48
+    },
+    "oos_mean": 3.9103875000000006,
+    "oos_folds": [
+      22.82,
+      -13.488837499999999,
+      2.4
+    ],
+    "oos_fold_trades": [
+      7,
+      4,
+      11
+    ],
+    "n_oos_trades": 22,
+    "oos_floor_ok": true,
+    "oos_candidates": 15,
+    "oos_candidates_passed": 15,
+    "cand_from_fold": 2,
+    "cand_train_fit": 13.58926195652174,
+    "cand_train_n": 27,
+    "train_floor_failed_folds": [],
+    "base_oos_mean": -4.4125749999999995,
+    "base_oos_folds": [
+      -3.8394375,
+      -3.715175,
+      -5.6831125
+    ],
+    "base_n_oos_trades": 101,
+    "beats_base": true,
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 77.7,
+        "dd": 6.6,
+        "n": 42,
+        "wr": 50.0,
+        "avg_hold_h": 14.0,
+        "med": 0.0,
+        "p25": -1.27,
+        "pos_share": 39,
+        "exp_r": 0.8,
+        "pf": 2.52,
+        "tpm": 1.11,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 116.5,
+        "dd": 8.0,
+        "n": 42,
+        "wr": 50.0,
+        "avg_hold_h": 14.0,
+        "med": 0.0,
+        "p25": -1.91,
+        "pos_share": 39,
+        "exp_r": 0.8,
+        "pf": 2.52,
+        "tpm": 1.11,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 155.4,
+        "dd": 9.0,
+        "n": 42,
+        "wr": 50.0,
+        "avg_hold_h": 14.0,
+        "med": 0.0,
+        "p25": -2.54,
+        "pos_share": 39,
+        "exp_r": 0.8,
+        "pf": 2.52,
+        "tpm": 1.11,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 20,
+    "caution": false,
+    "caution_why": "",
+    "train_fitness": [
+      {
+        "fit": -980.0,
+        "n": 20
+      },
+      {
+        "fit": 13.59,
+        "n": 27
+      },
+      {
+        "fit": 9.12,
+        "n": 31
+      }
+    ],
+    "regime": {
+      "reg_bull": 0,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "counter_rsi_shift": 6,
+      "counter_zone_mult": 0.793,
+      "with_rsi_shift": 10,
+      "stop_mode": 3,
+      "entry_mode": 1,
+      "thresholds": {
+        "bull": {
+          "allowed": false,
+          "rsi": 31.0,
+          "zone": 0.207,
+          "rsi_cmp": 69.0,
+          "zone_cmp": 0.793,
+          "cmp": "режим запрещён"
+        },
+        "range": {
+          "allowed": true,
+          "rsi": 37.0,
+          "zone": 0.261,
+          "rsi_cmp": 63.0,
+          "zone_cmp": 0.739,
+          "cmp": "RSI>=63 и зона>=0.74"
+        },
+        "bear": {
+          "allowed": true,
+          "rsi": 47.0,
+          "zone": 0.261,
+          "rsi_cmp": 53.0,
+          "zone_cmp": 0.739,
+          "cmp": "RSI>=53 и зона>=0.74"
+        }
+      },
+      "signals_by_regime": {
+        "bull": 0,
+        "range": 187,
+        "bear": 50
+      },
+      "trades_by_regime": {
+        "bull": {
+          "n": 0,
+          "wr": 0.0,
+          "avg_r": 0.0,
+          "pnl": 0.0
+        },
+        "range": {
+          "n": 32,
+          "wr": 46.9,
+          "avg_r": 0.661,
+          "pnl": 13.44
+        },
+        "bear": {
+          "n": 10,
+          "wr": 60.0,
+          "avg_r": 1.245,
+          "pnl": 9.87
+        }
+      }
+    },
+    "full": {
+      "lev": 15,
+      "n": 42,
+      "wr": 50.0,
+      "ret": 116.5,
+      "dd": 8.0,
+      "tpm": 1.105,
+      "exp_r": 0.8,
+      "pf": 2.52,
+      "avg_hold_h": 14.0,
+      "reasons": {
+        "tp": 21,
+        "stop": 21
+      },
+      "stop_then_tp": 12,
+      "n_stop": 21,
+      "avg_mae_r": 0.972,
+      "avg_mfe_r": 2.042,
+      "avg_mfe_after_tp_r": 5.56,
+      "signals": 237,
+      "blocked_busy": 71,
+      "blocked_cooldown": 79,
+      "blocked_ruined": 0,
+      "bars_eval": 6756,
+      "n_near": 225,
+      "near_avg_r": -0.059,
+      "top_rejects": [
+        [
+          "зона",
+          3585
+        ],
+        [
+          "режим",
+          2250
+        ],
+        [
+          "RSI",
+          579
+        ],
+        [
+          "ширина стопа",
+          105
+        ],
+        [
+          "ретест не налился",
+          43
+        ]
+      ],
+      "gate_solo": {
+        "RSI": 5935,
+        "ширина стопа": 2294,
+        "зона": 4824,
+        "режим": 2250
+      }
+    },
+    "ga": {
+      "pop": 56,
+      "gens": 24,
+      "elite": 7,
+      "seed": 47,
+      "lev": 15,
+      "cand_per_fold": 5,
+      "min_oos_trades": 12,
+      "days": 1150
+    },
+    "folds": [
+      [
+        0,
+        3233,
+        4311
+      ],
+      [
+        0,
+        4311,
+        5389
+      ],
+      [
+        0,
+        5389,
+        6899
+      ]
+    ],
+    "smoke": false,
+    "elapsed_s": 149.4
+  },
+  "sweep_long": {
+    "genome": {
+      "rsi_idx": 0,
+      "window": 75,
+      "zone": 0.19388084187984694,
+      "rsi_os": 32,
+      "buf_atr": 0.39191261872392114,
+      "stop_mode": 2,
+      "swing_bars": 17,
+      "stop_atr_k": 1.014895359620862,
+      "stop_cap": 0.02549033713366706,
+      "poke_atr": 0.29856958475980727,
+      "age": 28,
+      "drop_frac": 0.09098904779505616,
+      "drop_days": 4,
+      "hold_days": 7,
+      "cooldown": 6,
+      "reg_bull": 0,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "counter_rsi_shift": 8,
+      "counter_zone_mult": 1.0,
+      "with_rsi_shift": 4,
+      "entry_mode": 0,
+      "retest_atr": 0.6541463298352767,
+      "retest_bars": 19
+    },
+    "oos_mean": 4.52383125,
+    "oos_folds": [
+      11.733875000000001,
+      9.170174999999999,
+      -7.3325562500000006
+    ],
+    "oos_fold_trades": [
+      5,
+      10,
+      10
+    ],
+    "n_oos_trades": 25,
+    "oos_floor_ok": true,
+    "oos_candidates": 15,
+    "oos_candidates_passed": 15,
+    "cand_from_fold": 3,
+    "cand_train_fit": 6.392222222222222,
+    "cand_train_n": 28,
+    "train_floor_failed_folds": [],
+    "base_oos_mean": 2.540589583333334,
+    "base_oos_folds": [
+      19.2970125,
+      -5.848637500000001,
+      -5.826606249999999
+    ],
+    "base_n_oos_trades": 24,
+    "beats_base": true,
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 79.5,
+        "dd": 12.4,
+        "n": 38,
+        "wr": 42.1,
+        "avg_hold_h": 44.7,
+        "med": 0.0,
+        "p25": -3.7,
+        "pos_share": 41,
+        "exp_r": 0.46,
+        "pf": 1.86,
+        "tpm": 1.03,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 119.3,
+        "dd": 14.8,
+        "n": 38,
+        "wr": 42.1,
+        "avg_hold_h": 44.7,
+        "med": 0.0,
+        "p25": -5.56,
+        "pos_share": 41,
+        "exp_r": 0.46,
+        "pf": 1.86,
+        "tpm": 1.03,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 159.0,
+        "dd": 16.4,
+        "n": 38,
+        "wr": 42.1,
+        "avg_hold_h": 44.7,
+        "med": 0.0,
+        "p25": -7.41,
+        "pos_share": 41,
+        "exp_r": 0.46,
+        "pf": 1.86,
+        "tpm": 1.03,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 20,
+    "caution": false,
+    "caution_why": "",
+    "train_fitness": [
+      {
+        "fit": -987.0,
+        "n": 13
+      },
+      {
+        "fit": -982.0,
+        "n": 18
+      },
+      {
+        "fit": 6.39,
+        "n": 28
+      }
+    ],
+    "regime": {
+      "reg_bull": 0,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "counter_rsi_shift": 8,
+      "counter_zone_mult": 1.0,
+      "with_rsi_shift": 4,
+      "stop_mode": 2,
+      "entry_mode": 0,
+      "thresholds": {
+        "bull": {
+          "allowed": false,
+          "rsi": 36.0,
+          "zone": 0.194,
+          "rsi_cmp": 36.0,
+          "zone_cmp": 0.194,
+          "cmp": "режим запрещён"
+        },
+        "range": {
+          "allowed": true,
+          "rsi": 32.0,
+          "zone": 0.194,
+          "rsi_cmp": 32.0,
+          "zone_cmp": 0.194,
+          "cmp": "прокол>=0.30ATR (RSI/зона не ворота)"
+        },
+        "bear": {
+          "allowed": true,
+          "rsi": 24.0,
+          "zone": 0.194,
+          "rsi_cmp": 24.0,
+          "zone_cmp": 0.194,
+          "cmp": "прокол>=0.30ATR (RSI/зона не ворота)"
+        }
+      },
+      "signals_by_regime": {
+        "bull": 0,
+        "range": 43,
+        "bear": 20
+      },
+      "trades_by_regime": {
+        "bull": {
+          "n": 0,
+          "wr": 0.0,
+          "avg_r": 0.0,
+          "pnl": 0.0
+        },
+        "range": {
+          "n": 24,
+          "wr": 41.7,
+          "avg_r": 0.469,
+          "pnl": 12.22
+        },
+        "bear": {
+          "n": 14,
+          "wr": 42.9,
+          "avg_r": 0.444,
+          "pnl": 11.64
+        }
+      }
+    },
+    "full": {
+      "lev": 15,
+      "n": 38,
+      "wr": 42.1,
+      "ret": 119.3,
+      "dd": 14.8,
+      "tpm": 1.027,
+      "exp_r": 0.46,
+      "pf": 1.86,
+      "avg_hold_h": 44.7,
+      "reasons": {
+        "stop": 22,
+        "tp": 14,
+        "timeout": 2
+      },
+      "stop_then_tp": 4,
+      "n_stop": 22,
+      "avg_mae_r": 0.945,
+      "avg_mfe_r": 1.685,
+      "avg_mfe_after_tp_r": 3.112,
+      "signals": 63,
+      "blocked_busy": 16,
+      "blocked_cooldown": 9,
+      "blocked_ruined": 0,
+      "bars_eval": 6756,
+      "n_near": 29,
+      "near_avg_r": -0.905,
+      "top_rejects": [
+        [
+          "глубина прокола",
+          3676
+        ],
+        [
+          "режим",
+          2250
+        ],
+        [
+          "возврат за уровень",
+          756
+        ],
+        [
+          "ширина стопа",
+          11
+        ]
+      ],
+      "gate_solo": {
+        "глубина прокола": 5902,
+        "ширина стопа": 500,
+        "возврат за уровень": 786,
+        "режим": 2250
+      }
+    },
+    "ga": {
+      "pop": 56,
+      "gens": 24,
+      "elite": 7,
+      "seed": 47,
+      "lev": 15,
+      "cand_per_fold": 5,
+      "min_oos_trades": 12,
+      "days": 1150
+    },
+    "folds": [
+      [
+        0,
+        3233,
+        4311
+      ],
+      [
+        0,
+        4311,
+        5389
+      ],
+      [
+        0,
+        5389,
+        6899
+      ]
+    ],
+    "smoke": false,
+    "elapsed_s": 156.0
+  },
+  "sweep_short": {
+    "genome": {
+      "rsi_idx": 2,
+      "window": 63,
+      "zone": 0.2848513319860427,
+      "rsi_os": 45,
+      "buf_atr": 0.694489253196073,
+      "stop_mode": 1,
+      "swing_bars": 6,
+      "stop_atr_k": 1.5336998648238305,
+      "stop_cap": 0.02464815700871615,
+      "poke_atr": 0.21184007068103697,
+      "age": 9,
+      "drop_frac": 0.023651375295722803,
+      "drop_days": 2,
+      "hold_days": 10,
+      "cooldown": 7,
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "counter_rsi_shift": 0,
+      "counter_zone_mult": 0.7050333199959692,
+      "with_rsi_shift": 8,
+      "entry_mode": 1,
+      "retest_atr": 0.10411487027499089,
+      "retest_bars": 35
+    },
+    "oos_mean": 3.9826479166666675,
+    "oos_folds": [
+      1.4155562500000003,
+      15.555125,
+      -5.0227375
+    ],
+    "oos_fold_trades": [
+      6,
+      6,
+      8
+    ],
+    "n_oos_trades": 20,
+    "oos_floor_ok": true,
+    "oos_candidates": 15,
+    "oos_candidates_passed": 15,
+    "cand_from_fold": 3,
+    "cand_train_fit": 8.26687672413793,
+    "cand_train_n": 30,
+    "train_floor_failed_folds": [],
+    "base_oos_mean": -1.0894166666666667,
+    "base_oos_folds": [
+      5.76,
+      -5.6059375,
+      -3.4223125000000003
+    ],
+    "base_n_oos_trades": 33,
+    "beats_base": true,
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 137.0,
+        "dd": 9.9,
+        "n": 38,
+        "wr": 47.4,
+        "avg_hold_h": 61.5,
+        "med": 0.0,
+        "p25": -4.06,
+        "pos_share": 39,
+        "exp_r": 0.73,
+        "pf": 2.38,
+        "tpm": 1.0,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 205.4,
+        "dd": 11.7,
+        "n": 38,
+        "wr": 47.4,
+        "avg_hold_h": 61.5,
+        "med": 0.0,
+        "p25": -6.1,
+        "pos_share": 39,
+        "exp_r": 0.73,
+        "pf": 2.38,
+        "tpm": 1.0,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 273.9,
+        "dd": 12.8,
+        "n": 38,
+        "wr": 47.4,
+        "avg_hold_h": 61.5,
+        "med": 0.0,
+        "p25": -8.13,
+        "pos_share": 39,
+        "exp_r": 0.73,
+        "pf": 2.38,
+        "tpm": 1.0,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 20,
+    "caution": false,
+    "caution_why": "",
+    "train_fitness": [
+      {
+        "fit": -982.0,
+        "n": 18
+      },
+      {
+        "fit": -976.0,
+        "n": 24
+      },
+      {
+        "fit": 8.27,
+        "n": 30
+      }
+    ],
+    "regime": {
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "counter_rsi_shift": 0,
+      "counter_zone_mult": 0.705,
+      "with_rsi_shift": 8,
+      "stop_mode": 1,
+      "entry_mode": 1,
+      "thresholds": {
+        "bull": {
+          "allowed": true,
+          "rsi": 45.0,
+          "zone": 0.201,
+          "rsi_cmp": 55.0,
+          "zone_cmp": 0.799,
+          "cmp": "прокол>=0.21ATR (RSI/зона не ворота)"
+        },
+        "range": {
+          "allowed": true,
+          "rsi": 45.0,
+          "zone": 0.285,
+          "rsi_cmp": 55.0,
+          "zone_cmp": 0.715,
+          "cmp": "прокол>=0.21ATR (RSI/зона не ворота)"
+        },
+        "bear": {
+          "allowed": true,
+          "rsi": 53.0,
+          "zone": 0.285,
+          "rsi_cmp": 47.0,
+          "zone_cmp": 0.715,
+          "cmp": "прокол>=0.21ATR (RSI/зона не ворота)"
+        }
+      },
+      "signals_by_regime": {
+        "bull": 33,
+        "range": 30,
+        "bear": 10
+      },
+      "trades_by_regime": {
+        "bull": {
+          "n": 17,
+          "wr": 47.1,
+          "avg_r": 0.765,
+          "pnl": 19.39
+        },
+        "range": {
+          "n": 17,
+          "wr": 47.1,
+          "avg_r": 0.754,
+          "pnl": 18.77
+        },
+        "bear": {
+          "n": 4,
+          "wr": 50.0,
+          "avg_r": 0.478,
+          "pnl": 2.92
+        }
+      }
+    },
+    "full": {
+      "lev": 15,
+      "n": 38,
+      "wr": 47.4,
+      "ret": 205.4,
+      "dd": 11.7,
+      "tpm": 1.0,
+      "exp_r": 0.73,
+      "pf": 2.38,
+      "avg_hold_h": 61.5,
+      "reasons": {
+        "tp": 17,
+        "stop": 20,
+        "timeout": 1
+      },
+      "stop_then_tp": 4,
+      "n_stop": 20,
+      "avg_mae_r": 0.799,
+      "avg_mfe_r": 1.881,
+      "avg_mfe_after_tp_r": 3.551,
+      "signals": 73,
+      "blocked_busy": 24,
+      "blocked_cooldown": 7,
+      "blocked_ruined": 0,
+      "bars_eval": 6787,
+      "n_near": 34,
+      "near_avg_r": 0.029,
+      "top_rejects": [
+        [
+          "глубина прокола",
+          5908
+        ],
+        [
+          "возврат за уровень",
+          735
+        ],
+        [
+          "ширина стопа",
+          71
+        ],
+        [
+          "ретест не налился",
+          4
+        ]
+      ],
+      "gate_solo": {
+        "возврат за уровень": 740,
+        "ширина стопа": 2929,
+        "глубина прокола": 5908
+      }
+    },
+    "ga": {
+      "pop": 56,
+      "gens": 24,
+      "elite": 7,
+      "seed": 47,
+      "lev": 15,
+      "cand_per_fold": 5,
+      "min_oos_trades": 12,
+      "days": 1150
+    },
+    "folds": [
+      [
+        0,
+        3233,
+        4311
+      ],
+      [
+        0,
+        4311,
+        5389
+      ],
+      [
+        0,
+        5389,
+        6899
+      ]
+    ],
+    "smoke": false,
+    "elapsed_s": 156.6
+  },
+  "dump_long": {
+    "genome": {
+      "rsi_idx": 1,
+      "window": 61,
+      "zone": 0.35776531597799827,
+      "rsi_os": 38,
+      "buf_atr": 0.79507799742816,
+      "stop_mode": 1,
+      "swing_bars": 3,
+      "stop_atr_k": 1.7185230966126943,
+      "stop_cap": 0.033558819014329826,
+      "poke_atr": 1.2,
+      "age": 6,
+      "drop_frac": 0.037230540981398885,
+      "drop_days": 4,
+      "hold_days": 6,
+      "cooldown": 5,
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 0,
+      "counter_rsi_shift": 11,
+      "counter_zone_mult": 0.4477036576728152,
+      "with_rsi_shift": 6,
+      "entry_mode": 0,
+      "retest_atr": 0.3671128346633892,
+      "retest_bars": 45
+    },
+    "oos_mean": 0.10974791666666601,
+    "oos_folds": [
+      2.02,
+      9.3941375,
+      -11.08489375
+    ],
+    "oos_fold_trades": [
+      5,
+      7,
+      7
+    ],
+    "n_oos_trades": 19,
+    "oos_floor_ok": true,
+    "oos_candidates": 15,
+    "oos_candidates_passed": 15,
+    "cand_from_fold": 3,
+    "cand_train_fit": 8.404794396551726,
+    "cand_train_n": 33,
+    "train_floor_failed_folds": [],
+    "base_oos_mean": -2.6750249999999998,
+    "base_oos_folds": [
+      -2.501,
+      -4.5731,
+      -0.9509749999999999
+    ],
+    "base_n_oos_trades": 29,
+    "beats_base": true,
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 120.8,
+        "dd": 17.3,
+        "n": 40,
+        "wr": 47.5,
+        "avg_hold_h": 69.4,
+        "med": 0.0,
+        "p25": -1.5,
+        "pos_share": 41,
+        "exp_r": 0.52,
+        "pf": 1.95,
+        "tpm": 1.08,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 181.2,
+        "dd": 19.8,
+        "n": 40,
+        "wr": 47.5,
+        "avg_hold_h": 69.4,
+        "med": 0.0,
+        "p25": -2.25,
+        "pos_share": 41,
+        "exp_r": 0.52,
+        "pf": 1.95,
+        "tpm": 1.08,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 241.6,
+        "dd": 24.4,
+        "n": 40,
+        "wr": 47.5,
+        "avg_hold_h": 69.4,
+        "med": 0.0,
+        "p25": -3.0,
+        "pos_share": 41,
+        "exp_r": 0.52,
+        "pf": 1.95,
+        "tpm": 1.08,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 20,
+    "caution": false,
+    "caution_why": "",
+    "train_fitness": [
+      {
+        "fit": -979.0,
+        "n": 21
+      },
+      {
+        "fit": 8.2,
+        "n": 26
+      },
+      {
+        "fit": 8.4,
+        "n": 33
+      }
+    ],
+    "regime": {
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 0,
+      "counter_rsi_shift": 11,
+      "counter_zone_mult": 0.448,
+      "with_rsi_shift": 6,
+      "stop_mode": 1,
+      "entry_mode": 0,
+      "thresholds": {
+        "bull": {
+          "allowed": true,
+          "rsi": 44.0,
+          "zone": 0.358,
+          "rsi_cmp": 44.0,
+          "zone_cmp": 0.358,
+          "cmp": "RSI<=44 и зона<=0.36"
+        },
+        "range": {
+          "allowed": true,
+          "rsi": 38.0,
+          "zone": 0.358,
+          "rsi_cmp": 38.0,
+          "zone_cmp": 0.358,
+          "cmp": "RSI<=38 и зона<=0.36"
+        },
+        "bear": {
+          "allowed": false,
+          "rsi": 27.0,
+          "zone": 0.16,
+          "rsi_cmp": 27.0,
+          "zone_cmp": 0.16,
+          "cmp": "режим запрещён"
+        }
+      },
+      "signals_by_regime": {
+        "bull": 16,
+        "range": 70,
+        "bear": 0
+      },
+      "trades_by_regime": {
+        "bull": {
+          "n": 8,
+          "wr": 62.5,
+          "avg_r": 0.909,
+          "pnl": 15.94
+        },
+        "range": {
+          "n": 32,
+          "wr": 43.8,
+          "avg_r": 0.423,
+          "pnl": 20.3
+        },
+        "bear": {
+          "n": 0,
+          "wr": 0.0,
+          "avg_r": 0.0,
+          "pnl": 0.0
+        }
+      }
+    },
+    "full": {
+      "lev": 15,
+      "n": 40,
+      "wr": 47.5,
+      "ret": 181.2,
+      "dd": 19.8,
+      "tpm": 1.081,
+      "exp_r": 0.52,
+      "pf": 1.95,
+      "avg_hold_h": 69.4,
+      "reasons": {
+        "stop": 21,
+        "tp": 12,
+        "timeout": 7
+      },
+      "stop_then_tp": 3,
+      "n_stop": 21,
+      "avg_mae_r": 0.841,
+      "avg_mfe_r": 1.609,
+      "avg_mfe_after_tp_r": 1.31,
+      "signals": 86,
+      "blocked_busy": 38,
+      "blocked_cooldown": 7,
+      "blocked_ruined": 0,
+      "bars_eval": 6790,
+      "n_near": 66,
+      "near_avg_r": -0.562,
+      "top_rejects": [
+        [
+          "размер движения",
+          4771
+        ],
+        [
+          "режим",
+          1386
+        ],
+        [
+          "разворотная свеча",
+          373
+        ],
+        [
+          "RSI",
+          111
+        ],
+        [
+          "ширина стопа",
+          63
+        ]
+      ],
+      "gate_solo": {
+        "размер движения": 5719,
+        "RSI": 5587,
+        "разворотная свеча": 3321,
+        "ширина стопа": 1350,
+        "режим": 1386
+      }
+    },
+    "ga": {
+      "pop": 56,
+      "gens": 24,
+      "elite": 7,
+      "seed": 47,
+      "lev": 15,
+      "cand_per_fold": 5,
+      "min_oos_trades": 12,
+      "days": 1150
+    },
+    "folds": [
+      [
+        0,
+        3233,
+        4311
+      ],
+      [
+        0,
+        4311,
+        5389
+      ],
+      [
+        0,
+        5389,
+        6899
+      ]
+    ],
+    "smoke": false,
+    "elapsed_s": 171.2
+  },
+  "pump_short": {
+    "genome": {
+      "rsi_idx": 2,
+      "window": 99,
+      "zone": 0.387484040772644,
+      "rsi_os": 31,
+      "buf_atr": 0.34030358767919466,
+      "stop_mode": 1,
+      "swing_bars": 12,
+      "stop_atr_k": 1.7369956254744905,
+      "stop_cap": 0.035,
+      "poke_atr": 0.7499975179751529,
+      "age": 7,
+      "drop_frac": 0.02,
+      "drop_days": 3,
+      "hold_days": 8,
+      "cooldown": 9,
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "counter_rsi_shift": 6,
+      "counter_zone_mult": 0.7452318306152668,
+      "with_rsi_shift": 3,
+      "entry_mode": 0,
+      "retest_atr": 0.6342534321863023,
+      "retest_bars": 28
+    },
+    "oos_mean": 2.3503104166666664,
+    "oos_folds": [
+      13.092062499999999,
+      -2.3091125000000003,
+      -3.73201875
+    ],
+    "oos_fold_trades": [
+      5,
+      4,
+      9
+    ],
+    "n_oos_trades": 18,
+    "oos_floor_ok": true,
+    "oos_candidates": 15,
+    "oos_candidates_passed": 15,
+    "cand_from_fold": 3,
+    "cand_train_fit": 5.926436781609196,
+    "cand_train_n": 31,
+    "train_floor_failed_folds": [],
+    "base_oos_mean": 0.12007708333333304,
+    "base_oos_folds": [
+      1.78929375,
+      -5.927175,
+      4.4981124999999995
+    ],
+    "base_n_oos_trades": 44,
+    "beats_base": true,
+    "ladder": [
+      {
+        "lev": 10,
+        "ret": 118.4,
+        "dd": 9.6,
+        "n": 40,
+        "wr": 42.5,
+        "avg_hold_h": 46.3,
+        "med": 0.0,
+        "p25": -3.39,
+        "pos_share": 43,
+        "exp_r": 0.473,
+        "pf": 2.22,
+        "tpm": 1.08,
+        "ruined": false
+      },
+      {
+        "lev": 15,
+        "ret": 177.6,
+        "dd": 12.9,
+        "n": 40,
+        "wr": 42.5,
+        "avg_hold_h": 46.3,
+        "med": 0.0,
+        "p25": -5.08,
+        "pos_share": 43,
+        "exp_r": 0.473,
+        "pf": 2.22,
+        "tpm": 1.08,
+        "ruined": false
+      },
+      {
+        "lev": 20,
+        "ret": 236.8,
+        "dd": 16.1,
+        "n": 40,
+        "wr": 42.5,
+        "avg_hold_h": 46.3,
+        "med": 0.0,
+        "p25": -6.77,
+        "pos_share": 43,
+        "exp_r": 0.473,
+        "pf": 2.22,
+        "tpm": 1.08,
+        "ruined": false
+      }
+    ],
+    "rec_lev": 20,
+    "caution": false,
+    "caution_why": "",
+    "train_fitness": [
+      {
+        "fit": -978.0,
+        "n": 22
+      },
+      {
+        "fit": 8.16,
+        "n": 27
+      },
+      {
+        "fit": 5.93,
+        "n": 31
+      }
+    ],
+    "regime": {
+      "reg_bull": 1,
+      "reg_range": 1,
+      "reg_bear": 1,
+      "counter_rsi_shift": 6,
+      "counter_zone_mult": 0.745,
+      "with_rsi_shift": 3,
+      "stop_mode": 1,
+      "entry_mode": 0,
+      "thresholds": {
+        "bull": {
+          "allowed": true,
+          "rsi": 25.0,
+          "zone": 0.289,
+          "rsi_cmp": 75.0,
+          "zone_cmp": 0.711,
+          "cmp": "RSI>=75 и зона>=0.71"
+        },
+        "range": {
+          "allowed": true,
+          "rsi": 31.0,
+          "zone": 0.387,
+          "rsi_cmp": 69.0,
+          "zone_cmp": 0.613,
+          "cmp": "RSI>=69 и зона>=0.61"
+        },
+        "bear": {
+          "allowed": true,
+          "rsi": 34.0,
+          "zone": 0.387,
+          "rsi_cmp": 66.0,
+          "zone_cmp": 0.613,
+          "cmp": "RSI>=66 и зона>=0.61"
+        }
+      },
+      "signals_by_regime": {
+        "bull": 29,
+        "range": 41,
+        "bear": 11
+      },
+      "trades_by_regime": {
+        "bull": {
+          "n": 11,
+          "wr": 45.5,
+          "avg_r": 0.709,
+          "pnl": 12.65
+        },
+        "range": {
+          "n": 21,
+          "wr": 33.3,
+          "avg_r": 0.014,
+          "pnl": 4.18
+        },
+        "bear": {
+          "n": 8,
+          "wr": 62.5,
+          "avg_r": 1.355,
+          "pnl": 18.68
+        }
+      }
+    },
+    "full": {
+      "lev": 15,
+      "n": 40,
+      "wr": 42.5,
+      "ret": 177.6,
+      "dd": 12.9,
+      "tpm": 1.081,
+      "exp_r": 0.473,
+      "pf": 2.22,
+      "avg_hold_h": 46.3,
+      "reasons": {
+        "tp": 15,
+        "stop": 23,
+        "timeout": 2
+      },
+      "stop_then_tp": 5,
+      "n_stop": 23,
+      "avg_mae_r": 1.012,
+      "avg_mfe_r": 1.652,
+      "avg_mfe_after_tp_r": 3.214,
+      "signals": 81,
+      "blocked_busy": 16,
+      "blocked_cooldown": 25,
+      "blocked_ruined": 0,
+      "bars_eval": 6759,
+      "n_near": 92,
+      "near_avg_r": -0.415,
+      "top_rejects": [
+        [
+          "размер движения",
+          4791
+        ],
+        [
+          "разворотная свеча",
+          1185
+        ],
+        [
+          "RSI",
+          697
+        ],
+        [
+          "ширина стопа",
+          5
+        ]
+      ],
+      "gate_solo": {
+        "размер движения": 4791,
+        "RSI": 6380,
+        "разворотная свеча": 3452,
+        "ширина стопа": 2067
+      }
+    },
+    "ga": {
+      "pop": 56,
+      "gens": 24,
+      "elite": 7,
+      "seed": 47,
+      "lev": 15,
+      "cand_per_fold": 5,
+      "min_oos_trades": 12,
+      "days": 1150
+    },
+    "folds": [
+      [
+        0,
+        3233,
+        4311
+      ],
+      [
+        0,
+        4311,
+        5389
+      ],
+      [
+        0,
+        5389,
+        6899
+      ]
+    ],
+    "smoke": false,
+    "elapsed_s": 168.5
+  }
+}

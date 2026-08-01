@@ -1,0 +1,32 @@
+{
+ "DOGEUSDT": {
+  "minQty": 1.0,
+  "qtyStep": 1.0,
+  "minVal": 5.0,
+  "maxLev": 75.0
+ },
+ "LTCUSDT": {
+  "minQty": 0.1,
+  "qtyStep": 0.1,
+  "minVal": 5.0,
+  "maxLev": 50.0
+ },
+ "BTCUSDT": {
+  "minQty": 0.001,
+  "qtyStep": 0.001,
+  "minVal": 5.0,
+  "maxLev": 100.0
+ },
+ "ETHUSDT": {
+  "minQty": 0.01,
+  "qtyStep": 0.01,
+  "minVal": 5.0,
+  "maxLev": 100.0
+ },
+ "SOLUSDT": {
+  "minQty": 0.1,
+  "qtyStep": 0.1,
+  "minVal": 5.0,
+  "maxLev": 100.0
+ }
+}

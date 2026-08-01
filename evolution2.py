@@ -17,6 +17,13 @@
 Новые гены: период RSI {7,10,14,21}, раздельные зоны лонга/шорта,
 перенос стопа в безубыток (be_move).
 
+Штормовой фильтр (необязательный, ПО УМОЛЧАНИЮ ВЫКЛЮЧЕН): run5(..., storm=...)
+принимает ряды storm_filter.build(...) и не открывает новые циклы в
+экстремальном движении рынка. Та же функция решает и в живом боте
+(bot_rsi.entry_allowed), поэтому тест и реал не расходятся. storm=None
+(умолчание) — прежнее поведение бит в бит. Замер эффекта на 5 финальных
+ботах: storm_bots_report.py (вывод — storm_bots_report_out.txt).
+
 Запуск: python evolution2.py
 """
 
@@ -28,6 +35,7 @@ import time
 
 import backtest_rsi_grid as bg
 import evolution as ev  # fetch, rolling_extremes, calc_atr_pct, percentile
+import storm_filter as sf  # штормовой фильтр (общий с живым ботом)
 
 random.seed(43)
 
@@ -81,9 +89,16 @@ def prep(candles):
                 atr=ev.calc_atr_pct(candles, n=BARS_PER_DAY))
 
 
-def run5(candles, pre, g, entry_filter=None, events=None):
+def run5(candles, pre, g, entry_filter=None, events=None, storm=None):
     """entry_filter(side, i) -> side|None — внешний фильтр входов (F&G, BTC...).
-    events: если передан список — в него пишутся сделки (вход/сетка/выход)."""
+    events: если передан список — в него пишутся сделки (вход/сетка/выход).
+    storm: ряды штормового фильтра (storm_filter.build(...) на ТЕХ ЖЕ свечах)
+        или None — фильтр выключен. ПО УМОЛЧАНИЮ ВЫКЛЮЧЕН: все прежние
+        результаты воспроизводятся бит в бит. Блокируется только открытие
+        НОВОГО цикла; уже открытая позиция (сетка, стоп, тейк, таймаут)
+        ведётся как обычно — фильтр стоит ниже блока сопровождения позиции.
+        Решение принимает storm_filter.blocked_at — та же функция, что
+        вызывает живой бот, поэтому тест и реал не разойдутся."""
     closes, atr = pre["closes"], pre["atr"]
     rsi = pre["rsi"][RSI_SET[g["rsi_idx"]]]
     rlow, rhigh = ev.rolling_extremes(candles, g["window"])
@@ -227,6 +242,9 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                 side = None
             elif side == "S" and -move > g["knife"] * atr[i]:
                 side = None
+        # шторм: рынок в экстремальном движении — новых циклов не открываем
+        if side and storm is not None and sf.blocked_at(side, storm, i):
+            side = None
         if side and entry_filter:
             side = entry_filter(side, i)
         if not side:

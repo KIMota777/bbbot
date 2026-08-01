@@ -17,7 +17,9 @@ Kill switch: MAX_CONSEC_LOSSES убыточных циклов подряд -> �
 В DRY_RUN бот ведёт виртуальную позицию по тем же правилам и пишет лог.
 """
 
+import json
 import logging
+import os
 import sys
 import time
 
@@ -26,6 +28,15 @@ from pybit.unified_trading import HTTP
 import config
 import patterns
 import smc
+import storm_filter as sf
+
+# Ставки издержек — те же, что в честном бэктесте (evolution2), чтобы
+# виртуальный DRY_RUN не расходился с симуляцией. Константы дублируются
+# намеренно: живой бот не должен тянуть тяжёлый модуль эволюции.
+TAKER = 0.00055     # тейкерская комиссия Bybit
+MAKER = 0.0002      # мейкерская (лимитные тейк-профиты)
+SLIP = 0.0003       # проскальзывание рыночного исполнения
+FUND_8H = 0.0001    # фандинг за 8 часов удержания
 
 
 def calc_rsi(closes, period):
@@ -98,6 +109,17 @@ class RsiGridBot:
         self.interval_ms = int(self.interval) * 60 * 1000
         self.atr_period = self.p.get("atr_period", max(4, 1440 // int(self.interval)))
 
+        # --- штормовой фильтр (общая секция STORM в config.py) ---
+        # Баров в сутках — по РЕАЛЬНОМУ ТФ бота, та же формула, что в
+        # бэктесте (evolution8/finalize_final_bots), иначе «сутки» разъедутся.
+        self.bars_day = sf.bars_per_day(self.interval)
+        self.storm_on = bool(getattr(config, "STORM_ENABLED", False))
+        self.storm_mode = int(getattr(config, "STORM_MODE", 0))
+        self.storm_rank_days = int(getattr(config, "STORM_RANK_DAYS",
+                                           sf.RANK_DAYS))
+        self.storm_bars = sf.bars_needed(self.bars_day, self.storm_rank_days)
+        self._storm = None            # состояние на последней закрытой свече
+
         levels = self.p.get("levels", config.GRID_LEVELS)
         mult = self.p.get("mult", config.GRID_MULT)
         w = [mult ** k for k in range(levels)]
@@ -160,6 +182,44 @@ class RsiGridBot:
         self.consec_losses = 0
         self.paused_until = 0     # kill switch, unix ms
         self.cooldown_until = 0   # турбо: пауза после стопа, unix ms
+        self.state_file = os.path.join(
+            "webapp", "data", f"botstate_{self.symbol}_{self.mode}.json")
+        self.load_state()
+
+    # ---------- состояние между запусками ----------
+
+    def load_state(self):
+        """Капитал, пауза kill switch и серия убытков должны переживать
+        перезапуск: иначе после рестарта виртуальный капитал возвращается к
+        стартовому, а 24-часовая пауза после трёх убытков снимается досрочно —
+        ровно та защита, ради которой она и вводилась."""
+        try:
+            with open(self.state_file, encoding="utf-8") as fh:
+                st = json.load(fh)
+        except (OSError, ValueError):
+            return
+        self.virtual_balance = float(st.get("virtual_balance",
+                                            self.virtual_balance))
+        self.consec_losses = int(st.get("consec_losses", 0))
+        self.paused_until = int(st.get("paused_until", 0))
+        self.cooldown_until = int(st.get("cooldown_until", 0))
+        left = (self.paused_until - time.time() * 1000) / 3600000
+        self.log.info("Состояние восстановлено: капитал $%.2f, убытков подряд "
+                      "%d%s", self.virtual_balance, self.consec_losses,
+                      f", пауза ещё {left:.1f}ч" if left > 0 else "")
+
+    def save_state(self):
+        try:
+            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            with open(self.state_file, "w", encoding="utf-8") as fh:
+                json.dump(dict(virtual_balance=round(self.virtual_balance, 4),
+                               consec_losses=self.consec_losses,
+                               paused_until=self.paused_until,
+                               cooldown_until=self.cooldown_until,
+                               saved_ts=int(time.time() * 1000)),
+                          fh, ensure_ascii=False)
+        except OSError as e:
+            self.log.warning("не удалось сохранить состояние: %s", e)
 
     # ---------- утилиты ----------
 
@@ -171,10 +231,14 @@ class RsiGridBot:
         return f"{price:.{self.price_dec}f}"
 
     def candles(self):
+        # storm_bars просим ВСЕГДА, даже когда фильтр выключен: запрос всё
+        # равно один (меняется только limit), зато состояние шторма видно в
+        # логе с первой же свечи и его можно проверить, не дожидаясь обвала.
         need = max(self.window,
                    self.masl if self.ma_mode else 0,
                    self.ema_n if self.ema_mode else 0,
                    self.aroon_n,
+                   self.storm_bars,
                    300 if (self.pattern_gate or self.ob_gate or
                           self.fvg_gate or self.structure_mode) else 0)
         limit = min(need + self.atr_period + 10, 1000)
@@ -309,8 +373,26 @@ class RsiGridBot:
         self._regime_cache = (day, regime)
         return regime
 
+    def storm_state(self, cs):
+        """Состояние «шторма» на последней ЗАКРЫТОЙ свече: ход за 24ч и за 7
+        суток плюс ранг волатильности — всё по СВОИМ свечам, которые уже
+        пришли в candles() (дополнительных запросов к бирже нет).
+
+        Считает storm_filter — тот же модуль, что вызывает бэктест
+        evolution2.run5(storm=...) на тех же свечах, поэтому живое решение и
+        тестовое совпадают. None = свечей пока мало (шторм не объявляем)."""
+        if len(cs) < self.storm_bars:
+            return None
+        st = sf.from_config(cs, self.bars_day, config)
+        return sf.state_at(st, len(cs) - 1)
+
     def entry_allowed(self, side, cs):
         """Внешние фильтры входа. True = вход разрешён."""
+        # ШТОРМ — первым: это отказ от рынка целиком, а не деталь стратегии.
+        # Стоит до запросов funding/OI/макро — в шторм они и не понадобятся.
+        if self.storm_on and self._storm and sf.blocked_state(side, self._storm):
+            self.log.info("%s", sf.log_line(self.symbol, self._storm, True))
+            return False
         f = self.get_funding() if (self.fund_long_max < 900 or
                                    self.fund_short_min > -900) else None
         if f is not None:
@@ -530,11 +612,14 @@ class RsiGridBot:
                 self.consec_losses = 0
         else:
             self.consec_losses = 0
+        self.save_state()   # капитал/пауза/серия переживают перезапуск
 
     def close_market(self, reason, price):
         avg, qty = self.avg_entry()
         sgn = 1 if self.pos["side"] == "L" else -1
         pnl = sgn * (price - avg) * qty
+        if config.DRY_RUN:      # закрытие по рынку = тейкерские издержки
+            pnl -= self.paper_costs(avg, qty, True)
         if not config.DRY_RUN:
             self.session.cancel_all_orders(category="linear", symbol=self.symbol)
             side = "Sell" if self.pos["side"] == "L" else "Buy"
@@ -545,6 +630,20 @@ class RsiGridBot:
 
     # ---------- DRY_RUN: виртуальное исполнение ----------
 
+    def paper_costs(self, avg, qty, taker_exit):
+        """Издержки виртуального цикла в долларах — те же ставки, что в
+        честном бэктесте (evolution2.run5). Без них DRY_RUN завышал результат:
+        у SOL комиссии за цикл ($0.0146) вдвое больше чистой прибыли ($0.0074),
+        а при MARGIN_MODE='percent' эта фиктивная прибыль ещё и
+        реинвестируется, так что ошибка росла экспоненциально."""
+        notional = abs(avg * qty)
+        entry_fee = notional * (TAKER + SLIP)
+        exit_fee = notional * ((TAKER + SLIP) if taker_exit else MAKER)
+        opened = self.pos.get("opened_ts", int(time.time() * 1000))
+        hours = max(0.0, (time.time() * 1000 - opened) / 3600000.0)
+        funding = notional * FUND_8H * (hours / 8.0)
+        return entry_fee + exit_fee + funding
+
     def paper_fill(self, candle):
         _, o, h, l, c = candle
         p = self.pos
@@ -552,10 +651,14 @@ class RsiGridBot:
         stop, tp = self.stop_price(), self.tp_price()
         avg, qty = self.avg_entry()
         if (l <= stop if sgn == 1 else h >= stop):
-            self.finish_cycle(sgn * (stop - avg) * qty, "[DRY_RUN] СТОП")
+            gross = sgn * (stop - avg) * qty
+            self.finish_cycle(gross - self.paper_costs(avg, qty, True),
+                              "[DRY_RUN] СТОП")
             return
         if (h >= tp if sgn == 1 else l <= tp):
-            self.finish_cycle(sgn * (tp - avg) * qty, "[DRY_RUN] ТЕЙК")
+            gross = sgn * (tp - avg) * qty
+            self.finish_cycle(gross - self.paper_costs(avg, qty, False),
+                              "[DRY_RUN] ТЕЙК")
             return
         while p["adds"]:
             ap, aq = p["adds"][0]
@@ -609,6 +712,11 @@ class RsiGridBot:
         zone_pos = (c - r_low) / rng
         self.log.info("Свеча: %s | RSI %.1f | зона %.0f%% | ATR %.2f%%",
                       self.rp(c), rsi_now, zone_pos * 100, atr * 100)
+        # состояние шторма считаем на КАЖДОЙ свече и пишем в лог всегда (даже
+        # при STORM_ENABLED=False) — так видно, что фильтр посчитал бы, и
+        # почему он сработал или не сработал. Само решение — в entry_allowed.
+        self._storm = self.storm_state(cs)
+        self.log.info("%s", sf.log_line(self.symbol, self._storm, self.storm_on))
 
         if self.pos:
             if config.DRY_RUN:
@@ -689,6 +797,18 @@ class RsiGridBot:
             parts.append("по структуре" if self.structure_mode == 1 else "против структуры")
         return " | ".join(parts)
 
+    def storm_desc(self):
+        if not self.storm_on:
+            return ("выключен (config.STORM_ENABLED=False) — состояние всё "
+                    "равно считается и пишется в лог")
+        return ("ВКЛЮЧЕН, режим %d (%s): сутки >%.0f%%, неделя >%.0f%%, "
+                "ранг ATR >%.2f за %d сут." % (
+                    self.storm_mode,
+                    "не входить против шторма" if self.storm_mode == 1
+                    else "в шторм не открывать новые циклы",
+                    config.STORM_DAY_PCT * 100, config.STORM_WEEK_PCT * 100,
+                    config.STORM_ATR_RANK, self.storm_rank_days))
+
     def run(self):
         margin_desc = (f"{config.MARGIN_FRACTION*100:.0f}% капитала (реинвест)"
                        if config.MARGIN_MODE == "percent"
@@ -698,6 +818,7 @@ class RsiGridBot:
                       self.describe(), self.p["lev"], margin_desc,
                       "TESTNET" if config.TESTNET else "MAINNET", config.DRY_RUN)
         self.log.info("Параметры: %s", self.p)
+        self.log.info("Штормовой фильтр: %s", self.storm_desc())
         if not config.DRY_RUN:
             if not config.API_KEY or not config.API_SECRET:
                 raise SystemExit("Нет BYBIT_API_KEY / BYBIT_API_SECRET")

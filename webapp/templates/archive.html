@@ -3,103 +3,199 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Архив ботов</title>
+<title>Архив: отвергнутое</title>
+<link rel="stylesheet" href="/static/app.css">
 <style>
-  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
-    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
-  body { background:var(--bg); color:var(--ink); margin:0;
-    font:15px/1.5 "Segoe UI", system-ui, sans-serif; padding:32px 18px 60px; }
-  .wrap { max-width:1060px; margin:0 auto; }
-  h1 { font-size:26px; margin:0 0 4px; }
-  .sub { color:var(--muted); margin:0 0 24px; max-width:70ch; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
-  a.card { background:var(--card); border:1px solid var(--line); border-radius:12px;
-    padding:16px 18px; text-decoration:none; color:var(--ink); display:flex;
-    flex-direction:column; gap:10px; transition:border-color .15s; opacity:.88; }
-  a.card:hover { border-color:var(--accent); opacity:1; }
-  .top { display:flex; flex-direction:column; gap:8px; }
-  .name { font-weight:700; font-size:16px; line-height:1.35; text-wrap:balance; }
-  .badges { display:flex; gap:6px; flex-wrap:wrap; }
-  .b { font-size:11px; border-radius:99px; padding:3px 10px; font-weight:600;
-    white-space:nowrap; line-height:1.4; }
-  .b.mode-normal { background:#22303f; color:#7fb3e0; }
-  .b.mode-bear { background:#3a2430; color:#e08bb0; }
-  .b.mode-turbo { background:#3a2e15; color:var(--accent); }
-  .b.ver { background:#1e2a3a; color:#8fb8e8; }
-  .b.lev { background:var(--line); color:var(--muted); }
-  .b.on { background:#1d3a2c; color:var(--up); }
-  .b.off { background:var(--line); color:var(--muted); }
-  .stats { color:var(--muted); font-size:13px; }
-  nav { display:flex; gap:16px; margin-bottom:20px; }
-  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
-  nav a.active { color:var(--accent); }
-  nav a:hover { color:var(--ink); }
-  h2 { font-size:15px; color:var(--muted); margin:28px 0 12px; font-weight:700;
-    text-transform:uppercase; letter-spacing:.04em; }
+  .why { display: block; color: var(--muted-2); font-size: 12px; margin-top: 5px;
+    line-height: 1.5; }
+  .why b { color: var(--muted); font-weight: 590; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <nav><a href="/">Боты</a><a href="/signals">Сигналы BTC</a><a href="/pnl">PnL-график</a><a href="/evolution">Эволюция</a><a class="active" href="/archive">Архив</a></nav>
-  <h1>🗄 Архив</h1>
-  <p class="sub">Все конфиги предыдущих волн отбора (v2–v6): обычные, медвежьи-специалисты и турбо-эксперименты. На главной странице теперь только 5 финальных ботов — по одному на монету. Здесь — всё, что было проверено, но не стало основным ботом, плюс сами медвежьи/турбо-варианты для справки.</p>
+{% set nav = 'archive' %}{% include '_nav.html' %}
 
-  <h2>Обычные (v2/v4/v5, торговали во всех режимах рынка)</h2>
-  <div class="grid">
-    {% for b in bots if b.mode == "normal" %}
-    <a class="card" href="/bot/{{ b.symbol }}/{{ b.mode }}">
-      <div class="top">
-        <span class="name">{{ b.title }}</span>
-        <span class="badges">
-          <span class="b ver">{{ b.ver }}</span>
-          <span class="b mode-{{ b.mode }}">{{ b.mode_name }}</span>
-          <span class="b lev">x{{ b.lev }}</span>
-          <span class="b lev">{{ b.tf_label }}</span>
-          <span class="b {{ 'on' if b.active else 'off' }}">{{ '● работает' if b.active else '○ выключен' }}</span>
-        </span>
-      </div>
-      <div class="stats">{{ b.stats }}</div>
-    </a>
-    {% endfor %}
+{# Причины отклонения архивных режимов ботов: почему конфиг не стал финальным.
+   Ключ — режим из config.py (ARCHIVE_MODES). #}
+{% set MODE_WHY = {
+  'normal': ('Волны v2/v4/v5 — заменены',
+             'подбирались по частям: направление, режимный гейт и фильтры настраивались отдельно. В v7 они стали генами одного генома, и единый отбор выбрал другие конфиги.'),
+  'bear':   ('Волна v6 — поглощена v7',
+             'запрет торговли в бычьем рынке дал прирост, но плечо в этой волне выбиралось на глаз: рост дохода объясняется плечом. В v7 плечо выбирается объективным правилом (макс. при просадке ≤20%).'),
+  'turbo':  ('Эксперимент x20 — отклонён измерением',
+             'при плече x20–25 ликвидация оказывается ближе стопа: в стоп 2·ATR влезают 38 событий из 144 при x20 и 13 из 144 при x25. Плечо не создаёт преимущества, оно множит уже нулевое.')} %}
+
+{# Отвергнутые гипотезы: что проверяли, чем закончилось, где смотреть.
+   Ничего из этого не используется в торговле. #}
+{% set REJECTED = [
+  ('Классические графические паттерны', 'v7',
+   'Двойные вершины, голова-плечи, треугольники как гены генома.',
+   'отбор со свободой «взять или не взять» стабильно выбирал конфиги без них',
+   'patterns.py, evolution7.py'),
+  ('Smart Money Concepts', 'v8 и волна 14',
+   'Order blocks, FVG, слом структуры BOS/CHoCH как фильтр входа.',
+   'фильтр отбирает сделки ХУЖЕ отсеянных: −0.371R при t = −2.85; на случайных входах тот же знак — это свойство индикатора',
+   'smc.py, evolution8.py, cap_levels.py'),
+  ('Fear &amp; Greed и внешние ряды', 'v4–v5',
+   'Индекс страха и жадности как ворото входа.',
+   'экзамен не прошёл; из внешних данных в конфигах остались только funding, OI, S&amp;P, DXY и золото — и те лишь у части ботов',
+   'ext_data.py'),
+  ('Штормовой фильтр', 'волна 7',
+   'Не торговать при ходе >7% за сутки / >15% за неделю / высоком ранге ATR.',
+   '0 из 6 наборов порогов прошли критерий: убранные сделки в среднем прибыльнее оставленных, просадка не уменьшилась',
+   'storm_filter.py, storm_bots_report.py'),
+  ('Предиктивный скоринг сделок', 'волна 8',
+   'Логистическая регрессия на 30 признаках бара — предсказать исход сделки.',
+   '0 из 8 моделей отличимы от случайной; на holdout AUC 0.451, ранжирование перевёрнутое; на лучших сетапах +23.36R → +10.00R',
+   'signal_score.py, score_report.py'),
+  ('Роутер четырёх сетапов', 'волна 9',
+   'Один часовой бот, переключающий сетапы по ситуации на рынке.',
+   'на holdout expectancy −0.085R, PF 0.91; проигрыш лучшему одиночному сетапу −0.566R на сделку',
+   'router_1h.py, evolution13.py'),
+  ('Сигнальные сетапы v1', 'волна 4',
+   'range_long, range_short, sweep_short, pump_short на 4ч.',
+   'сняты владельцем со страницы сигналов; их цифры считались до появления неприкосновенного holdout',
+   'signal_engine.py, signal_setups.json'),
+  ('Сигнальные сетапы v2', 'волна 6',
+   'Четыре сетапа BTC × два таймфрейма, отбор с holdout и тремя зёрнами.',
+   'торговых 0 из 8: лучший вариант воспроизвёлся лишь в 1 прогоне отбора из 3, остальные не прошли пороги',
+   'evolution12.py, finalize_signals4.py'),
+  ('Простая сетка усреднения', 'волна 13',
+   'Сетка на «выживших» элементах исследования как отдельный продукт.',
+   'торговых конфигов 0 (2 наблюдение, 3 не годятся): на holdout при x2 портфель −0.6%, плато прибыльности нет',
+   'grid_plateau.py, simple_grid_check.py'),
+  ('Правила из литературы', 'волна 14',
+   'RSI(2) &lt; 5 Коннорса, SMA200, объёмный климакс 2–5×, отрицательный funding, отложенный вход через сутки.',
+   '0 из 10 правил прошли все четыре условия на holdout; сама база хуже случайного входа на обоих окнах',
+   'cap_research_test.py'),
+  ('53 индикаторные связки', 'волна 14',
+   'EMA, RSI, MACD, ADX, дивергенции как фильтры капитуляции.',
+   '0 пережили поправку на множественность (Бонферрони и FDR); 3 лучших кандидата сменили знак на holdout',
+   'cap_indicators.py'),
+  ('Объёмные уровни и кластеры', 'волна 14',
+   'Отскок от горизонтального объёма как фильтр входа и как место для стопа.',
+   'эффект ОБРАТНЫЙ: остановка падения на объёме −0.627R против −0.019R в пустоте (t = −3.31); подходящий кластер есть лишь в 34% случаев',
+   'cap_levels.py'),
+  ('Плечо x20–25', 'волна 14',
+   'Ускорить доход высоким плечом при штатном стопе.',
+   'ликвидация ближе стопа: в x20 влезают 38 событий из 144, в x25 — 13; при тесном стопе exp_R не растёт, а просадка идёт с 31% до 84%',
+   'cap_grid_lev.py, cap_indicators.py'),
+  ('Сетапы v3 (черновой прогон)', 'волна 12',
+   'Пробой Дончиана на BTC и ETH, 4ч, отбор тремя зёрнами.',
+   '0 из 2 связок прошли воспроизводимость: на holdout −0.797R и −0.535R',
+   'evolution14.py')] %}
+
+<div class="wrap stack">
+
+  <header>
+    <h1 class="h-page">Архив</h1>
+    <p class="h-sub">Всё, что было проверено и отклонено: старые конфиги ботов и
+      отвергнутые гипотезы. Ничего отсюда не торгуется и не рекомендуется —
+      страница нужна, чтобы не проверять одно и то же дважды.</p>
+  </header>
+
+  <div class="stripe">
+    <div><div class="k">архивных конфигов</div><div class="v">{{ bots|length }}</div></div>
+    <div><div class="k">отвергнутых гипотез</div><div class="v">{{ REJECTED|length }}</div></div>
+    <div><div class="k">из них подтверждено</div><div class="v">0</div></div>
+    <div><div class="k">действующих ботов</div><div class="v">5 <small>на главной</small></div></div>
   </div>
 
-  <h2>Медвежьи специалисты (v6, торгуют только в bear/боковике)</h2>
-  <div class="grid">
-    {% for b in bots if b.mode == "bear" %}
-    <a class="card" href="/bot/{{ b.symbol }}/{{ b.mode }}">
-      <div class="top">
-        <span class="name">{{ b.title }}</span>
-        <span class="badges">
-          <span class="b ver">{{ b.ver }}</span>
-          <span class="b mode-{{ b.mode }}">{{ b.mode_name }}</span>
-          <span class="b lev">x{{ b.lev }}</span>
-          <span class="b lev">{{ b.tf_label }}</span>
-          <span class="b {{ 'on' if b.active else 'off' }}">{{ '● работает' if b.active else '○ выключен' }}</span>
-        </span>
-      </div>
-      <div class="stats">{{ b.stats }}</div>
-    </a>
-    {% endfor %}
+  <div class="note">
+    <span class="ico">ⓘ</span>
+    <div class="nb"><span class="t">Цифры архивных конфигов — обучающий период.</span>
+      Они не проходили честной проверки, и запускать их не следует.
+      Что осталось после честной проверки — <a href="/evolution">в хронике</a>;
+      пять действующих ботов — <a href="/">на главной</a>.</div>
   </div>
 
-  <h2>Турбо-эксперименты (x20, короткий стоп)</h2>
-  <div class="grid">
-    {% for b in bots if b.mode == "turbo" %}
-    <a class="card" href="/bot/{{ b.symbol }}/{{ b.mode }}">
-      <div class="top">
-        <span class="name">{{ b.title }}</span>
-        <span class="badges">
-          <span class="b ver">{{ b.ver }}</span>
-          <span class="b mode-{{ b.mode }}">{{ b.mode_name }}</span>
-          <span class="b lev">x{{ b.lev }}</span>
-          <span class="b lev">{{ b.tf_label }}</span>
-          <span class="b {{ 'on' if b.active else 'off' }}">{{ '● работает' if b.active else '○ выключен' }}</span>
-        </span>
-      </div>
-      <div class="stats">{{ b.stats }}</div>
-    </a>
-    {% endfor %}
+  <div class="seg" id="seg">
+    <button class="on" data-f="all">Всё</button>
+    <button data-f="bots">Конфиги ботов<span class="cnt">{{ bots|length }}</span></button>
+    <button data-f="hyp">Гипотезы<span class="cnt">{{ REJECTED|length }}</span></button>
   </div>
+
+  <div class="grp" data-g="hyp">
+    <div class="h-sec">Отвергнутые гипотезы</div>
+    <div class="card card--pad0">
+      <div class="list">
+        {% for name, wave, what, why, src in REJECTED %}
+        <div class="list-row list-row--top">
+          <span class="avatar avatar--neutral">✕</span>
+          <span class="lr-main">
+            <span class="lr-title">{{ name|safe }}
+              <span class="muted small" style="font-weight:500">· {{ wave }}</span></span>
+            <span class="lr-sub">{{ what|safe }}</span>
+            <span class="why"><b>причина отклонения:</b> {{ why|safe }}</span>
+            <span class="badge-row" style="margin-top:7px">
+              <span class="badge badge--bad">не подтверждено</span>
+              <span class="badge"><code style="padding:0 3px;background:none;color:inherit">{{ src }}</code></span>
+            </span>
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="grp" data-g="bots">
+    <div class="h-sec">Конфиги ботов прошлых волн</div>
+    {% set groups = [
+        ('normal', 'Обычные (v2/v4/v5)'),
+        ('bear',   'Медвежьи специалисты (v6)'),
+        ('turbo',  'Турбо-эксперименты (x20)')] %}
+    {% for mode, caption in groups %}
+    {% set items = bots|selectattr('mode','equalto',mode)|list %}
+    {% if items %}
+    <div style="margin-bottom:16px">
+      <div class="h-sec" style="margin-top:14px">{{ caption }}</div>
+      <div class="note warn" style="margin-bottom:10px">
+        <span class="ico">✕</span>
+        <div class="nb"><span class="t">{{ MODE_WHY[mode][0] }}</span> —
+          {{ MODE_WHY[mode][1] }}</div>
+      </div>
+      <div class="card card--pad0">
+        <div class="list">
+          {% for b in items %}
+          <a class="list-row list-row--top" href="/bot/{{ b.symbol }}/{{ b.mode }}">
+            <span class="avatar avatar--neutral">{{ b.coin[:1] }}</span>
+            <span class="lr-main">
+              <span class="lr-title">{{ b.coin }}/USDT{% if b.title and b.title != b.coin %}
+                <span class="muted" style="font-weight:500">· {{ b.title }}</span>{% endif %}</span>
+              <span class="lr-sub">{{ b.stats }}</span>
+              <span class="badge-row" style="margin-top:7px">
+                <span class="badge badge--info">{{ b.ver or 'архив' }}</span>
+                <span class="badge">{{ b.mode_name }}</span>
+                <span class="badge">x{{ b.lev }}</span>
+                <span class="badge">{{ b.tf_label }}</span>
+                <span class="badge badge--off">в архиве</span>
+                {% if b.active %}<span class="badge badge--watch">процесс запущен вручную</span>{% endif %}
+              </span>
+            </span>
+            <span class="chev">›</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% if not bots %}
+    <div class="ph">Архивных конфигов в <code>config.py</code> нет.</div>
+    {% endif %}
+  </div>
+
 </div>
+
+<script>
+const seg = document.getElementById("seg");
+seg.onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  for (const x of seg.querySelectorAll("button")) x.classList.toggle("on", x === b);
+  const f = b.dataset.f;
+  for (const g of document.querySelectorAll(".grp"))
+    g.style.display = (f === "all" || g.dataset.g === f) ? "" : "none";
+};
+</script>
 </body>
 </html>

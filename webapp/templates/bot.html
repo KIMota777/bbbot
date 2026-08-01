@@ -4,319 +4,1455 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}</title>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-<style>
-  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
-    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
-  body { background:var(--bg); color:var(--ink); margin:0;
-    font:15px/1.55 "Segoe UI", system-ui, sans-serif; padding:28px 18px 60px; }
-  .wrap { max-width:1060px; margin:0 auto; display:flex; flex-direction:column; gap:18px; }
-  h1 { font-size:24px; margin:2px 0 0; }
-  .badges { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
-  .b { font-size:11px; border-radius:99px; padding:3px 10px; font-weight:600;
-    white-space:nowrap; line-height:1.4; }
-  .b.mode { background:#3a2e15; color:var(--accent); }
-  .b.ver { background:#1e2a3a; color:#8fb8e8; }
-  .b.lev { background:var(--line); color:var(--muted); }
-  .b.on { background:#1d3a2c; color:var(--up); }
-  .b.off { background:var(--line); color:var(--muted); }
-  .stats { color:var(--accent); font-size:13.5px; font-weight:600; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
-  #chart { height:440px; }
-  h3 { margin:0 0 8px; font-size:15px; }
-  p { margin:6px 0; max-width:75ch; }
-  .muted { color:var(--muted); }
-  .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  @media (max-width:800px){ .row { grid-template-columns:1fr; } }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  td,th { padding:5px 8px; border-bottom:1px solid var(--line); text-align:right;
-    font-variant-numeric:tabular-nums; }
-  th { color:var(--muted); font-weight:600; }
-  td:first-child, th:first-child { text-align:left; }
-  .pnl-pos { color:var(--up); } .pnl-neg { color:var(--down); }
-  .kpi { display:flex; gap:22px; margin-bottom:10px; flex-wrap:wrap; }
-  .kpi div b { font-size:19px; }
-  .kpi div span { color:var(--muted); font-size:12px; display:block; }
-  pre { background:#0e1013; border-radius:8px; padding:10px 12px; font-size:11.5px;
-    overflow-x:auto; color:var(--muted); max-height:220px; overflow-y:auto; }
-  code { background:#0e1013; border-radius:5px; padding:2px 7px; font-size:13px; color:var(--accent); }
-  nav { display:flex; gap:16px; }
-  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
-  nav a:hover { color:var(--ink); }
-  select { background:var(--card); color:var(--ink); border:1px solid var(--line);
-    border-radius:6px; padding:5px 8px; font-size:13px; }
-  .mini { height:190px; }
-  .kpi .sub2 { font-size:11px; color:var(--muted); }
-</style>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/lightweight-charts.js"></script>
+{% include '_chartkit.html' %}
 </head>
 <body>
-<div class="wrap">
-  <div>
-    <nav><a href="/">← Боты</a><a href="/signals">Сигналы BTC</a><a href="/pnl">PnL-график</a><a href="/evolution">Эволюция</a><a href="/archive">Архив</a></nav>
-    <h1>{{ title }}</h1>
-    <div class="badges">
-      <span class="b ver">волна {{ ver }}</span>
-      <span class="b mode">{{ mode_name }}</span>
-      <span class="b lev">x{{ lev }} · {{ tf_label }} · маржа $5</span>
-      <span class="b off" id="status">…</span>
+{% set nav = 'bots' %}{% include '_nav.html' %}
+
+<div class="wrap stack">
+
+  <!-- ================= шапка ================= -->
+  <header>
+    <div class="badge-row" style="margin-bottom:10px">
+      <a href="/" class="badge" style="text-decoration:none">‹ все боты</a>
+      {% if honest %}
+      <span class="badge {{ 'badge--on' if honest.verdict.key == 'ok' else ('badge--watch' if honest.verdict.key == 'part' else 'badge--off') }}">{{ honest.verdict.status|lower }} · {{ honest.verdict.score }}</span>
+      {% endif %}
+      <span class="badge badge--info">волна {{ ver }}</span>
+      <span class="badge">{{ mode_name }}</span>
+      <span class="badge">x{{ lev }}</span>
+      <span class="badge">{{ tf_label }}</span>
+      <span class="badge">сетка {{ params.get('levels', '?') }} уровня</span>
+      <span class="badge badge--off" id="status">…</span>
     </div>
-    <p class="stats">{{ stats }}</p>
+    <h1 class="h-page">{{ coin }}/USDT{% if title and title != coin %}
+      <span class="muted" style="font-weight:600">· {{ title }}</span>{% endif %}</h1>
+    <p class="h-sub">{{ stats }}{% if not honest %}
+      <span class="muted-2">— цифры обучающего периода, честной проверки не было</span>{% endif %}</p>
+  </header>
+
+  <!-- ============ ЧЕСТНАЯ ПРОВЕРКА (главное, первый экран) ============ -->
+  {% if honest %}
+  {% set h = honest %}
+  {% set P = hmeta.periods %}
+  <div class="card {{ 'card--live' if h.verdict.key == 'ok' }}">
+    <div class="h-card">Честная проверка
+      <span class="muted small" style="font-weight:400">холдоут
+        {{ P.holdout.start }} — {{ P.holdout.end }} ({{ P.holdout.months }} мес):
+        последние 28% истории, в подборе параметров не участвовали</span></div>
+
+    <div class="exam-card">
+      <div class="exam-left">
+        <div class="exam-big {{ 'pos' if h.robust.median > 0 else 'neg' }}">{{ '%+.2f'|format(h.robust.per_month) }}%</div>
+        <div class="exam-cap"><b>честная оценка, в месяц</b>
+          медиана {{ h.robust.n }} возмущений генома ±{{ h.robust.pert_pct }}%
+          на холдоуте = {{ '%+.1f'|format(h.robust.median) }}% за
+          {{ P.holdout.months }} мес</div>
+      </div>
+      <div class="exam-right">
+        <div class="metrics">
+          <div class="metric"><b class="{{ 'pos' if h.holdout.ret > 0 else 'neg' }}">{{ '%+.1f'|format(h.holdout.ret) }}%</b><span>итог на холдоуте, x{{ h.lev }}</span></div>
+          <div class="metric"><b>{{ h.n_trades.holdout }}</b><span>сделок</span></div>
+          <div class="metric"><b>{{ h.holdout.wr }}%</b><span>winrate</span></div>
+          <div class="metric"><b>{{ h.holdout.dd }}%</b><span>просадка</span></div>
+          <div class="metric"><b>{{ '%+.1f'|format(h.robust.p10) }}…{{ '%+.1f'|format(h.robust.p90) }}%</b><span>p10…p90 соседей</span></div>
+          <div class="metric"><b class="{{ 'pos' if h.robust.share_pos >= 60 else 'neg' }}">{{ h.robust.share_pos }}%</b><span>прибыльных соседей</span></div>
+        </div>
+
+        <div class="bench">
+          <div>необученная сетка на том же плече:
+            <b class="{{ 'neg' if h.benchmarks.untrained.holdout >= h.holdout.ret else 'pos' }}">{{ '%+.1f'|format(h.benchmarks.untrained.holdout) }}%</b>
+            ({{ h.benchmarks.untrained.trades|trades_n }})</div>
+          <div>случайные геномы ядра ({{ h.benchmarks.random.n }} шт.): медиана
+            <b>{{ '%+.1f'|format(h.benchmarks.random.median) }}%</b>, бот обошёл
+            <b class="{{ 'pos' if h.benchmarks.random.rank >= 75 else 'neg' }}">{{ h.benchmarks.random.rank }}%</b></div>
+          <div>купил монету и держал: <b>{{ '%+.1f'|format(h.benchmarks.hodl.ret) }}%</b>
+            (обвал до {{ h.benchmarks.hodl.max_fall }}%)</div>
+          <div>издержки съели
+            <b class="{{ 'neg' if (h.costs.holdout.share or 0) > 50 else '' }}">{{ h.costs.holdout.share }}%</b>
+            валовой прибыли</div>
+          <div>плечо по холдоуту (макс. с просадкой ≤{{ h.lev_by_holdout.dd_cap }}%):
+            <b class="{{ 'neg' if not h.lev_by_holdout.rec else '' }}">{{ h.lev_by_holdout.rec or 'НЕ ЗАПУСКАТЬ' }}</b>
+            {% if h.lev_by_holdout.rec != 'x' ~ h.lev %}<span class="muted-2">(сейчас x{{ h.lev }})</span>{% endif %}</div>
+        </div>
+
+        <div class="crit">
+          <div style="font-weight:590">Вердикт:
+            <span class="{{ 'pos' if h.verdict.key == 'ok' else ('' if h.verdict.key == 'part' else 'neg') }}">{{ h.verdict.status }} — {{ h.verdict.score }}</span>
+            <span class="muted-2" style="font-weight:400">(критерий объявлен до подсчёта)</span>
+          </div>
+          {% for r in h.verdict.reasons %}
+          <div class="c {{ 'ok' if r.ok else 'no' }}"><i>{{ '✓' if r.ok else '✗' }}</i>
+            <div><b>{{ r.title }}</b> — <span>{{ r.detail }}</span></div></div>
+          {% endfor %}
+          {% for n in h.verdict.notes %}
+          <div class="warn-line {{ 'good' if n.kind == 'good' }}">{{ n.text }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="train-line">
+      <b>Обучение — не доказательство.</b>
+      Обучающий период {{ P.train.start }} — {{ P.train.end }}
+      ({{ P.train.months }} мес, подбор видел его целиком):
+      {{ '%+.1f'|format(h.train.ret) }}%, {{ h.n_trades.train|trades_n }},
+      WR {{ h.train.wr }}%, просадка {{ h.train.dd }}%.
+      На холдоуте — {{ '%+.1f'|format(h.holdout.ret) }}%.
+      {% if h.train.ret > h.holdout.ret %}Падение результата вне обучения — обычная
+      цена подгонки.{% else %}Здесь холдоут ЛУЧШЕ обучения — редкий признак того,
+      что подгонки не было.{% endif %}
+      <details style="margin-top:6px">
+        <summary>что показывалось раньше и почему это не доказательство</summary>
+        <p>Крупно на карточках стояло <b>{{ '%+.1f'|format(h.site_pnl_pct) }}%</b>
+          — полная история {{ P.full.start }} — {{ P.full.end }} с реинвестом 25%
+          капитала (страница /pnl), и <b>{{ '%+.1f'|format(h.config_doc_pct) }}%</b>
+          — та же история с фиксированной маржой $5 от $20 (цифра из config.py).
+          Обе включают {{ P.train.months }} месяцев, на которых бот и подбирался,
+          поэтому доказательством доходности они не являются — это верхняя
+          граница мечты, а не ожидание.</p>
+        <p>{{ hmeta.caveat }}</p>
+        <p>Портфель всех 5 ботов: обучение
+          {{ '%+.1f'|format(hmeta.portfolio.train.ret) }}% →
+          холдоут {{ '%+.1f'|format(hmeta.portfolio.holdout.ret) }}%.
+          Самопроверки пересчёта: регрессия
+          {{ 'OK' if hmeta.selfcheck.regression else 'ПРОВАЛ' }}, причинность
+          {{ 'OK' if hmeta.selfcheck.causality else 'ПРОВАЛ' }}
+          ({{ hmeta.generated }}).</p>
+      </details>
+    </div>
+
+    <details style="margin-top:12px">
+      <summary>Лестница плечей на холдоуте</summary>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Плечо</th><th>Итог на холдоуте</th><th>Просадка</th><th></th></tr></thead>
+          <tbody>
+          {% for l in h.lev_by_holdout.ladder %}
+          <tr><td>x{{ l.lev }}{{ ' ← сейчас' if l.lev == h.lev else '' }}</td>
+            <td class="{{ 'pos' if l.ret > 0 else 'neg' }}">{{ '%+.1f'|format(l.ret) }}%</td>
+            <td class="{{ 'neg' if l.dd > h.lev_by_holdout.dd_cap else '' }}">{{ l.dd }}%</td>
+            <td class="muted-2">{{ 'депозит слит' if l.ruined else ('годится по правилу' if l.dd <= h.lev_by_holdout.dd_cap and l.ret > 0 else '—') }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="tv-hint">Плечо бота выбиралось по просадке на ПОЛНОЙ истории
+        (холдоут внутри) — поэтому оно тоже часть подгонки; здесь то же правило,
+        применённое только к холдоуту.</p>
+    </details>
+
+    <details style="margin-top:8px">
+      <summary>Устойчивость параметров по зёрнам</summary>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Зерно</th><th>Медиана соседей</th><th>p10</th><th>p90</th><th>Прибыльных</th><th>Ранг факта</th></tr></thead>
+          <tbody>
+          {% for s in h.robust.by_seed %}
+          <tr><td>{{ s.seed }}</td>
+            <td class="{{ 'pos' if s.median > 0 else 'neg' }}">{{ '%+.1f'|format(s.median) }}%</td>
+            <td>{{ '%+.1f'|format(s.p10) }}%</td><td>{{ '%+.1f'|format(s.p90) }}%</td>
+            <td>{{ s.share_pos }}%</td><td>{{ s.rank }}%</td></tr>
+          {% endfor %}
+          <tr><td><b>все {{ h.robust.n }}</b></td>
+            <td class="{{ 'pos' if h.robust.median > 0 else 'neg' }}"><b>{{ '%+.1f'|format(h.robust.median) }}%</b></td>
+            <td>{{ '%+.1f'|format(h.robust.p10) }}%</td><td>{{ '%+.1f'|format(h.robust.p90) }}%</td>
+            <td>{{ h.robust.share_pos }}%</td><td>{{ h.robust.rank_fact }}%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="tv-hint">Ранг факта близко к 100% = конфиг лучше почти всех своих
+        соседей, то есть стоит на шпиле: завтрашний рынок сдвинет оптимум, и
+        останется медиана соседей, а не факт.</p>
+    </details>
+
+    <details style="margin-top:8px">
+      <summary>Издержки: сколько от валовой прибыли забирают комиссии</summary>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Период</th><th>PnL нетто</th><th>PnL брутто</th><th>Съедено</th><th>Доля брутто</th></tr></thead>
+          <tbody>
+          {% for k, lab in [('train', 'обучение'), ('holdout', 'холдоут')] %}
+          {% set c = h.costs[k] %}
+          <tr><td>{{ lab }}</td>
+            <td class="{{ 'pos' if c.net > 0 else 'neg' }}">${{ '%+.2f'|format(c.net) }}</td>
+            <td>${{ '%+.2f'|format(c.gross) }}</td><td>${{ '%.2f'|format(c.eaten) }}</td>
+            <td class="{{ 'neg' if (c.share or 0) > 100 else '' }}">{{ c.share }}%</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="tv-hint">Taker 0.055% / maker 0.02%, слиппедж 0.03%, фандинг
+        0.01%/8ч — считаются внутри прогона. Доля больше 100% = вся валовая
+        прибыль ушла на издержки.</p>
+    </details>
+  </div>
+  {% else %}
+  <div class="note danger">
+    <span class="ico">⚠</span>
+    <div class="nb"><span class="t">Честной проверки у этого бота нет</span> —
+      всё ниже посчитано на данных, где бот и подбирался.
+      {% if mode == 'final' %}Пересчитать:
+      <code>python build_bot_honest_data.py</code>.{% else %}Это бот прошлой
+      волны из архива: заново его никто не перепроверял, и запускать его
+      незачем — смотри <a href="/">финальных ботов</a>.{% endif %}</div>
+  </div>
+  {% endif %}
+
+  <div class="h-sec">Обучающий период — не доказательство{% if hmeta.periods %}
+    ({{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }},
+    целиком in-sample){% endif %}</div>
+
+  <div class="stripe" id="topStripe" style="display:none">
+    <div><div class="k">итог из $50 · in-sample</div><div class="v" id="t_final">–</div></div>
+    <div><div class="k">доход за всю историю</div><div class="v" id="t_ret">–</div></div>
+    <div><div class="k">просадка</div><div class="v" id="t_dd">–</div></div>
+    <div><div class="k">winrate</div><div class="v" id="t_wr">–</div></div>
+    <div><div class="k">profit factor</div><div class="v" id="t_pf">–</div></div>
+    <div><div class="k">месяцев в плюсе</div><div class="v" id="t_mo">–</div></div>
   </div>
 
+  <div class="note warn">
+    <span class="ico">⚠</span>
+    <div class="nb">
+      <span class="t">Всё, что ниже, посчитано на ПОЛНОЙ истории</span> — вместе
+      с обучающим периодом. Это инструмент разбора механики (какие входы,
+      где доливки, как вёл себя капитал), а не доказательство доходности.
+      {% if honest %}Честные цифры — в блоке выше.{% endif %}
+      <details>
+        <summary>подробнее</summary>
+        <p>Бот отбирался по схеме walk-forward, где обучающая выборка всегда
+          начиналась с начала истории, поэтому «экзамен» раннего фолда попадал
+          внутрь обучения позднего. Плечо подбиралось по просадке на всех
+          3.2 годах. Относись к цифрам ниже как к гипотезе.</p>
+      </details>
+    </div>
+  </div>
+
+  <!-- ================= график ================= -->
   <div class="card">
-    <h3>{{ coin }}/USDT и сделки бота <span class="muted" id="trange"></span></h3>
-    <div id="chart"></div>
-    <p class="muted" style="font-size:12px">▲ вход в лонг · ▼ вход в шорт · оранжевая точка — докупка сеткой · ● закрытие цикла (цвет = знак PnL). График показывает ~90 дней; колёсиком мыши — зум, тянуть — прокрутка.</p>
+    <div class="h-card">{{ coin }}/USDT
+      <span class="muted small" style="font-weight:400" id="trange"></span></div>
+    <div class="tv">
+      <div class="tv-toolbar">
+        <label class="chip on" id="cSim"><input type="checkbox" id="tgSim" checked><span class="dot" style="background:var(--up)"></span>сделки бэктеста</label>
+        <label class="chip on" id="cLinks"><input type="checkbox" id="tgLinks" checked><span class="dot" style="background:var(--up);height:2px;border-radius:1px"></span>средняя→выход</label>
+        <label class="chip on" id="cAdd"><input type="checkbox" id="tgAdd" checked><span class="dot" style="background:var(--warn)"></span>доливки сетки</label>
+        <label class="chip on" id="cAvg"><input type="checkbox" id="tgAvg" checked><span class="dot" style="background:#bb9af7"></span>средняя цена</label>
+        <label class="chip on" id="cLive"><input type="checkbox" id="tgLive" checked><span class="dot" style="background:var(--accent)"></span>живой лог</label>
+        <label class="chip on" id="cHold"><input type="checkbox" id="tgHold" checked><span class="dot" style="background:#787b86"></span>граница экзамена</label>
+        <label class="chip on" id="cRsi"><input type="checkbox" id="tgRsi" checked><span class="dot" style="background:#7aa2f7"></span>RSI</label>
+        <span class="sep"></span>
+        <select class="sel" id="fTrades">
+          <option value="all">все циклы</option>
+          <option value="win">только прибыльные</option>
+          <option value="loss">только убыточные</option>
+        </select>
+        <span class="sep"></span>
+        <span class="pills" id="tfPills" title="таймфрейм графика (бот всегда торгует на своём)"></span>
+        <span class="sep"></span>
+        <span class="pills" id="rng"></span>
+        <button class="btn" id="btnClear">показать всё</button>
+      </div>
+      <div class="tv-chart" id="chart">
+        <div class="tv-legend">
+          <div class="sym">{{ coin }}/USDT · <span id="legTf">{{ tf_label }}</span>
+            <span class="muted-2" style="font-weight:400">· бот торгует: {{ tf_label }}</span></div>
+          <div class="ohlc" id="legOhlc"><span>наведи курсор на свечу</span></div>
+        </div>
+        <div class="tv-readout" id="readout"></div>
+        <div class="tv-note" id="mkNote"></div>
+      </div>
+      <div id="rsiWrap">
+        <div class="tv-chart rsi" id="rsiChart">
+          <div class="tv-legend">
+            <div class="sym" id="rsiTitle">RSI({{ params.get('rsi_period', 14) }})</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="legend-row">
+      <span><i style="background:var(--up)"></i>вход в лонг ▲ / <i style="background:var(--down)"></i>вход в шорт ▼</span>
+      <span><i style="background:var(--warn)"></i>■ доливка сетки</span>
+      <span><i style="background:#bb9af7"></i>средняя цена позиции — от неё считаются стоп и тейк</span>
+      <span>● закрытие: <b class="pos">тейк</b> / <b class="neg">стоп</b> / серый таймаут / <b class="liq">ликвидация</b></span>
+      <span>пунктир средняя→выход: <b class="pos">плюс</b> / <b class="neg">минус</b></span>
+    </div>
+    <div class="selbox" id="selInfo"></div>
+    <p class="tv-hint">Вся история{% if hmeta.periods %}
+      {{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }}. Серой
+      заливкой слева — обучающий период, её правый край
+      ({{ hmeta.periods.holdout.start }}) и есть граница экзамена: левее
+      параметры подбирались, правее — данные, которых отбор не видел
+      (та же граница, что на /pnl){% endif %}. Маркеры, пунктир и линия
+      средней рисуются только для видимого куска графика — циклов больше
+      тысячи, всё сразу превратилось бы в кашу; приближай, чтобы увидеть
+      доливки. Клик по строке цикла в таблице ниже или по бару со сделкой —
+      зум на цикл и линии входа / средней / стопа / тейка. График по
+      умолчанию на 4ч: сигналы бот считает на своих {{ tf_label }}, но 3.2
+      года 15-минуток — это 110 тысяч свечей, их рисование само по себе
+      роняет плавность.</p>
   </div>
 
-  <div class="card">
-    <h3>Симуляция стратегии за период графика <span class="muted">(честный движок: комиссии, funding, проскальзывание)</span></h3>
-    <div class="kpi">
-      <div><b id="s_n">–</b><span>циклов за ~3 мес</span></div>
-      <div><b id="s_wr">–</b><span>прибыльных</span></div>
-      <div><b id="s_pnl">–</b><span>PnL, USDT (маржа $5)</span></div>
+  <!-- ================= циклы и описание ================= -->
+  <div class="grid2 grid2--wide">
+    <div class="card">
+      <div class="row-between" style="margin-bottom:12px">
+        <div class="h-card" style="margin:0">Циклы
+          <span class="muted small" style="font-weight:400" id="trCnt"></span></div>
+        <div class="seg" id="segSrc">
+          <button class="on" data-s="sim">Бэктест<span class="cnt" id="cntSim">0</span></button>
+          <button data-s="live">Живой лог<span class="cnt" id="cntLive">0</span></button>
+        </div>
+      </div>
+      <div class="tiles">
+        <div class="tile"><b id="s_n">–</b><span id="s_n_lab">циклов за всю историю</span></div>
+        <div class="tile"><b id="s_wr">–</b><span>прибыльных</span></div>
+        <div class="tile"><b id="s_pnl">–</b><span>PnL, USDT</span></div>
+        <div class="tile"><b id="s_hold">–</b><span>из них на экзамене</span></div>
+      </div>
+      <div class="tbl-wrap tall" style="margin-top:12px"><table class="tbl" id="cycles"></table></div>
+      <p class="tv-hint" id="tblNote"></p>
     </div>
-    <h3 style="margin-top:14px">Живые сделки из лога бота</h3>
-    <div class="kpi">
-      <div><b id="k_n">–</b><span>циклов в логе</span></div>
-      <div><b id="k_wr">–</b><span>прибыльных</span></div>
-      <div><b id="k_pnl">–</b><span>суммарный PnL, USDT</span></div>
+
+    <div class="card">
+      <div class="h-card">Как работает</div>
+      <p class="small" style="margin:0 0 10px">{{ about }}</p>
+      <details>
+        <summary>ядро стратегии и запуск</summary>
+        <p class="small muted" style="margin:0 0 8px">{{ core }}</p>
+        <p class="small" style="margin:0 0 8px">{{ usage }}</p>
+        <p class="small muted" style="margin:0">Остановка: Ctrl+C или закрыть окно
+          (позиция и лимитки остаются на бирже!). Лог:
+          <code>bot_{{ symbol }}_{{ mode }}.log</code></p>
+      </details>
+      <div class="h-sec">Параметры конфига</div>
+      <div class="tbl-wrap tall">
+        <table class="tbl">
+          <thead><tr><th>Параметр</th><th>Значение</th></tr></thead>
+          <tbody>
+          {% for k, v in params.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-    <table id="cycles"><tr><th>Время</th><th>PnL, USDT</th></tr></table>
   </div>
 
+  <!-- ================= прибыль по месяцам ================= -->
+  <div class="card" id="moCard" style="display:none">
+    <div class="h-card">Прибыль по месяцам
+      <span class="muted small" style="font-weight:400">реинвест от $50{% if hmeta.periods %},
+        вся история {{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }}{% endif %}</span></div>
+    <div class="mchart" id="moBox"></div>
+    {% if hmeta.periods %}
+    <p class="tv-hint">Бары до {{ hmeta.periods.holdout.start }} — обучающий период
+      ({{ hmeta.periods.train.months }} мес, подбор их видел), после — холдоут
+      ({{ hmeta.periods.holdout.months }} мес).</p>
+    {% endif %}
+  </div>
+
+  <!-- ================= аналитика ================= -->
   <div class="card" id="analyticsCard" style="display:none">
-    <h3>📊 Аналитика за 3.2 года <span class="muted">(реинвест от $50, маржа 25% капитала)</span></h3>
-    <div class="kpi" id="an_tiles"></div>
-    <h3 style="margin-top:14px">Капитал, $ <span class="muted" id="an_final"></span></h3>
-    <div class="mini" id="eqChart"></div>
-    <h3 style="margin-top:14px">Просадка от пика, %</h3>
-    <div class="mini" id="ddChart"></div>
-    <h3 style="margin-top:14px">Доходность по месяцам, % <span class="muted">(фикс-база, зелёный — плюс, красный — минус)</span></h3>
-    <div class="mini" id="moChart"></div>
-    <div class="kpi" id="an_tiles2" style="margin-top:12px"></div>
+    <div class="h-card">Капитал и просадка
+      <span class="muted small" style="font-weight:400">полная история{% if hmeta.periods %}
+        {{ hmeta.periods.full.start }} — {{ hmeta.periods.full.end }}, из них
+        {{ hmeta.periods.train.months }} мес — обучение{% endif %} ·
+        <span id="an_final"></span></span></div>
+    <div class="tiles" id="an_tiles"></div>
+    <div class="h-sec">Капитал, $</div>
+    <div class="tv"><div class="tv-chart small" id="eqChart">
+      <div class="tv-legend"><div class="ohlc" id="eqLeg"></div></div></div></div>
+    <div class="h-sec">Просадка от пика, %</div>
+    <div class="tv"><div class="tv-chart small" id="ddChart">
+      <div class="tv-legend"><div class="ohlc" id="ddLeg"></div></div></div></div>
+    <div class="tiles" id="an_tiles2" style="margin-top:14px"></div>
   </div>
 
+  <!-- ================= статистика по годам/месяцам ================= -->
   <div class="card" id="finalstatsCard" style="display:none">
-    <h3>Статистика за 3.2 года <span class="muted" id="fs_period"></span></h3>
-    <div class="kpi">
-      <div><b id="fs_ret">–</b><span>итог 3.2г</span></div>
-      <div><b id="fs_wr">–</b><span>winrate</span></div>
-      <div><b id="fs_dd">–</b><span>просадка</span></div>
-      <div><b id="fs_pos">–</b><span>мес. в плюсе</span></div>
+    <div class="h-card">Статистика за всю историю <span class="muted small"
+        style="font-weight:400">in-sample, обучение включено ·
+        <span id="fs_period"></span></span></div>
+    <div class="tiles">
+      <div class="tile"><b id="fs_ret">–</b><span>итог, вся история</span></div>
+      <div class="tile"><b id="fs_wr">–</b><span>winrate</span></div>
+      <div class="tile"><b id="fs_dd">–</b><span>просадка</span></div>
+      <div class="tile"><b id="fs_pos">–</b><span>месяцев в плюсе</span></div>
     </div>
-    <h3 style="margin-top:16px">По годам</h3>
-    <table id="fs_years"><tr><th>Период</th><th>Доход</th><th>Сделок</th><th>WR</th><th>DD</th></tr></table>
-    <h3 style="margin-top:16px">Любой месяц: <select id="fs_month_sel"></select></h3>
-    <div class="kpi">
-      <div><b id="fs_m_ret">–</b><span>доход, %</span></div>
-      <div><b id="fs_m_usdt">–</b><span>доход, USDT</span></div>
-      <div><b id="fs_m_trades">–</b><span>сделок</span></div>
-      <div><b id="fs_m_wins">–</b><span>прибыльных</span></div>
-    </div>
-  </div>
-
-  <div class="row">
-    <div class="card">
-      <h3>Описание</h3>
-      <p>{{ about }}</p>
-      <p class="muted">{{ core }}</p>
-    </div>
-    <div class="card">
-      <h3>Применение</h3>
-      <p>{{ usage }}</p>
-      <p class="muted">Остановка: Ctrl+C или закрыть окно (позиция и лимитки остаются на бирже!). Лог: <code>bot_{{ symbol }}_{{ mode }}.log</code></p>
-      <h3 style="margin-top:14px">Параметры</h3>
-      <table>
-        <tr><th>Параметр</th><th>Значение</th></tr>
-        {% for k, v in params.items() %}
-        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-        {% endfor %}
-      </table>
+    <div class="h-sec">По годам</div>
+    <div class="tbl-wrap"><table class="tbl" id="fs_years"></table></div>
+    <div class="h-sec">Любой месяц</div>
+    <div style="margin-bottom:10px"><select class="sel" id="fs_month_sel"></select></div>
+    <div class="tiles">
+      <div class="tile"><b id="fs_m_ret">–</b><span>доход, %</span></div>
+      <div class="tile"><b id="fs_m_usdt">–</b><span>доход, USDT</span></div>
+      <div class="tile"><b id="fs_m_trades">–</b><span>сделок</span></div>
+      <div class="tile"><b id="fs_m_wins">–</b><span>прибыльных</span></div>
     </div>
   </div>
 
   <div class="card">
-    <h3>Последние строки лога</h3>
-    <pre id="logtail">…</pre>
+    <details>
+      <summary>Последние строки лога</summary>
+      <pre id="logtail">…</pre>
+    </details>
   </div>
+
 </div>
+
+<style>
+  .selbox { background:var(--bg-elev); border:1px solid var(--line-soft);
+    border-radius:var(--r-md); padding:11px 14px; margin-top:12px;
+    font-size:12.5px; display:none; }
+  /* блок «Честная проверка» — та же вёрстка, что у экзамена сигналов */
+  .exam-card { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
+  .exam-left { flex:0 0 auto; }
+  .exam-right { flex:1 1 340px; min-width:0; }
+  .bench { display:flex; gap:22px; flex-wrap:wrap; margin-top:14px;
+    padding-top:12px; border-top:1px solid var(--line-soft); font-size:12px;
+    color:var(--muted); font-variant-numeric:tabular-nums; }
+  .bench b { color:var(--ink); font-weight:590; }
+  .crit { margin-top:14px; padding-top:12px; border-top:1px solid var(--line-soft);
+    font-size:12.5px; }
+  .crit .c { display:flex; gap:8px; align-items:baseline; margin-top:5px; }
+  .crit .c i { flex:0 0 auto; font-style:normal; font-weight:700; width:14px; }
+  .crit .c.ok i { color:var(--up); } .crit .c.no i { color:var(--down); }
+  .crit .c span { color:var(--muted); }
+  .crit .c b { color:var(--ink); font-weight:560; }
+  .warn-line { margin-top:10px; font-size:12.5px; color:var(--warn);
+    border-left:2px solid var(--warn); padding-left:10px; }
+  .warn-line.good { color:var(--up); border-left-color:var(--up); }
+  /* плашка «сколько маркеров показано» — левый нижний угол графика */
+  .tv-note { position:absolute; left:12px; bottom:10px; z-index:3;
+    pointer-events:none; font-size:11px; color:var(--muted-2);
+    background:rgba(19,23,34,.8); border:1px solid var(--line-soft);
+    border-radius:7px; padding:3px 8px; display:none; }
+  .tv-note.show { display:block; }
+  /* циклов у ботов тысячи — таблице нужна вся ширина, что найдётся */
+  .grid2--wide { grid-template-columns:1.45fr 1fr; }
+  @media (max-width:1100px) { .grid2--wide { grid-template-columns:1fr; } }
+  table.tbl tbody tr.hold td:first-child { box-shadow:inset 2px 0 0 var(--warn); }
+</style>
 
 <script>
 const SYM = "{{ symbol }}", MODE = "{{ mode }}";
-const el = document.getElementById("chart");
-const chart = LightweightCharts.createChart(el, {
-  layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
-  grid: { vertLines: { color: "#22252b" }, horzLines: { color: "#22252b" } },
-  timeScale: { timeVisible: true, secondsVisible: false },
-  height: 440, autoSize: true,
-});
-const series = chart.addCandlestickSeries({
-  upColor: "#46C186", downColor: "#E06B5E",
-  wickUpColor: "#46C186", wickDownColor: "#E06B5E", borderVisible: false,
-});
+/* предпосчёт сделок за всю историю есть только у финальных ботов; для
+   архивных (normal/bear/turbo) остаётся живая симуляция за ~90 дней */
+const IS_FINAL = MODE === "final";
+const BOT_TF = "{{ params.get('interval', '15') }}";   // ТФ, на котором бот торгует
+const BAR = {{ interval_min|default(15) }} * 60;
+const RSI_P = {{ params.get('rsi_period', 14) }};
+const RSI_OS = {{ params.get('rsi_os', 30) }};
+const MULT = {{ params.get('mult', 1.5) }};            // множитель колен сетки
+const LEVELS = {{ params.get('levels', 3) }};
+const TP = {{ params.get('tp', 0.01) }};               // тейк от средней, доля
+const TF_LIST = {{ view_tfs|tojson }};                 // [{iv,label}] — что есть на диске
+const TF_LABEL = "{{ tf_label }}";
+/* ТФ ОТОБРАЖЕНИЯ по умолчанию — 4ч, а не родные 15м бота. На 15м вся история
+   это 110 тысяч свечей: маркеры сделок при этом остаются быстрыми (замер:
+   ~2 мс на перерисовку), но сама отрисовка стольких свечей роняет плавность
+   до ~13 кадров/с. На 4ч те же 3.2 года — 6900 свечей, видно и границу
+   экзамена, и всю картину; 15м под рукой в переключателе. */
+const DEF_TF = TF_LIST.some(t => t.iv === "240") ? "240"
+  : (TF_LIST[0] ? TF_LIST[0].iv : BOT_TF);
+const C = TVK.P;
+const $ = id => document.getElementById(id);
+const PERF = {};
+const now = () => performance.now();
 
-async function load() {
-  const candles = await (await fetch(`/api/candles/${SYM}/${MODE}`)).json();
-  series.setData(candles);
-  chart.timeScale().fitContent();
-  const t0 = new Date(candles[0].time * 1000), t1 = new Date(candles.at(-1).time * 1000);
-  document.getElementById("trange").textContent =
-    `(${t0.toLocaleDateString("ru")} — ${t1.toLocaleDateString("ru")})`;
-
-  const tr = await (await fetch(`/api/trades/${SYM}/${MODE}`)).json();
-  const sim = await (await fetch(`/api/sim/${SYM}/${MODE}`)).json();
-  const minT = candles[0].time;
-  const BAR = {{ interval_min|default(15) }} * 60; // время маркера = время его свечи
-  const snap = t => Math.floor(t / BAR) * BAR;
-  const markers = [];
-  const pushEv = (t, e, live) => {
-    const tag = live ? "LIVE " : "";
-    if (e.type === "entry") {
-      const long = (e.side === "LONG" || e.side === "L");
-      markers.push({ time: t, position: long ? "belowBar" : "aboveBar",
-        color: long ? "#46C186" : "#E06B5E",
-        shape: long ? "arrowUp" : "arrowDown",
-        text: tag + (long ? "лонг" : "шорт") });
-    } else if (e.type === "add") {
-      markers.push({ time: t, position: "belowBar", color: "#E3A83E",
-        shape: "circle", text: tag + "сетка" });
-    } else if (e.type === "close") {
-      markers.push({ time: t, position: "aboveBar",
-        color: e.pnl >= 0 ? "#46C186" : "#E06B5E", shape: "circle",
-        text: tag + "PnL " + (e.pnl >= 0 ? "+" : "") + e.pnl });
-    }
+/* ---------- графики ---------- */
+const chart = TVK.create("chart", 500);
+/* Обучающий период — светлой заливкой ПОД свечами (серия создаётся первой).
+   Вертикальной линии в библиотеке нет, а маркер на оси времени не читается:
+   правый край заливки и есть граница экзамена, и он виден на любом зуме. */
+const holdS = chart.addAreaSeries({
+  topColor: "rgba(120,123,134,.13)", bottomColor: "rgba(120,123,134,.13)",
+  lineColor: "rgba(120,123,134,.40)", lineWidth: 1, priceScaleId: "",
+  priceLineVisible: false, lastValueVisible: false,
+  crosshairMarkerVisible: false, pointMarkersVisible: false,
+});
+holdS.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+const candleS = chart.addCandlestickSeries({
+  upColor: C.up, downColor: C.down, wickUpColor: C.up, wickDownColor: C.down,
+  borderVisible: false,
+});
+const LINK_MAX = 400;   // столько сделок рисуем линиями; дальше — только маркеры
+/* ЛИНИИ ПО СДЕЛКАМ — свой слой на канве (примитив серии, API v4.1).
+   Две отвергнутые попытки, обе проверены замером:
+   1) одна общая серия на все сделки (как TVK.tradeLines у сигналов):
+      «пустая» точка-разрыв (whitespace) в этой сборке 4.1.3 линию НЕ рвёт —
+      библиотека соединяет соседние точки, и график покрывался диагоналями
+      через полгода, которых в данных нет (у сигналов с их сотней сделок
+      это малозаметно, у бота с 1300 циклами — сплошная сетка артефактов);
+   2) отдельная серия на сделку из пула: каждое applyOptions/setData
+      заставляет библиотеку пересчитать ВСЕ серии, включая свечную, а на
+      15м это 111 тысяч баров — перерисовка окна доходила до 1.2 секунды.
+   Свой слой рисует все пунктиры и ступеньки средней за один проход по
+   видимым сделкам и не создаёт ни одной лишней серии. */
+const overlay = (function () {
+  let items = [], showLinks = true, showAvg = true;
+  const dash = [4, 3];
+  function draw(target) {
+    if (!items.length) return;
+    target.useMediaCoordinateSpace(function (scope) {
+      const ctx = scope.context;
+      const ts = chart.timeScale();
+      const X = t => ts.timeToCoordinate(t);
+      const Y = p => candleS.priceToCoordinate(p);
+      ctx.save();
+      ctx.lineWidth = 1;
+      for (const c of items) {
+        if (showAvg && c.path && c.path.length > 1) {
+          // ступенька: средняя меняется в момент исполнения колена сетки
+          ctx.setLineDash([]);
+          ctx.strokeStyle = C.violet;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          let started = false, py = null;
+          for (const p of c.path) {
+            const x = X(p[0]), y = Y(p[1]);
+            if (x === null || y === null) { started = false; continue; }
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else { ctx.lineTo(x, py); ctx.lineTo(x, y); }
+            py = y;
+          }
+          ctx.stroke();
+          ctx.lineWidth = 1;
+        }
+        if (showLinks && c.x1 !== null) {
+          const x0 = X(c.t0s), x1 = X(c.x1);
+          const y0 = Y(c.avg), y1 = Y(c.exit);
+          if (x0 === null || x1 === null || y0 === null || y1 === null) continue;
+          ctx.setLineDash(dash);
+          ctx.strokeStyle = (c.pnl || 0) >= 0 ? C.up : C.down;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    });
+  }
+  const view = { renderer: () => ({ draw: draw }), zOrder: () => "top" };
+  return {
+    updateAllViews: function () {},
+    paneViews: function () { return [view]; },
+    set: function (list, links, avg) {
+      items = list; showLinks = links; showAvg = avg;
+    },
   };
-  for (const e of sim.events) { const t = snap(e.t); if (t >= minT) pushEv(t, e, false); }
-  for (const e of tr.events) { const t = snap(e.time); if (t >= minT) pushEv(t, e, true); }
-  markers.sort((a, b) => a.time - b.time);
-  series.setMarkers(markers);
+})();
+const rsiChart = TVK.create("rsiChart", 148, {
+  timeScale: { visible: false, borderColor: C.line },
+  rightPriceScale: { minimumWidth: 78, scaleMargins: { top: .12, bottom: .12 } },
+});
+const rsiS = rsiChart.addLineSeries({ color: C.info, lineWidth: 1,
+  priceLineVisible: false, lastValueVisible: false,
+  priceFormat: { type: "price", precision: 1, minMove: 0.1 } });
+TVK.sync(chart, rsiChart);
+TVK.syncCross(chart, rsiChart, candleS, rsiS);
+TVK.candleLegend(chart, candleS, "legOhlc", { digits: 6 });
+candleS.attachPrimitive(overlay);
 
-  document.getElementById("s_n").textContent = sim.n;
-  document.getElementById("s_wr").textContent =
-    sim.n ? Math.round(sim.wins / sim.n * 100) + "%" : "–";
-  const sp = document.getElementById("s_pnl");
-  sp.textContent = (sim.total_pnl >= 0 ? "+" : "") + sim.total_pnl;
-  sp.className = sim.total_pnl >= 0 ? "pnl-pos" : "pnl-neg";
+/* ---------- состояние ---------- */
+let HIST = [];                   // сырые свечи текущего ТФ (как пришли с сервера)
+let CANDLES = [], TIMES = [];
+let BACK = [], LIVE = [], SRC = "sim";
+let TMETA = {}, HOLD = null;     // шапка предпосчёта и граница экзамена
+let MAX_HOLD_SEC = 3 * 86400;    // самый длинный цикл — запас для окна маркеров
+let BY_BAR = new Map(), LINES = [], SEL = null;
+let VIEW_TF = DEF_TF, VIEW_BAR = DEF_TF === "D" ? 86400 : Number(DEF_TF) * 60;
+let PX_DIG = 4;
+let sortTr = { k: "entry_ts", dir: -1 };
 
-  document.getElementById("k_n").textContent = tr.n;
-  document.getElementById("k_wr").textContent =
-    tr.n ? Math.round(tr.wins / tr.n * 100) + "%" : "–";
-  const pl = document.getElementById("k_pnl");
-  pl.textContent = (tr.total_pnl >= 0 ? "+" : "") + tr.total_pnl;
-  pl.className = tr.total_pnl >= 0 ? "pnl-pos" : "pnl-neg";
-  const tbl = document.getElementById("cycles");
-  tbl.innerHTML = "<tr><th>Время</th><th>PnL, USDT</th></tr>" +
-    tr.cycles.slice().reverse().map(c =>
-      `<tr><td>${new Date(c.time * 1000).toLocaleString("ru")}</td>
-       <td class="${c.pnl >= 0 ? "pnl-pos" : "pnl-neg"}">${c.pnl >= 0 ? "+" : ""}${c.pnl}</td></tr>`
-    ).join("");
+/* Плотность маркеров по зуму. Дело не в скорости (перерисовать всё окно —
+   1-2 мс даже на 1300 циклах, замерено), а в читаемости: вход + выход +
+   доливки тысячи циклов на одном экране сливаются в кашу. Чем шире окно,
+   тем меньше подробностей. */
+const MAX_MARK = 900;      // потолок маркеров: дальше прореживаем циклы
+const ADDS_FROM = 300;     // доливки показываем, когда циклов в окне немного
+const EXITS_FROM = 600;    // точки выходов — пока их ещё можно различить
+const TXT_FROM = 40;       // подписи на маркерах — только на близком зуме
+const TBL_MAX = 500;       // строк таблицы за раз (сортировка/фильтр — мгновенные)
 
-  const st = await (await fetch(`/api/status/${SYM}/${MODE}`)).json();
-  const badge = document.getElementById("status");
-  badge.textContent = st.active ? "● работает" : "○ выключен";
-  badge.className = "b " + (st.active ? "on" : "off");
-  document.getElementById("logtail").textContent =
-    st.tail.length ? st.tail.join("") : "Лог пуст — бот ещё не запускался.";
+/* по умолчанию — вся история: тогда сразу видно и границу экзамена, и то,
+   что сделок больше тысячи. На мелких ТФ applyCandles сузит до месяца —
+   110 тысяч 15-минуток на одном экране превращаются в кашу */
+const rng = TVK.ranges("rng", [chart, rsiChart],
+  () => TIMES.length ? [TIMES[0], TIMES[TIMES.length - 1]] : [],
+  { def: 0, onFit: clearSel });
+
+/* ---------- утилиты ---------- */
+const money = v => (v === null || v === undefined || !isFinite(v)) ? "–"
+  : (v >= 0 ? "+" : "") + TVK.fmtFix(v, 3) + "$";
+const px = v => TVK.isNum(Number(v)) ? TVK.fmtN(v, PX_DIG) : "–";
+const REASON_RU = { tp: "ТЕЙК", stop: "СТОП", liq: "ЛИКВИДАЦИЯ",
+                    timeout: "ТАЙМАУТ" };
+const reasonRu = r => REASON_RU[r] || (r ? String(r) : "–");
+const reasonColor = r => r === "tp" ? C.up : r === "stop" ? C.down
+  : r === "liq" ? C.liq : C.muted;
+function pxDigits(p) {
+  p = Math.abs(Number(p) || 1);
+  return p >= 1000 ? 1 : p >= 100 ? 2 : p >= 1 ? 3 : p >= 0.01 ? 5 : 7;
 }
-load();
-setInterval(load, 60000);
+/* время -> ближайший бар СЛЕВА на текущей сетке (сетка меняется вместе с ТФ) */
+function snap(t) {
+  t = TVK.ts(t);
+  if (t === null || !TIMES.length) return null;
+  if (t <= TIMES[0]) return TIMES[0];
+  if (t >= TIMES[TIMES.length - 1]) return TIMES[TIMES.length - 1];
+  let lo = 0, hi = TIMES.length - 1;
+  while (lo < hi) {
+    const m = (lo + hi + 1) >> 1;
+    if (TIMES[m] <= t) lo = m; else hi = m - 1;
+  }
+  return TIMES[lo];
+}
+/* первый цикл с t0 >= t (BACK отсортирован по входу) */
+function lowerBound(arr, t) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (arr[m].t0 < t) lo = m + 1; else hi = m;
+  }
+  return lo;
+}
+async function getJSON(u) {
+  const r = await fetch(u);
+  if (!r.ok) throw new Error(u + " -> " + r.status);
+  return await r.json();
+}
+function isHoldout(c) { return HOLD !== null && c.t0 >= HOLD; }
 
+/* ---------- RSI по свечам графика (Уайлдер, как в bot_rsi.calc_rsi) ---------- */
+function calcRsi(closes, period) {
+  const out = new Array(closes.length).fill(null);
+  if (closes.length <= period) return out;
+  let g = 0, l = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    g += Math.max(d, 0); l += Math.max(-d, 0);
+  }
+  let ag = g / period, al = l / period;
+  out[period] = 100 - 100 / (1 + (al ? ag / al : Infinity));
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    ag = (ag * (period - 1) + Math.max(d, 0)) / period;
+    al = (al * (period - 1) + Math.max(-d, 0)) / period;
+    out[i] = 100 - 100 / (1 + (al ? ag / al : Infinity));
+  }
+  return out;
+}
+
+/* ---------- циклы ----------
+   Предпосчёт (build_analytics.py) уже знает среднюю цену, стоп и тейк.
+   Для свежего хвоста (живая симуляция и лог) считаем среднюю здесь той же
+   формулой, что в движке: доли маржи по коленам w_k = mult^k, объём колена
+   q_k = m_k*LEV/цена, поэтому avg = SUM(w_k) / SUM(w_k / цена_k). */
+function avgOf(prices) {
+  let num = 0, den = 0;
+  for (let k = 0; k < prices.length; k++) {
+    const w = Math.pow(MULT, Math.min(k, LEVELS - 1));
+    num += w; den += w / prices[k];
+  }
+  return den ? num / den : prices[0];
+}
+function fromPrecomputed(t, i) {
+  const long = t.side === "L";
+  return { idx: t.i || i + 1, live: false, long: long,
+    t0: t.entry_ts, entry: t.entry, avg: t.avg, stop: t.stop, tp: t.tp,
+    adds: (t.adds || []).map(a => ({ t: a[0], price: a[1], avg: a[2] })),
+    t1: t.exit_ts, exit: t.exit, pnl: t.pnl, reason: t.reason, liq: !!t.liq,
+    hold_h: t.exit_ts ? (t.exit_ts - t.entry_ts) / 3600 : null };
+}
+/* события /api/sim и /api/trades -> такие же циклы */
+function buildCycles(events, live) {
+  const out = [];
+  let cur = null;
+  const close = c => {
+    const prices = [c.entry].concat(c.adds.map(a => a.price))
+      .filter(p => TVK.isNum(Number(p)));
+    let acc = [];
+    for (let k = 0; k < prices.length; k++) {
+      acc.push(prices[k]);
+      const a = avgOf(acc);
+      if (k > 0) c.adds[k - 1].avg = a;
+      c.avg = a;
+    }
+    if (c.avg === undefined || c.avg === null) c.avg = c.entry;
+    if (TVK.isNum(Number(c.avg)))
+      c.tp = c.avg * (1 + (c.long ? 1 : -1) * TP);
+    c.hold_h = c.t1 ? (c.t1 - c.t0) / 3600 : null;
+    out.push(c);
+  };
+  for (const e of (events || [])) {
+    const t = TVK.ts(live ? e.time : e.t);
+    if (t === null) continue;
+    if (e.type === "entry") {
+      if (cur) close(cur);
+      cur = { live: live, long: String(e.side || "").toUpperCase()[0] === "L",
+              entry: e.price, t0: t, adds: [], pnl: null, avg: e.price };
+    } else if (e.type === "add" && cur) {
+      cur.adds.push({ t: t, price: e.price, avg: null });
+    } else if (e.type === "close") {
+      if (!cur) cur = { live: live, long: true, entry: null, t0: t, adds: [],
+                        pnl: null, avg: null };
+      cur.t1 = t; cur.exit = e.price; cur.pnl = e.pnl;
+      cur.reason = e.reason || (live ? "лог" : "?"); cur.liq = !!e.liq;
+      close(cur); cur = null;
+    }
+  }
+  if (cur) close(cur);
+  out.forEach((c, i) => { c.idx = i + 1; });
+  return out;
+}
+
+/* ---------- индекс «что было на этом баре» (для плашки) ---------- */
+function indexBars() {
+  BY_BAR = new Map();
+  const put = (t, key, v) => {
+    if (t === null || t === undefined) return;
+    const k = snap(t);
+    if (k === null) return;
+    let o = BY_BAR.get(k);
+    if (!o) { o = { open: [], close: [], add: [] }; BY_BAR.set(k, o); }
+    o[key].push(v);
+  };
+  for (const c of BACK.concat(LIVE)) {
+    put(c.t0, "open", c);
+    if (c.t1) put(c.t1, "close", c);
+    for (const a of c.adds) put(a.t, "add", { c: c, a: a });
+  }
+}
+
+/* ---------- фильтр ---------- */
+function tradeVisible(c) {
+  const fl = $("fTrades").value;
+  if (fl === "all") return true;
+  if (c.pnl === null || c.pnl === undefined) return false;
+  return fl === "win" ? c.pnl > 0 : c.pnl <= 0;
+}
+
+/* ---------- маркеры: ТОЛЬКО видимый кусок ----------
+   Циклов бывает больше тысячи, у каждого ещё и доливки. Если отдать всё в
+   setMarkers сразу, библиотека пересобирает и сортирует тысячи объектов на
+   каждый зум и график начинает заметно дёргаться. Поэтому подписываемся на
+   изменение видимого диапазона и рисуем маркеры только для него. */
+function visibleSlice() {
+  if (!BACK.length) return BACK;
+  let r = null;
+  try { r = chart.timeScale().getVisibleRange(); } catch (e) {}
+  if (!r) return BACK;
+  const from = TVK.ts(r.from), to = TVK.ts(r.to);
+  if (from === null || to === null) return BACK;
+  // цикл мог начаться левее окна и закончиться внутри — берём запас
+  const a = lowerBound(BACK, from - MAX_HOLD_SEC);
+  const b = lowerBound(BACK, to + VIEW_BAR);
+  return BACK.slice(a, b);
+}
+function pushCycle(mk, c, live, lvl, withText) {
+  const te = snap(c.t0);
+  if (te !== null && TVK.isNum(Number(c.entry)))
+    mk.push({ time: te, position: c.long ? "belowBar" : "aboveBar",
+      color: live ? C.accent : (c.long ? C.up : C.down),
+      shape: c.long ? "arrowUp" : "arrowDown", text: live ? "live" : "" });
+  if (lvl >= 2)
+    for (const a of c.adds) {
+      const ta = snap(a.t);
+      if (ta !== null)
+        mk.push({ time: ta, position: "belowBar", color: C.warn,
+          shape: "square", size: 0.6, text: "" });
+    }
+  if (lvl >= 1 && c.t1) {
+    const tx = snap(c.t1);
+    if (tx !== null)
+      mk.push({ time: tx, position: c.long ? "aboveBar" : "belowBar",
+        color: live ? C.accent : reasonColor(c.reason), shape: "circle",
+        size: 0.8, text: withText && c.pnl !== null ? money(c.pnl) : "" });
+  }
+}
+function plural(n, one, few, many) {
+  const t = n % 100, d = n % 10;
+  if (t >= 11 && t <= 14) return many;
+  return d === 1 ? one : (d >= 2 && d <= 4 ? few : many);
+}
+function rebuildMarkers() {
+  const t0 = now();
+  const mk = [];
+  let shown = 0, total = 0, thin = 1, lvl = 2, detail = true;
+  const vis = visibleSlice().filter(tradeVisible);
+  detail = drawOverlays(vis);
+  if ($("tgSim").checked) {
+    const list = vis;
+    total = list.length;
+    // в окно влезло слишком много — показываем равномерную выборку и
+    // честно пишем об этом плашкой, а не тихо роняем часть сделок
+    thin = Math.max(1, Math.ceil(list.length / (MAX_MARK / 2)));
+    lvl = list.length > EXITS_FROM ? 0
+      : (list.length > ADDS_FROM || !$("tgAdd").checked ? 1 : 2);
+    const withText = list.length <= TXT_FROM;
+    for (let i = 0; i < list.length; i += thin) {
+      pushCycle(mk, list[i], false, lvl, withText);
+      shown++;
+    }
+  }
+  if ($("tgLive").checked)
+    for (const c of LIVE)
+      if (tradeVisible(c)) pushCycle(mk, c, true, $("tgAdd").checked ? 2 : 1, true);
+  if (HOLD !== null && $("tgHold").checked) {
+    const th = snap(HOLD);
+    if (th !== null)
+      mk.push({ time: th, position: "aboveBar", color: C.muted,
+        shape: "arrowDown", text: "экзамен ▶" });
+  }
+  mk.sort((a, b) => a.time - b.time);
+  candleS.setMarkers(mk);
+  const note = $("mkNote");
+  PERF.markers = Math.round(now() - t0);
+  PERF.markersN = mk.length;
+  if (!total) note.classList.remove("show");
+  else {
+    note.classList.add("show");
+    const hidden = lvl === 0 ? " · только входы, приблизь для выходов и доливок"
+      : (lvl === 1 && $("tgAdd").checked ? " · доливки скрыты, приблизь" : "");
+    note.textContent = (thin > 1
+      ? `в окне ${total} циклов — показан каждый ${thin}-й (${shown})`
+      : `${shown} ${plural(shown, "цикл", "цикла", "циклов")} в окне`) + hidden
+      + (detail ? "" : ` · пунктир и средняя — когда в окне ≤${LINK_MAX}`);
+  }
+}
+let mkPending = 0;
+function scheduleMarkers() {
+  if (mkPending) return;
+  mkPending = requestAnimationFrame(() => { mkPending = 0; rebuildMarkers(); });
+}
+chart.timeScale().subscribeVisibleTimeRangeChange(scheduleMarkers);
+
+/* ---------- пунктир «средняя -> выход» и ступенька средней цены ----------
+   У бота стоп и тейк считаются НЕ от цены первого входа, а от средней цены
+   позиции после доливок — поэтому пунктир тянем именно от средней.
+   Рисуем только видимые сделки и только когда их немного: на широком окне
+   такая линия всё равно короче пикселя, а серий пришлось бы держать
+   тысячу. Возвращает, показаны ли подробности. */
+function drawOverlays(list) {
+  const showL = $("tgLinks").checked, showA = $("tgAvg").checked;
+  const detail = list.length <= LINK_MAX && (showL || showA);
+  const lastT = TIMES.length ? TIMES[TIMES.length - 1] : 0;
+  const items = [];
+  if (detail) {
+    for (const c of list) {
+      const e = snap(c.t0);
+      if (e === null) continue;
+      let x = c.t1 ? snap(c.t1) : null;
+      if (x !== null && x <= e) x = Math.min(e + VIEW_BAR, lastT);
+      if (x !== null && x <= e) x = null;
+      const it = { t0s: e, x1: null, avg: +c.avg, exit: +c.exit, pnl: c.pnl,
+                   path: null };
+      if (x !== null && TVK.isNum(it.avg) && TVK.isNum(it.exit)) it.x1 = x;
+      // без доливок средняя равна входу — отдельная линия ничего не добавит
+      if (c.adds.length) {
+        const path = [[e, +c.entry]];
+        for (const a of c.adds) {
+          const ta = snap(a.t);
+          if (ta === null || !TVK.isNum(Number(a.avg))) continue;
+          if (ta <= path[path.length - 1][0]) path[path.length - 1][1] = +a.avg;
+          else path.push([ta, +a.avg]);
+        }
+        if (x !== null && x > path[path.length - 1][0]) path.push([x, +c.avg]);
+        if (path.length > 1) it.path = path;
+      }
+      if (it.x1 !== null || it.path) items.push(it);
+    }
+  }
+  overlay.set(items, showL, showA);
+  return detail;
+}
+function drawHoldout() {
+  if (HOLD === null || !TIMES.length) return;
+  const th = snap(HOLD);
+  if (th === null || th <= TIMES[0]) return;
+  holdS.setData([{ time: TIMES[0], value: 1 }, { time: th, value: 1 },
+                 { time: Math.min(th + VIEW_BAR, TIMES[TIMES.length - 1]) }]);
+  holdS.applyOptions({ visible: $("tgHold").checked });
+}
+
+/* ---------- плашка под курсором ---------- */
+function row(k, v, c) {
+  return '<div class="rl"><span>' + TVK.esc(k) + '</span><b class="' + (c || "")
+    + '">' + TVK.esc(v) + "</b></div>";
+}
+chart.subscribeCrosshairMove(p => {
+  const ro = $("readout");
+  if (!p || !p.time) { ro.classList.remove("show"); return; }
+  const o = BY_BAR.get(p.time);
+  if (!o) { ro.classList.remove("show"); return; }
+  const parts = [];
+  for (const c of o.open) parts.push(
+    '<div class="rt">' + (c.long ? "▲ вход LONG" : "▼ вход SHORT") + " #" + c.idx
+    + (c.live ? " · живой" : (isHoldout(c) ? " · экзамен" : " · обучение")) + "</div>"
+    + row("цена входа", px(c.entry))
+    + row("стоп при входе", px(c.stop))
+    + row("доливок сетки", c.adds.length + " из " + Math.max(0, LEVELS - 1)));
+  for (const x of o.add) parts.push(
+    '<div class="rt">■ доливка сетки (цикл #' + x.c.idx + ")</div>"
+    + row("цена доливки", px(x.a.price))
+    + row("средняя стала", px(x.a.avg))
+    + row("тейк от средней", px(x.c.tp)));
+  for (const c of o.close) parts.push(
+    '<div class="rt">● закрытие #' + c.idx + " — "
+    + (c.liq ? "ЛИКВИДАЦИЯ" : reasonRu(c.reason)) + "</div>"
+    + row("средняя / выход", px(c.avg) + " → " + px(c.exit))
+    + row("итог", money(c.pnl), (c.pnl || 0) >= 0 ? "pos" : "neg")
+    + row("держали", TVK.fmtN(c.hold_h, 1) + "ч"));
+  if (!parts.length) { ro.classList.remove("show"); return; }
+  ro.innerHTML = parts.join('<div style="height:7px"></div>');
+  ro.classList.add("show");
+});
+chart.subscribeClick(p => {
+  if (!p || !p.time) return;
+  const o = BY_BAR.get(p.time);
+  if (!o) return;
+  const c = o.open[0] || o.close[0] || (o.add[0] && o.add[0].c);
+  if (c) selectCycle(c);
+});
+
+/* ---------- выделение цикла ---------- */
+function clearLines() {
+  for (const l of LINES) { try { candleS.removePriceLine(l); } catch (e) {} }
+  LINES = [];
+}
+function addLine(price, color, title, style) {
+  if (!TVK.isNum(Number(price))) return;
+  LINES.push(candleS.createPriceLine({ price: +price, color: color, lineWidth: 1,
+    lineStyle: style === undefined ? LightweightCharts.LineStyle.Dashed : style,
+    axisLabelVisible: true, title: title }));
+}
+function clearSel(keepZoom) {
+  clearLines();
+  SEL = null;
+  $("selInfo").style.display = "none";
+  for (const tr of $("cycles").querySelectorAll("tr.sel")) tr.classList.remove("sel");
+  if (!keepZoom) rng.set(0);          // «показать всё» = и зум сбросить
+}
+function selectCycle(c) {
+  clearLines();
+  SEL = { live: !!c.live, idx: c.idx };
+  addLine(c.entry, C.accent, "вход");
+  if (c.adds.length) addLine(c.avg, C.violet, "средняя",
+    LightweightCharts.LineStyle.Solid);
+  if (c.adds.length <= 4)
+    for (const a of c.adds) addLine(a.price, C.warn, "сетка");
+  addLine(c.stop, C.down, "стоп вх.");
+  addLine(c.tp, C.up, "тейк");
+  if (c.exit !== undefined && c.exit !== null)
+    addLine(c.exit, (c.pnl || 0) >= 0 ? C.up : C.down, "выход");
+  const t1 = c.t1 || c.t0;
+  const pad = Math.max(20 * VIEW_BAR, (t1 - c.t0) * 0.7);
+  if (TIMES.length) {
+    try {
+      chart.timeScale().setVisibleRange({
+        from: Math.max(TIMES[0], c.t0 - pad),
+        to: Math.min(TIMES[TIMES.length - 1], t1 + pad) });
+    } catch (e) {}
+  }
+  markSel(c);
+  const el = $("selInfo");
+  el.style.display = "";
+  el.innerHTML = '<div class="kv">'
+    + kv("цикл", "#" + c.idx + " " + (c.long ? "LONG" : "SHORT")
+        + (c.live ? " · живой" : (isHoldout(c) ? " · экзамен" : " · обучение")))
+    + kv("вход", TVK.fmtDT(c.t0) + " по " + px(c.entry))
+    + kv("доливок сетки", c.adds.length + " из " + Math.max(0, LEVELS - 1))
+    + kv("средняя цена", px(c.avg))
+    + kv("стоп при входе / тейк", px(c.stop) + " / " + px(c.tp))
+    + (c.t1 ? kv("выход", TVK.fmtDT(c.t1) + " по " + px(c.exit)
+        + " — " + (c.liq ? "ЛИКВИДАЦИЯ" : reasonRu(c.reason)))
+       : kv("выход", "цикл открыт"))
+    + (c.pnl === null || c.pnl === undefined ? ""
+       : kv("итог", money(c.pnl), c.pnl >= 0 ? "pos" : "neg"))
+    + (c.t1 ? kv("держали", TVK.fmtN(c.hold_h, 1) + "ч") : "")
+    + "</div>";
+}
+function markSel(c) {
+  for (const tr of $("cycles").querySelectorAll("tr.sel")) tr.classList.remove("sel");
+  const r = $("cycles").querySelector('tr[data-k="' + (c.live ? "l" : "s")
+    + c.idx + '"]');
+  if (r) { r.classList.add("sel"); r.scrollIntoView({ block: "nearest" }); }
+}
+function kv(k, v, c) {
+  return "<div><span>" + TVK.esc(k) + '</span> <b class="' + (c || "") + '">'
+    + TVK.esc(v) + "</b></div>";
+}
+$("btnClear").onclick = () => clearSel();
+
+/* ---------- таблица циклов ---------- */
+const TR_COLS = [
+  ["idx", "#"], ["entry_ts", "Вход"], ["exit_ts", "Выход"], ["side", "Напр."],
+  ["entry", "Вход $"], ["avg", "Средняя"], ["n_adds", "Сетка"],
+  ["stop", "Стоп вх."], ["tp", "Тейк"], ["exit", "Выход $"],
+  ["reason", "Исход"], ["pnl", "PnL $"], ["hold_h", "Часов"], ["seg", "Период"],
+];
+function cmp(a, b, k, dir) {
+  let x, y;
+  if (k === "side") { x = a.long ? 1 : 0; y = b.long ? 1 : 0; }
+  else if (k === "n_adds") { x = a.adds.length; y = b.adds.length; }
+  else if (k === "seg") { x = isHoldout(a) ? 1 : 0; y = isHoldout(b) ? 1 : 0; }
+  else { x = a[k]; y = b[k]; }
+  if (typeof x === "string" || typeof y === "string")
+    return String(x === undefined ? "" : x)
+      .localeCompare(String(y === undefined ? "" : y)) * dir;
+  x = TVK.isNum(Number(x)) ? Number(x) : -Infinity;
+  y = TVK.isNum(Number(y)) ? Number(y) : -Infinity;
+  return (x - y) * dir;
+}
+function renderCycles() {
+  const t0 = now();
+  const list = (SRC === "live" ? LIVE : BACK).filter(tradeVisible);
+  const done = list.filter(c => c.pnl !== null && c.pnl !== undefined);
+  const wins = done.filter(c => c.pnl > 0).length;
+  const total = done.reduce((a, c) => a + c.pnl, 0);
+  $("s_n").textContent = done.length;
+  $("s_n_lab").textContent = SRC === "live" ? "циклов в логе"
+    : (IS_FINAL ? "циклов за всю историю" : "циклов за ~90 дней");
+  $("s_wr").textContent = done.length
+    ? Math.round(wins / done.length * 100) + "%" : "–";
+  const sp = $("s_pnl");
+  sp.textContent = done.length ? money(total) : "–";
+  sp.className = total >= 0 ? "pos" : "neg";
+  const nh = list.filter(isHoldout).length;
+  $("s_hold").textContent = (SRC === "live" || HOLD === null) ? "—" : nh;
+
+  const rows = list.slice().sort((a, b) => cmp(a, b, sortTr.k, sortTr.dir));
+  const cut = rows.slice(0, TBL_MAX);
+  const head = "<thead><tr>" + TR_COLS.map(c => '<th data-k="' + c[0] + '">'
+    + c[1] + (sortTr.k === c[0] ? (sortTr.dir > 0 ? " ▲" : " ▼") : "")
+    + "</th>").join("") + "</tr></thead>";
+  const body = cut.map(c =>
+    '<tr data-k="' + (c.live ? "l" : "s") + c.idx + '"'
+    + (isHoldout(c) ? ' class="hold"' : "") + ">"
+    + "<td>" + c.idx + "</td>"
+    + "<td>" + TVK.fmtDT(c.t0) + "</td>"
+    + "<td>" + (c.t1 ? TVK.fmtDT(c.t1) : "открыт") + "</td>"
+    + '<td class="' + (c.long ? "pos" : "neg") + '">'
+    + (c.long ? "LONG" : "SHORT") + "</td>"
+    + "<td>" + px(c.entry) + "</td>"
+    + "<td>" + px(c.avg) + "</td>"
+    + "<td>" + c.adds.length + "</td>"
+    + "<td>" + px(c.stop) + "</td>"
+    + "<td>" + px(c.tp) + "</td>"
+    + "<td>" + px(c.exit) + "</td>"
+    + '<td class="' + (c.reason === "tp" ? "pos" : c.reason === "stop" ? "neg"
+        : c.liq ? "liq" : "") + '">'
+    + (c.liq ? "ЛИКВ." : reasonRu(c.reason)) + "</td>"
+    + '<td class="' + (c.pnl === null || c.pnl === undefined ? ""
+        : (c.pnl >= 0 ? "pos" : "neg")) + '">' + money(c.pnl) + "</td>"
+    + "<td>" + (c.t1 ? TVK.fmtN(c.hold_h, 1) : "–") + "</td>"
+    + '<td class="' + (isHoldout(c) ? "" : "muted-2") + '">'
+    + (c.live ? "живой" : isHoldout(c) ? "экзамен" : "обучение")
+    + "</td></tr>").join("");
+  $("cycles").innerHTML = head + "<tbody>"
+    + (body || '<tr><td colspan="14" class="empty">'
+      + (SRC === "live" ? "живой лог пуст — бот ещё не торговал"
+        : "под фильтр не попало ни одного цикла") + "</td></tr>") + "</tbody>";
+  $("trCnt").textContent = rows.length + " из " + (SRC === "live"
+    ? LIVE.length : BACK.length);
+  $("tblNote").textContent = rows.length > TBL_MAX
+    ? `Показаны первые ${TBL_MAX} строк из ${rows.length} — сортировка по клику `
+      + "на заголовок и фильтр над графиком работают по всему списку."
+    : "Клик по строке — зум на цикл и линии входа / средней / стопа / тейка. "
+      + "Сортировка — клик по заголовку.";
+  for (const th of $("cycles").querySelectorAll("th[data-k]"))
+    th.onclick = () => {
+      const k = th.getAttribute("data-k");
+      sortTr = { k: k, dir: sortTr.k === k ? -sortTr.dir : -1 };
+      renderCycles();
+    };
+  $("cycles").onclick = e => {
+    const tr = e.target.closest("tr[data-k]");
+    if (!tr) return;
+    const k = tr.dataset.k;
+    const arr = k[0] === "l" ? LIVE : BACK;
+    const c = arr.find(x => x.idx === +k.slice(1));
+    if (c) selectCycle(c);
+  };
+  if (SEL) {
+    const arr = SEL.live ? LIVE : BACK;
+    const c = arr.find(x => x.idx === SEL.idx);
+    if (c) markSel(c);
+  }
+  PERF.table = Math.round(now() - t0);
+}
+$("segSrc").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  for (const x of $("segSrc").querySelectorAll("button"))
+    x.classList.toggle("on", x === b);
+  SRC = b.dataset.s;
+  renderCycles();
+};
+
+/* ---------- переключатель ТФ отображения ----------
+   Бот считает сигналы только на своём ТФ; смотреть их можно на любом, как в
+   терминале — сделки пересчитываются под новую сетку баров. */
+function buildTFPills() {
+  const host = $("tfPills");
+  host.innerHTML = TF_LIST.map(t => '<button type="button" data-tf="' + t.iv
+    + '"' + (t.iv === VIEW_TF ? ' class="on"' : "") + ">" + t.label
+    + "</button>").join("");
+  host.onclick = e => {
+    const b = e.target.closest("button");
+    if (b) switchTF(b.dataset.tf);
+  };
+  $("legTf").textContent = (TF_LIST.find(x => x.iv === VIEW_TF) || {}).label
+    || VIEW_TF;
+}
+async function switchTF(tf) {
+  if (tf === VIEW_TF || !TF_LIST.some(x => x.iv === tf)) return;
+  const prev = VIEW_TF, prevBar = VIEW_BAR;
+  try {
+    const cc = await getJSON(`/api/bot_candles/${SYM}?interval=${tf}`);
+    if (!Array.isArray(cc) || !cc.length) throw new Error("пусто");
+    VIEW_TF = tf;
+    VIEW_BAR = tf === "D" ? 86400 : Number(tf) * 60;
+    HIST = cc;
+    applyCandles();
+    for (const b of $("tfPills").querySelectorAll("button"))
+      b.classList.toggle("on", b.dataset.tf === tf);
+    $("legTf").textContent = (TF_LIST.find(x => x.iv === tf) || {}).label || tf;
+  } catch (e) {
+    console.error(e);
+    VIEW_TF = prev; VIEW_BAR = prevBar;
+  }
+}
+
+/* ---------- сборка графика под текущий ТФ ---------- */
+let TAIL = [];        // свежие свечи с биржи (родной ТФ бота, ~90 дней)
+/* История на диске заканчивается днём последнего пересчёта, а бот торгует
+   сейчас — поэтому хвост с биржи склеиваем с историей. На чужом ТФ свечи
+   хвоста сначала собираем в бары нужного размера (границы те же, что в
+   файлах истории: и 4ч, и сутки нарезаны от 00:00 UTC). */
+function aggregate(raw, secs) {
+  if (secs <= BAR) return raw;
+  const out = [], m = new Map();
+  for (const c of raw) {
+    const t = TVK.ts(c.time !== undefined ? c.time : c[0]);
+    if (t === null) continue;
+    const o = c.open !== undefined ? c.open : c[1];
+    const h = c.high !== undefined ? c.high : c[2];
+    const l = c.low !== undefined ? c.low : c[3];
+    const cl = c.close !== undefined ? c.close : c[4];
+    const k = Math.floor(t / secs) * secs;
+    const b = m.get(k);
+    if (!b) { const nb = { time: k, open: o, high: h, low: l, close: cl };
+      m.set(k, nb); out.push(nb); }
+    else { b.high = Math.max(b.high, h); b.low = Math.min(b.low, l); b.close = cl; }
+  }
+  // первый бар хвоста может быть собран не с начала — он бы затёр полный
+  // бар истории неполным
+  if (out.length && out[0].time < TVK.ts(raw[0].time !== undefined
+      ? raw[0].time : raw[0][0])) out.shift();
+  return out;
+}
+function applyCandles(keepZoom) {
+  const t0 = now();
+  let vis = null;
+  if (keepZoom) {
+    try { vis = chart.timeScale().getVisibleLogicalRange(); } catch (e) {}
+  }
+  const tail = TAIL.length ? aggregate(TAIL, VIEW_BAR) : [];
+  CANDLES = TVK.bars(tail.length ? HIST.concat(tail) : HIST);
+  TIMES = CANDLES.map(c => c.time);
+  PERF.bars = Math.round(now() - t0);
+  if (!CANDLES.length) return;
+  PX_DIG = pxDigits(CANDLES[CANDLES.length - 1].close);
+  // без этого шкала цен у DOGE рисует все линии как «0.20»
+  candleS.applyOptions({ priceFormat: { type: "price", precision: PX_DIG,
+    minMove: Math.pow(10, -PX_DIG) } });
+  const t1 = now();
+  candleS.setData(CANDLES);
+  PERF.setData = Math.round(now() - t1);
+  $("trange").textContent = TVK.fmtDate(CANDLES[0].time) + " — "
+    + TVK.fmtDate(CANDLES[CANDLES.length - 1].time) + " · "
+    + CANDLES.length.toLocaleString("ru") + " баров";
+  const t2 = now();
+  const rsi = calcRsi(CANDLES.map(c => c.close), RSI_P);
+  rsiS.setData(CANDLES.map((c, i) => rsi[i] === null
+    ? { time: c.time } : { time: c.time, value: +rsi[i].toFixed(2) }));
+  updateRsiTitle();
+  PERF.rsi = Math.round(now() - t2);
+  const t3 = now();
+  indexBars();
+  drawHoldout();
+  PERF.series = Math.round(now() - t3);
+  /* на 15м/1ч вся история — десятки тысяч свечей, «Всё» там показывать
+     нечего: открываем последний месяц. На 4ч и днях помещается всё.
+     Досыл свежего хвоста масштаб НЕ сбрасывает — иначе он выдёргивал бы
+     график из-под руки через несколько секунд после открытия. */
+  if (vis) { try { chart.timeScale().setVisibleLogicalRange(vis); } catch (e) {} }
+  else {
+    rng.refresh();
+    if (VIEW_BAR <= 3600) rng.set(30);
+  }
+  rebuildMarkers();          // синхронно: этот замер и попадает в консоль
+}
+function updateRsiTitle() {
+  const own = VIEW_TF === BOT_TF;
+  $("rsiTitle").innerHTML = "RSI(" + RSI_P + ") "
+    + '<span class="muted-2">— пороги ' + RSI_OS + " / " + (100 - RSI_OS)
+    + " из конфига бота, " + (own
+      ? "тот самый ТФ, по которому бот и входит"
+      : "но считается по свечам графика — бот смотрит на " + TF_LABEL)
+    + "</span>";
+}
+
+/* Замер «не тормозит ли при тысяче сделок»: перерисовка маркеров на разных
+   масштабах. Включается адресом ...?bench=1, чтобы не мешать обычному
+   просмотру. */
+async function bench() {
+  if (!/[?&]bench=1/.test(location.search) || !TIMES.length) return;
+  // масштаб библиотека применяет к следующей отрисовке, поэтому между
+  // зумом и замером ждём два кадра — иначе меряли бы старое окно
+  const frame = () => new Promise(r =>
+    requestAnimationFrame(() => requestAnimationFrame(r)));
+  const first = TIMES[0], last = TIMES[TIMES.length - 1];
+  const out = [];
+  // пилюли масштаба «догоняют раскладку» повтором через 160 мс — ждём, пока
+  // они успокоятся, иначе замер мерил бы всё тот же месяц
+  await new Promise(r => setTimeout(r, 500));
+  for (const d of [1, 7, 30, 90, 365, 1200]) {
+    try {
+      chart.timeScale().setVisibleRange(
+        { from: Math.max(first, last - d * 86400), to: last });
+    } catch (e) { continue; }
+    await frame();
+    const t = now();
+    rebuildMarkers();
+    out.push(`${d}д ${(now() - t).toFixed(1)}мс/${PERF.markersN}марк`);
+  }
+  const t = now();
+  renderCycles();
+  out.push(`таблица ${(now() - t).toFixed(0)}мс`);
+  const line = "[bench] " + out.join(" · ");
+  console.log(line);
+  document.body.dataset.bench = line;
+  rng.set(30);
+}
+
+/* ---------- загрузка ---------- */
+async function load() {
+  const tAll = now();
+  const t0 = now();
+  const [hist, tr] = await Promise.all([
+    getJSON(`/api/bot_candles/${SYM}?interval=${VIEW_TF}`).catch(() => []),
+    IS_FINAL ? getJSON(`/api/bot_trades/${SYM}`).catch(() => ({ trades: [] }))
+             : Promise.resolve({ trades: [] })]);
+  PERF.fetchHistory = Math.round(now() - t0);
+  HIST = Array.isArray(hist) ? hist : [];
+  TMETA = tr || {};
+  HOLD = TVK.ts(TMETA.holdout_from);
+  BACK = (TMETA.trades || []).map(fromPrecomputed);
+  BACK.sort((a, b) => a.t0 - b.t0);
+  MAX_HOLD_SEC = BACK.reduce(
+    (m, c) => Math.max(m, (c.t1 || c.t0) - c.t0), 3 * 86400);
+
+  $("cntSim").textContent = BACK.length;
+  // пороги RSI из конфига бота — рисуем один раз
+  for (const lv of [RSI_OS, 100 - RSI_OS])
+    rsiS.createPriceLine({ price: lv, color: "#363a45", lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+      title: String(lv) });
+  applyCandles();
+  renderCycles();
+
+  PERF.total = Math.round(now() - tAll);
+  PERF.trades = BACK.length;
+  PERF.candles = CANDLES.length;
+  const line = `[bot] ${SYM}: ${PERF.trades} циклов, ${PERF.candles} свечей · `
+    + `загрузка ${PERF.fetchHistory}мс · bars ${PERF.bars}мс · `
+    + `setData ${PERF.setData}мс · RSI ${PERF.rsi}мс · серии ${PERF.series}мс · `
+    + `маркеры ${PERF.markers}мс (${PERF.markersN}) · `
+    + `таблица ${PERF.table}мс · ИТОГО ${PERF.total}мс`;
+  console.log(line);
+  document.body.dataset.perf = line;
+  loadTail();          // намеренно без await: см. комментарий в loadTail
+  loadLive();
+  await bench();
+}
+
+/* Свежий хвост: биржевые свечи и симуляция за последние ~90 дней. История на
+   диске заканчивается днём последнего пересчёта, а бот торгует сейчас.
+   ЖДАТЬ его нельзя: /api/sim считает стратегию на сервере и на холодном кэше
+   отвечает 5-7 секунд — столько график стоял бы пустым. Поэтому историю
+   рисуем сразу, а хвост доклеиваем, когда придёт. */
+async function loadTail() {
+  const t1 = now();
+  try {
+    const [cc, sim] = await Promise.all([
+      getJSON(`/api/candles/${SYM}/${MODE}`),
+      getJSON(`/api/sim/${SYM}/${MODE}`)]);
+    TAIL = Array.isArray(cc) ? cc : [];
+    const edge = TMETA.last_ts || 0;
+    const fresh = buildCycles(sim.events, false).filter(c => c.t0 > edge);
+    let n = BACK.length;
+    for (const c of fresh) { c.idx = ++n; BACK.push(c); }
+    $("cntSim").textContent = BACK.length;
+    if (TAIL.length || fresh.length) { applyCandles(true); renderCycles(); }
+    console.log(`[bot] свежий хвост: ${TAIL.length} свечей, `
+      + `${fresh.length} циклов после ${TVK.fmtDate(edge)} — `
+      + `${Math.round(now() - t1)}мс`);
+  } catch (e) { console.warn("свежий хвост не загрузился:", e); }
+}
+
+async function loadLive() {
+  try {
+    const tr = await getJSON(`/api/trades/${SYM}/${MODE}`);
+    LIVE = buildCycles(tr.events, true);
+    $("cntLive").textContent = LIVE.length;
+    indexBars();
+    scheduleMarkers();
+    if (SRC === "live") renderCycles();
+  } catch (e) { console.warn(e); }
+  try {
+    const st = await getJSON(`/api/status/${SYM}/${MODE}`);
+    const badge = $("status");
+    badge.textContent = st.active ? "● работает" : "○ выключен";
+    badge.className = "badge " + (st.active ? "badge--on" : "badge--off");
+    const tail = st.tail || [];
+    $("logtail").textContent = tail.length ? tail.join("")
+      : "Лог пуст — бот ещё не запускался.";
+  } catch (e) { console.warn(e); }
+}
+
+/* ---------- тумблеры ---------- */
+function bindChip(chipId, inputId, fn) {
+  const chip = $(chipId), inp = $(inputId);
+  const sync = () => chip.classList.toggle("on", inp.checked);
+  inp.onchange = () => { sync(); fn(inp.checked); };
+  sync();
+}
+bindChip("cSim", "tgSim", scheduleMarkers);
+bindChip("cAdd", "tgAdd", scheduleMarkers);
+bindChip("cLive", "tgLive", scheduleMarkers);
+bindChip("cLinks", "tgLinks", scheduleMarkers);
+bindChip("cAvg", "tgAvg", scheduleMarkers);
+bindChip("cHold", "tgHold", v => {
+  holdS.applyOptions({ visible: v });
+  scheduleMarkers();
+});
+bindChip("cRsi", "tgRsi", v => { $("rsiWrap").style.display = v ? "" : "none"; });
+$("fTrades").onchange = () => {
+  scheduleMarkers(); renderCycles();
+};
+
+buildTFPills();
+load().catch(e => console.error(e));
+/* обновляем только живую часть: перекачивать 3.2 года свечей раз в минуту
+   незачем — история не меняется */
+setInterval(() => loadLive().catch(e => console.error(e)), 60000);
+
+/* ---------- статистика по годам и месяцам ---------- */
 async function loadFinalStats() {
-  const d = await (await fetch(`/api/finalstats/${SYM}`)).json();
+  const d = await getJSON(`/api/finalstats/${SYM}`);
   if (!d.available) return;
-  document.getElementById("finalstatsCard").style.display = "";
-  document.getElementById("fs_period").textContent = `(${d.period_start} — ${d.period_end})`;
-  const fmtPct = v => (v >= 0 ? "+" : "") + v + "%";
-  const ret = document.getElementById("fs_ret");
-  ret.textContent = fmtPct(d.overall.ret);
-  ret.className = d.overall.ret >= 0 ? "pnl-pos" : "pnl-neg";
-  document.getElementById("fs_wr").textContent = d.overall.wr + "%";
-  document.getElementById("fs_dd").textContent = d.overall.dd + "%";
-  document.getElementById("fs_pos").textContent = d.overall.pos_share + "%";
+  $("finalstatsCard").style.display = "";
+  $("fs_period").textContent = `${d.period_start} — ${d.period_end}`;
+  const ret = $("fs_ret");
+  ret.textContent = TVK.fmtPct(d.overall.ret);
+  ret.className = d.overall.ret >= 0 ? "pos" : "neg";
+  $("fs_wr").textContent = d.overall.wr + "%";
+  $("fs_dd").textContent = d.overall.dd + "%";
+  $("fs_pos").textContent = d.overall.pos_share + "%";
 
-  document.getElementById("fs_years").innerHTML =
-    "<tr><th>Период</th><th>Доход</th><th>Сделок</th><th>WR</th><th>DD</th></tr>" +
-    d.years.map(y => `<tr><td>${y.period}</td>
-      <td class="${y.ret >= 0 ? "pnl-pos" : "pnl-neg"}">${fmtPct(y.ret)}</td>
-      <td>${y.trades}</td><td>${y.wr}%</td><td>${y.dd}%</td></tr>`).join("");
+  $("fs_years").innerHTML =
+    "<thead><tr><th>Период</th><th>Доход</th><th>Сделок</th><th>WR</th><th>DD</th></tr></thead><tbody>"
+    + d.years.map(y => `<tr><td>${y.period}</td>
+      <td class="${y.ret >= 0 ? "pos" : "neg"}">${TVK.fmtPct(y.ret)}</td>
+      <td>${y.trades}</td><td>${y.wr}%</td><td>${y.dd}%</td></tr>`).join("")
+    + "</tbody>";
 
-  const sel = document.getElementById("fs_month_sel");
+  const sel = $("fs_month_sel");
   sel.innerHTML = d.months.map((m, i) => `<option value="${i}">${m.start} — ${m.end}</option>`).join("");
   sel.value = d.months.length - 1;
   const showMonth = () => {
     const m = d.months[sel.value];
-    const mr = document.getElementById("fs_m_ret");
-    mr.textContent = fmtPct(m.ret_pct);
-    mr.className = m.ret_pct >= 0 ? "pnl-pos" : "pnl-neg";
-    const mu = document.getElementById("fs_m_usdt");
-    mu.textContent = (m.ret_usdt >= 0 ? "+" : "") + m.ret_usdt;
-    mu.className = m.ret_usdt >= 0 ? "pnl-pos" : "pnl-neg";
-    document.getElementById("fs_m_trades").textContent = m.trades;
-    document.getElementById("fs_m_wins").textContent = m.wins;
+    const mr = $("fs_m_ret");
+    mr.textContent = TVK.fmtPct(m.ret_pct);
+    mr.className = m.ret_pct >= 0 ? "pos" : "neg";
+    const mu = $("fs_m_usdt");
+    mu.textContent = money(m.ret_usdt);
+    mu.className = m.ret_usdt >= 0 ? "pos" : "neg";
+    $("fs_m_trades").textContent = m.trades;
+    $("fs_m_wins").textContent = m.wins;
   };
   sel.onchange = showMonth;
   showMonth();
 }
-loadFinalStats();
+loadFinalStats().catch(e => console.error(e));
 
-function miniChart(id) {
-  const c = LightweightCharts.createChart(document.getElementById(id), {
-    layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
-    grid: { vertLines: { color: "#22252b" }, horzLines: { color: "#22252b" } },
-    timeScale: { timeVisible: false }, height: 190, autoSize: true,
-    rightPriceScale: { scaleMargins: { top: 0.12, bottom: 0.08 } },
-  });
-  return c;
-}
-
+/* ---------- аналитика: капитал, просадка, месяцы ---------- */
 async function loadAnalytics() {
-  const key = MODE === "final" ? `bot_${SYM}` : null;
-  if (!key) return;
-  const d = await (await fetch(`/api/analytics/${key}`)).json();
+  if (MODE !== "final") return;
+  const d = await getJSON(`/api/analytics/bot_${SYM}`);
   if (!d.available) return;
-  document.getElementById("analyticsCard").style.display = "";
+  $("analyticsCard").style.display = "";
   const s = d.stats;
-  document.getElementById("an_final").textContent =
-    `$50 → $${s.final_usd} (${s.final_pct >= 0 ? "+" : ""}${s.final_pct}%)`;
+  const pos = s.final_pct >= 0;
+  $("an_final").textContent = `$50 → $${s.final_usd} (${pos ? "+" : ""}${s.final_pct}%)`;
+  $("topStripe").style.display = "";
+  const set = (id, v, cl) => { const e = $(id); e.textContent = v; if (cl) e.className = "v " + cl; };
+  set("t_final", "$" + s.final_usd, pos ? "pos" : "neg");
+  set("t_ret", TVK.fmtPct(s.final_pct, 0), pos ? "pos" : "neg");
+  set("t_dd", s.max_dd + "%");
+  set("t_wr", s.wr + "%");
+  set("t_pf", s.profit_factor ?? "∞");
+  set("t_mo", s.months_pos + "/" + s.months_total);
 
   const tile = (v, l, cls) =>
-    `<div><b class="${cls || ""}">${v}</b><span>${l}</span></div>`;
-  document.getElementById("an_tiles").innerHTML =
-    tile("$" + s.final_usd, "итог из $50", s.final_pct >= 0 ? "pnl-pos" : "pnl-neg") +
-    tile(s.profit_factor ?? "∞", "profit factor (доход/убыток)",
-         (s.profit_factor ?? 9) >= 1.5 ? "pnl-pos" : "") +
+    `<div class="tile"><b class="${cls || ""}">${v}</b><span>${l}</span></div>`;
+  $("an_tiles").innerHTML =
+    tile("$" + s.final_usd, "итог из $50", pos ? "pos" : "neg") +
+    tile(s.profit_factor ?? "∞", "profit factor", (s.profit_factor ?? 9) >= 1.5 ? "pos" : "") +
     tile(s.max_dd + "%", "макс. просадка") +
     tile(s.wr + "%", `winrate (${s.wins} из ${s.trades})`);
-  document.getElementById("an_tiles2").innerHTML =
+  $("an_tiles2").innerHTML =
     tile("+" + s.avg_win, "средняя прибыльная, $") +
-    tile(s.avg_loss, "средняя убыточная, $", "pnl-neg") +
+    tile(s.avg_loss, "средняя убыточная, $", "neg") +
     tile(s.max_win_streak + " / " + s.max_loss_streak, "макс. серия побед / убытков") +
     tile((s.best_month >= 0 ? "+" : "") + s.best_month + "% / " + s.worst_month + "%",
          "лучший / худший месяц") +
     tile(s.months_pos + " из " + s.months_total, "месяцев в плюсе");
 
-  const eqC = miniChart("eqChart");
-  const eqS = eqC.addAreaSeries({ lineColor: "#E3A83E", lineWidth: 2,
-    topColor: "rgba(227,168,62,.25)", bottomColor: "rgba(227,168,62,0)",
+  const eqC = TVK.mini("eqChart", 190);
+  const eqS = eqC.addAreaSeries({ lineColor: C.accent, lineWidth: 2,
+    topColor: "rgba(41,98,255,.25)", bottomColor: "rgba(41,98,255,0)",
     priceLineVisible: false });
-  eqS.setData(d.equity.map(p => ({ time: p[0], value: p[1] })));
-  eqC.timeScale().fitContent();
+  eqS.setData(TVK.points(d.equity));
+  TVK.fit(eqC);
+  TVK.lineLegend(eqC, "eqLeg", [{ series: eqS, label: "капитал", color: C.accent,
+    fmt: v => TVK.fmtUsd(v, 2) }], { idle: "наведи курсор" });
 
-  const ddC = miniChart("ddChart");
-  const ddS = ddC.addAreaSeries({ lineColor: "#E06B5E", lineWidth: 1,
-    topColor: "rgba(224,107,94,0)", bottomColor: "rgba(224,107,94,.3)",
+  const ddC = TVK.mini("ddChart", 190);
+  const ddS = ddC.addAreaSeries({ lineColor: C.down, lineWidth: 1,
+    topColor: "rgba(239,83,80,0)", bottomColor: "rgba(239,83,80,.3)",
     priceLineVisible: false });
-  ddS.setData(d.drawdown.map(p => ({ time: p[0], value: p[1] })));
-  ddC.timeScale().fitContent();
-
-  const moC = miniChart("moChart");
-  const moS = moC.addHistogramSeries({ priceLineVisible: false });
-  moS.setData(d.monthly.map(p => ({ time: p[0], value: p[1],
-    color: p[1] >= 0 ? "#46C186" : "#E06B5E" })));
-  moC.timeScale().fitContent();
+  ddS.setData(TVK.points(d.drawdown));
+  TVK.fit(ddC);
+  TVK.lineLegend(ddC, "ddLeg", [{ series: ddS, label: "просадка", color: C.down,
+    fmt: v => TVK.fmtN(v, 1) + "%" }], { idle: "наведи курсор" });
+  TVK.sync(eqC, ddC);
 }
-loadAnalytics();
+loadAnalytics().catch(e => console.error(e));
+
+/* ---------- прибыль по месяцам ---------- */
+if (MODE === "final") {
+  $("moCard").style.display = "";
+  TVK.monthChart("moBox", "bot_" + SYM, {
+    caption: "доход за месяц",
+    onEmpty: () => { $("moCard").style.display = "none"; } });
+}
 </script>
 </body>
 </html>

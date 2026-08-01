@@ -3,81 +3,469 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Эволюция ботов v1→v8</title>
+<title>Хроника исследования</title>
+<link rel="stylesheet" href="/static/app.css">
 <style>
-  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
-    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
-  body { background:var(--bg); color:var(--ink); margin:0;
-    font:15px/1.55 "Segoe UI", system-ui, sans-serif; padding:32px 18px 60px; }
-  .wrap { max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:26px; }
-  nav { display:flex; gap:16px; }
-  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
-  nav a.active { color:var(--accent); }
-  nav a:hover { color:var(--ink); }
-  h1 { font-size:26px; margin:0 0 4px; }
-  .sub { color:var(--muted); margin:0 0 6px; max-width:76ch; }
-  .note { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--accent);
-    border-radius:8px; padding:12px 16px; font-size:13.5px; max-width:76ch; color:var(--muted); }
-  .coin-block { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; }
-  .coin-block h2 { margin:0 0 4px; font-size:19px; }
-  .coin-block .period { color:var(--muted); font-size:12.5px; margin:0 0 16px; }
-  .waves { display:flex; flex-direction:column; gap:2px; }
-  .wave { display:grid; grid-template-columns:150px 1fr 90px 60px 60px; gap:10px;
-    align-items:center; padding:9px 10px; border-radius:6px; font-size:13px; }
-  .wave:nth-child(odd) { background:#1f232a; }
-  .wave .key { font-weight:700; color:var(--accent); font-size:12px; }
-  .wave .desc { color:var(--muted); font-size:12px; }
-  .wave .ret { font-family:Consolas,monospace; font-weight:700; text-align:right;
-    font-variant-numeric:tabular-nums; }
-  .wave .dd { color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; }
-  .wave .lev { color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; }
-  .pnl-pos { color:var(--up); } .pnl-neg { color:var(--down); }
-  .bar-wrap { grid-column:1/-1; height:6px; background:#0e1013; border-radius:3px; overflow:hidden;
-    margin-top:2px; }
-  .bar { height:100%; border-radius:3px; }
-  .head { display:grid; grid-template-columns:150px 1fr 90px 60px 60px; gap:10px;
-    padding:0 10px 6px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-  .head span:not(:first-child) { text-align:right; }
+  /* поколения конфигов ботов — компактные строки внутри карточки */
+  .wave { display: grid; grid-template-columns: 118px 1fr 78px 52px 48px;
+    gap: 12px; align-items: center; padding: 8px 10px; border-radius: 10px;
+    font-size: 13px; }
+  .wave:hover { background: rgba(255,255,255,.035); }
+  .wave .key { font-weight: 640; color: var(--ink-hi); font-size: 12px; }
+  .wave .desc { color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .wave .ret, .wave .dd, .wave .lev { text-align: right;
+    font-variant-numeric: tabular-nums; }
+  .wave .ret { font-weight: 640; font-size: 13.5px; }
+  .wave .dd, .wave .lev { color: var(--muted); }
+  .bar-wrap { grid-column: 1/-1; height: 3px; background: var(--bg-elev);
+    border-radius: 3px; overflow: hidden; margin-top: 3px; }
+  .bar { height: 100%; border-radius: 3px; }
+  .whead { display: grid; grid-template-columns: 118px 1fr 78px 52px 48px;
+    gap: 12px; padding: 0 10px 7px; font-size: 10.5px; color: var(--muted-2);
+    text-transform: uppercase; letter-spacing: .06em; font-weight: 640; }
+  .whead span:not(:first-child) { text-align: right; }
+  @media (max-width: 720px) {
+    .wave, .whead { grid-template-columns: 88px 1fr 70px; }
+    .wave .dd, .wave .lev,
+    .whead span:nth-child(4), .whead span:nth-child(5) { display: none; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <nav><a href="/">Боты</a><a href="/signals">Сигналы BTC</a><a href="/pnl">PnL-график</a><a class="active" href="/evolution">Эволюция</a><a href="/archive">Архив</a></nav>
-  <div>
-    <h1>📈 Эволюция ботов: v1 → v8</h1>
-    <p class="sub">Один и тот же период (3.2 года, честный движок) прогнан через все поколения конфигов каждой монеты — видно, что реально улучшало стратегию, а что было подгонкой под короткое окно.</p>
-  </div>
-  <div class="note">
-    ⚠ <b>Про кажущиеся «падения» между v6 и v7.</b> В v6 плечо выбиралось на глаз; в v7 — объективным правилом (макс. плечо с просадкой ≤20% на 3.2г). Из-за этого у части монет доход v6→v7 менялся не потому, что стратегия стала хуже/лучше, а из-за смены плеча. Сравнивай по колонке «плечо», не только по доходу.
+{% set nav = 'evolution' %}{% include '_nav.html' %}
+
+{#  Хроника — статичный текст: это протокол уже проведённых проверок.
+    Каждая цифра взята из вывода конкретного скрипта проекта (он указан
+    в строке «где смотреть»), а не пересчитывается страницей.
+    v: no = не подтверждено, part = частично, ok = подтверждено,
+       tool = инструмент/методика (проверка сама по себе ничего не доказывает) #}
+{% set waves = [
+  {'n': 1, 'v': 'tool', 'tag': 'боты',
+   'when': '23–24 июля',
+   't': 'Первые эволюции сеточной стратегии (v1–v5)',
+   'q': 'Можно ли генетикой подобрать параметры RSI-сетки: период и порог RSI, число колен, шаг, тейк, стоп, фильтры funding / открытого интереса / S&P / DXY / золота.',
+   'num': 'DOGE −76% → +65%',
+   'cap': 'на обучающем периоде 3.2 года',
+   'src': 'evolution.py … evolution5.py, build_timeline.py',
+   'more': ['Подбор работает: конфиги перестали сливать депозит и вышли в плюс на истории. Но это результат ПОДБОРА на тех же данных, на которых он измерен.',
+            'У тогдашнего walk-forward была утечка: обучающая выборка всегда начиналась с начала истории, поэтому «экзамен» раннего фолда попадал внутрь обучения позднего. Все цифры этой волны — гипотеза, а не доказательство.']},
+  {'n': 2, 'v': 'part', 'tag': 'боты',
+   'when': '24 июля',
+   't': 'v6: медвежьи специалисты',
+   'q': 'Станет ли лучше, если запретить торговлю в подтверждённом бычьем рынке и торговать только bear и боковик.',
+   'num': '+65% → +145%',
+   'cap': 'DOGE, обучение — но плечо тогда же выросло с x5 до x10',
+   'src': 'evolution6.py, config.py (архивные режимы bear)',
+   'more': ['Режимный гейт действительно оставил только те участки, где сетка выживает. Однако плечо в этой волне выбиралось на глаз, и рост дохода объясняется прежде всего им, а не качеством стратегии.',
+            'Урок волны: сравнивать поколения можно только при одинаковом правиле выбора плеча. С v7 плечо стало выбираться объективно — максимальное, при котором просадка ≤20% на 3.2 года.']},
+  {'n': 3, 'v': 'no', 'tag': 'боты',
+   'when': '26–27 июля',
+   't': 'v7 / v8: классические паттерны и Smart Money как гены',
+   'q': 'Добавляют ли что-нибудь двойные вершины, голова-плечи, треугольники (patterns.py) и order blocks / FVG / BOS-CHoCH (smc.py), если сделать их ГЕНАМИ одного генома вместе с направлением и режимом.',
+   'num': '0 из 2 семейств',
+   'cap': 'ни паттерны, ни SMC не прошли экзамен',
+   'src': 'evolution7.py, evolution8.py, patterns.py, smc.py',
+   'more': ['Отбор со свободой «взять или не взять» стабильно выбирал конфиги БЕЗ этих генов. Единственная польза волны — сам поиск нашёл более сильный базовый конфиг LTC (торгует во всех режимах).',
+            'Позже, на совсем другом сетапе (капитуляция) и другим кодом, SMC проверили ещё раз: ордер-блок как фильтр входа отбирает сделки ХУЖЕ отсеянных (−0.371R, t=−2.85). Ветку можно закрывать.']},
+  {'n': 4, 'v': 'tool', 'tag': 'сигналы',
+   'when': '27 июля',
+   't': 'Сигнальный помощник BTC v1: 6 среднесрочных сетапов',
+   'q': 'Сетапы «руками»: ложный пробой, капитуляция, нож-отскок, тренд-шорт, диапазон, перегрев. Сигнал на закрытии 4ч-бара, исполнение и стопы — по 15м, жёсткий R:R 1:3.',
+   'num': '6 сетапов',
+   'cap': 'holdout ещё не выделялся — сравнивать было не с чем',
+   'src': 'signal_engine.py, evolution9.py, finalize_signals.py',
+   'more': ['Волна дала движок и словарь сетапов, которыми проект пользуется до сих пор. Доказательной ценности у её цифр нет: весь период был обучающим.',
+            'Страницы этого движка остались на сайте как архивный вид (пометка «архив» в шапке).']},
+  {'n': 5, 'v': 'tool', 'tag': 'сигналы',
+   'when': '30 июля',
+   't': 'Движок v2 и отбор v10–v11',
+   'q': 'Переписанный движок: ворота входа, вход лимиткой на ретесте, диагностика near-miss, часовые варианты сетапов, честные издержки и ликвидации.',
+   'num': '4 сетапа × 2 ТФ',
+   'cap': 'инструмент готов, вердиктов пока нет',
+   'src': 'signal_engine2.py, evolution10.py, evolution11.py',
+   'more': ['Главное приобретение — возможность спросить движок «почему сигнала не было» и увидеть, какое именно ворото закрыто. Без этого любые правки сетапа делались вслепую.',
+            'Владелец убрал со страницы четыре сетапа (range_long, range_short, sweep_short, pump_short) — они остались только в архивных конфигах.']},
+  {'n': 6, 'v': 'no', 'tag': 'сигналы',
+   'when': '31 июля, ночь',
+   't': 'v12: неприкосновенный holdout и три независимых зерна',
+   'q': 'Первый по-настоящему честный отбор: последние 28% истории не участвуют в подборе, каждый сетап отбирается тремя разными случайными зёрнами, статус даётся только за воспроизводимость.',
+   'num': '0 из 8',
+   'cap': 'торговых нет: 3 наблюдение, 5 не подтверждены',
+   'src': 'evolution12.py, finalize_signals4.py, signal_setups2.json',
+   'more': ['Лучший вариант (bounce_short@240) прошёл экзамен лишь в 1 прогоне отбора из 3 — то есть при смене случайного зерна побеждает другой конфиг.',
+            'Остальные провалились по прямым порогам: expectancy ниже нуля, PF < 1.2 или слишком мало сделок на holdout (2–7 при минимуме 8).']},
+  {'n': 7, 'v': 'no', 'tag': 'боты',
+   'when': '31 июля, ночь',
+   't': 'Штормовой фильтр: не торговать в резких движениях',
+   'q': 'Шесть наборов порогов (ход за сутки, за неделю, ранг дневного ATR, режим рынка) на портфеле из пяти ботов. Критерий объявлен ДО замера: просадка меньше минимум на 0.5 п.п. при потере дохода не больше 1 п.п.',
+   'num': '0 из 6',
+   'cap': 'фильтр вырезает лучшие сделки, а не худшие',
+   'src': 'storm_filter.py, storm_bots_report.py',
+   'more': ['Портфель на holdout без фильтра: +15.6% при просадке 5.6%. С фильтрами: от +5.9% до +15.4%, просадка не уменьшилась ни разу.',
+            'Средний R убранных сделок оказался ВЫШЕ, чем у оставленных, во всех шести вариантах и на обоих периодах. Это логично: RSI-сетка зарабатывает на возврате к среднему, а самый сильный возврат бывает как раз после резкого движения. STORM_ENABLED = False.']},
+  {'n': 8, 'v': 'no', 'tag': 'сигналы',
+   'when': '31 июля, ночь',
+   't': 'Предиктивный скоринг: заранее отличить хорошую сделку от плохой',
+   'q': 'Логистическая регрессия на 30 признаках сигнального бара предсказывает, закроется ли сделка тейком. Обучение на трейне, проверка на holdout, перестановочный тест.',
+   'num': 'AUC 0.451',
+   'cap': 'на holdout — хуже монетки, ранжирование перевёрнутое',
+   'src': 'signal_score.py, score_report.py',
+   'more': ['Ни одна из 8 моделей не отличима от случайной (все p от 0.07 до 0.98). Кросс-валидация внутри обучения сама отказалась фильтровать в 7 случаях из 8 — отрицательный ответ был виден ещё до holdout.',
+            'На двух наиболее правдоподобных сетапах фильтр «отсечь худшую половину» превратил +23.36R в +10.00R. Вывод: 30 признаков бара входа не содержат информации об исходе — исход решается тем, что происходит ПОСЛЕ входа.']},
+  {'n': 9, 'v': 'no', 'tag': 'сигналы',
+   'when': '31 июля, ночь',
+   't': 'Роутер: один часовой бот, переключающий четыре сетапа',
+   'q': 'Даст ли объединение сетапов преимущество над лучшим одиночным: приоритеты, кулдаун, запрет контр-тренда, реакция на шторм.',
+   'num': '−0.566R',
+   'cap': 'проигрыш лучшему одиночному сетапу на сделку',
+   'src': 'router_1h.py, evolution13.py',
+   'more': ['На holdout роутер дал expectancy −0.085R и PF 0.91 при 50 сделках; лучший одиночный сетап на том же окне — +0.481R на 35 сделках.',
+            'Отдельно измерена лестница плечей: ни одно плечо не даёт просадку ≤25% при положительном итоге. Вердикт скрипта — НЕ ПРОШЁЛ.']},
+  {'n': 10, 'v': 'no', 'tag': 'идеи',
+   'when': '31 июля, утро',
+   't': 'Сырое преимущество идей БЕЗ подбора параметров',
+   'q': 'Пять идей (пробой, тренд-пулбэк, капитуляция, отскок, сетка) с параметрами «из учебника», 12 вариантов × 15 комбинаций монета–ТФ. Критерии успеха объявлены до просмотра результатов.',
+   'num': '0 из 12',
+   'cap': 'ни один вариант не показал сырого преимущества',
+   'src': 'idea_test.py',
+   'more': ['Требовалось одновременно: t ≥ 2.0, прибыльных комбинаций ≥ 10 из 15, медианный exp_R > 0, выживание поправки Бонферрони и превосходство над случайным входом. Максимум, что получилось, — t = +1.58 у одного варианта.',
+            'Сумма итогов всех 12 вариантов по всем комбинациям: −1873% базы. Список идей, достойных переноса в новый движок, оказался пустым — и это ключевой факт всего проекта: оптимизация в прошлых волнах улучшала то, у чего нет исходного преимущества.']},
+  {'n': 11, 'v': 'part', 'tag': 'боты',
+   'when': '31 июля, утро',
+   't': 'Честная перепроверка пяти боевых ботов',
+   'q': 'Четыре ворот, объявленных заранее: плюс на holdout; лучше необученного конфига; стоит на плато, а не на шпиле (90 возмущений генома ±10%); обходит медиану 200 случайных геномов.',
+   'num': '2 из 5',
+   'cap': 'ETH и SOL — 4/4; DOGE 3/4; LTC 2/4; BTC 1/4',
+   'src': 'bots_honest.py',
+   'more': ['DOGE провалил ровно один пункт, зато важный: необученная сетка на том же holdout дала +50.3% против +38.3% у обученного бота. Подбор параметров сделал хуже, чем ничего.',
+            'У BTC на holdout всего 14 сделок за 10.7 месяца — на такой выборке статистически пуст любой вывод, и плюс, и минус. Его невозможно подтвердить в принципе, не удлинив историю.',
+            'Честная оценка (медиана 90 соседних конфигов) по портфелю: +5.8% за 10.7 месяца, то есть +0.54% в месяц.']},
+  {'n': 12, 'v': 'no', 'tag': 'сигналы',
+   'when': '31 июля, день',
+   't': 'Движок v3 и отбор v14',
+   'q': 'Шесть сетапов с зеркалами на пяти монетах, мультимонетность, набор позиции сеткой, свободный выход (тейк в R / по ATR / трейлинг / безубыток) — всё генами. Плюс правило переносимости на другую монету.',
+   'num': '0 из 2',
+   'cap': 'черновой прогон: ни одна связка не воспроизвелась',
+   'src': 'signal_engine3.py, evolution14.py, test_engine3_v3.py',
+   'more': ['Проверенные связки (breakout_long на BTC и ETH, 4ч) дали на holdout −0.797R и −0.535R. Зёрна при этом сходятся к похожим геномам (среднее расстояние 0.133 против 0.366 у случайных пар) — отбор устойчив, но устойчиво находит то, что не работает вне обучения.',
+            'Полный отбор v3 ещё не запускался, поэтому страница «Сетапы v3» пуста — это ожидаемое состояние, а не поломка.']},
+  {'n': 13, 'v': 'no', 'tag': 'сетка',
+   'when': '31 июля, вечер',
+   't': 'Сетка усреднения под микроскопом: четыре прогона подряд',
+   'q': 'Хвостовой риск, анатомия (что именно даёт результат), карта устойчивости 2916 комбинаций × 15 ячеек, и простая сетка на выживших элементах — как самостоятельный продукт.',
+   'num': '2.2%',
+   'cap': 'столько комбинаций прибыльны — это лотерея, а не механика',
+   'src': 'grid_ruin.py, grid_anatomy.py, grid_plateau.py, simple_grid_check.py',
+   'more': ['Плато прибыльности не существует: прибыльные комбинации разбросаны точками (0.1–3.4%), связная область есть только у множества «ни одного слива». Плато по выживаемости — да, по доходу — нет.',
+            'Вход по RSI не просто не важен, он вреден: случайный вход той же частоты и с той же долей лонг/шорт лучше в 71.9% комбинаций. Работает механика усреднения и фильтр тренда, а не сигнал.',
+            'Результат объясняется календарным окном (≈39% дисперсии), а не монетой (1.1%): «монета под сетку» — иллюзия. Итог простой сетки на holdout при x2: портфель −0.6%, торговых конфигов 0.']},
+  {'n': 14, 'v': 'no', 'tag': 'капитуляция',
+   'when': '31 июля, ночь',
+   't': 'Капитуляция-лонг: литература → правила → экзамен',
+   'q': 'Самая большая волна: 10 правил из академических статей и практики, 96 вариантов сетки и плеча, 53 индикаторные связки, 42 варианта уровней и объёма, финальный экзамен собранного сетапа. Итого 246 проверок.',
+   'num': '+0.114R',
+   'cap': 'перевес над случайным входом той же волатильности, t = +0.54',
+   'src': 'cap_research_test.py, cap_grid_lev.py, cap_indicators.py, cap_levels.py, capitulation_check.py',
+   'more': ['На экзамене сетап выглядит хорошо: 63 сделки, +0.237R, PF 1.45, +13.1% за 10.7 месяца при просадке 10.3%. Но честный эталон — не ноль, а случайный вход ТОЙ ЖЕ волатильности; над ним перевес +0.114R неотличим от нуля.',
+            'Зеркальный сетап («перегрев-шорт») на том же окне даёт +0.861R. Плюс получают ОБЕ стороны — это подпись прибора, а не знание о рынке. Плюс 89% результата сделано 11 сделками, а при сдвиге границы разбиения 72%→80% он схлопывается.',
+            'Ни одно литературное правило (RSI(2)<5 Коннорса, SMA200, объёмный климакс, отрицательный funding, отложенный вход через сутки) не прошло все четыре условия на holdout. Ни один из 53 индикаторных фильтров не пережил поправку на множественность — а три лучших кандидата обучения сменили знак на экзамене.']}
+] %}
+
+{% set VERD = {
+  'no':   ('badge--bad',   'не подтверждено'),
+  'part': ('badge--watch', 'частично'),
+  'ok':   ('badge--on',    'подтверждено'),
+  'tool': ('badge--info',  'инструмент')} %}
+
+<div class="wrap stack">
+
+  <header>
+    <h1 class="h-page">Хроника исследования</h1>
+    <p class="h-sub">Четырнадцать волн проверок: что проверяли, чем закончилось
+      и какая цифра это решила. Отрицательные результаты здесь на равных с
+      положительными — их большинство, и именно они самое ценное, что есть
+      в проекте.</p>
+  </header>
+
+  <div class="stripe">
+    <div><div class="k">волн</div><div class="v">14</div></div>
+    <div><div class="k">сетапов подтверждено</div><div class="v neg">0</div></div>
+    <div><div class="k">ботов подтверждено</div><div class="v">2 <small>из 5</small></div></div>
+    <div><div class="k">честная доходность</div><div class="v">+0.54<small>%/мес</small></div></div>
+    <div><div class="k">проверок в волне 14</div><div class="v">246</div></div>
   </div>
 
-  {% for sym, coin in coins.items() %}
-  {% set d = timeline.get(sym) %}
-  {% if d and d.waves %}
-  <div class="coin-block">
-    <h2>{{ coin }}</h2>
-    <p class="period">{{ d.period }}</p>
-    <div class="head"><span>Волна</span><span>Что изменилось</span><span>Доход 3.2г</span><span>DD</span><span>Плечо</span></div>
-    <div class="waves">
-      {% set max_abs = d.waves | map(attribute='ret') | map('abs') | max %}
-      {% for w in d.waves %}
-      <div class="wave">
-        <span class="key">{{ w.key }}{% if w.get('adopted') == false %} (не принят){% endif %}</span>
-        <span class="desc">{{ w.label }} — {{ w.desc }}</span>
-        <span class="ret {{ 'pnl-pos' if w.ret >= 0 else 'pnl-neg' }}">{{ '%+.1f'|format(w.ret) }}%{% if w.ruined %} 💀{% endif %}</span>
-        <span class="dd">{{ w.dd }}%</span>
-        <span class="lev">x{{ w.lev or 5 }}</span>
-        <div class="bar-wrap"><div class="bar" style="width:{{ (w.ret|abs / max_abs * 100) if max_abs else 0 }}%; background:{{ 'var(--up)' if w.ret >= 0 else 'var(--down)' }}"></div></div>
+  <div class="note danger">
+    <span class="ico">✕</span>
+    <div class="nb"><span class="t">Подтверждённого преимущества не найдено ни у
+      одного сигнального сетапа.</span> Из пяти ботов честную проверку пережили
+      два (ETH, SOL) с доходностью около +0.5% в месяц.
+      <details>
+        <summary>почему это результат, а не неудача</summary>
+        <p>Каждая волна отвечала на конкретный вопрос и отвечала измеримо.
+          Отрицательный ответ закрывает ветку — на неё больше не тратятся
+          ни время, ни деньги. Полтора десятка закрытых веток стоят дороже,
+          чем один красивый бэктест, который развалится на реальных деньгах.</p>
+        <p>Опаснее всего было бы обратное: показать здесь «+300% за 3.2 года»
+          с главной страницы как достижение. Эти цифры посчитаны на том же
+          периоде, на котором подбирались параметры.</p>
+      </details>
+    </div>
+  </div>
+
+  <div>
+    <div class="h-sec">Чему научились — восемь измерений</div>
+    <div class="facts">
+      <div class="fact"><b>1.4% → 25%</b>
+        <span>столько случайных геномов проходит наш порог отбора против
+          отобранных. Порог работает — но при <b>смене случайного зерна
+          побеждают каждый раз ДРУГИЕ конфиги</b>: отбор ловит отрезок
+          истории, а не закономерность.</span></div>
+      <div class="fact"><b class="neg">71.9%</b>
+        <span>доля комбинаций сетки, где <b>случайный вход лучше входа по
+          RSI</b> (той же частоты и с той же долей лонг/шорт). Работает
+          механика усреднения и фильтр тренда, а не сигнал.</span></div>
+      <div class="fact"><b class="neg">−0.627R</b>
+        <span>падение, остановившееся <b>на объёмном уровне</b>, против
+          −0.019R в «пустоте» (holdout, t = −3.31). Популярное правило
+          работает ровно наоборот; повторилось на экзамене.</span></div>
+      <div class="fact"><b>0 из 53</b>
+        <span>индикаторных связок (EMA, RSI, MACD, ADX, дивергенции)
+          пережили поправку на множественность. Три лучших кандидата
+          обучения <b>сменили знак на holdout</b>.</span></div>
+      <div class="fact"><b class="neg">15–118%</b>
+        <span>столько валовой прибыли съедают издержки: 14.9% у ETH-бота,
+          71.5% у SOL, <b>148% у BTC</b>, до 118% у сетки. Запаса над
+          комиссиями и проскальзыванием у стратегий нет.</span></div>
+      <div class="fact"><b>39% против 1.1%</b>
+        <span>дисперсию результата объясняет <b>календарное окно</b> против
+          выбора монеты. Искать «монету под стратегию» бессмысленно: DOGE не
+          лучше BTC как инструмент, ему повезло на куске рынка.</span></div>
+      <div class="fact"><b class="neg">x20–25</b>
+        <span>плечо <b>несовместимо со стопом 2·ATR</b>: ликвидация ближе
+          стопа. В x20 влезают 38 событий из 144, в x25 — 13. Плечо не
+          создаёт преимущества, оно множит уже нулевое.</span></div>
+      <div class="fact"><b>2 из 5</b>
+        <span>ботов пережили честную перепроверку по четырём воротам сразу.
+          Средняя честная оценка портфеля — <b>+0.54% в месяц</b>, и это
+          при сплошном медвежьем рынке на экзамене.</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="h-card">Как теперь проверяется любая идея
+      <span class="muted small" style="font-weight:400">правила выведены из
+        ошибок волн 1–9 и обязательны для всех новых проверок</span></div>
+    <div class="gates">
+      <div class="gate-row"><span class="gate-n">1</span><span class="gate-b">
+        <span class="gate-t">Holdout не трогаем</span>
+        <span class="gate-d">Последние 28% истории не участвуют ни в подборе
+          параметров, ни в выборе победителя. Граница объявляется до запуска.</span>
+      </span></div>
+      <div class="gate-row"><span class="gate-n">2</span><span class="gate-b">
+        <span class="gate-t">Эталон — случайный вход, а не ноль</span>
+        <span class="gate-d">Той же частоты и той же волатильности. Плюс сам по
+          себе ничего не значит: на медвежьем окне любая шортовая сторона
+          в плюсе.</span>
+      </span></div>
+      <div class="gate-row"><span class="gate-n">3</span><span class="gate-b">
+        <span class="gate-t">Поправка на число проверок</span>
+        <span class="gate-d">246 проверок в волне — это порог p &lt; 0.0002
+          (|t| ≥ 3.71). Без поправки при 246 проверках «значимыми на уровне
+          0.05» случайно окажутся 12.</span>
+      </span></div>
+      <div class="gate-row"><span class="gate-n">4</span><span class="gate-b">
+        <span class="gate-t">Зеркало и смена зерна</span>
+        <span class="gate-d">Если зеркальный сетап на том же окне тоже в плюсе,
+          мы измерили прибор, а не рынок. Если при другом зерне побеждает другой
+          конфиг — находки нет.</span>
+      </span></div>
+      <div class="gate-row"><span class="gate-n">5</span><span class="gate-b">
+        <span class="gate-t">Никакого заглядывания вперёд</span>
+        <span class="gate-d">Каждый индикатор считается на префиксе ряда и
+          сверяется с расчётом по полной истории: расхождений должно быть 0.</span>
+      </span></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="h-sec">Хроника по волнам</div>
+    <div class="seg" id="segV">
+      <button class="on" data-v="all">Все<span class="cnt">{{ waves|length }}</span></button>
+      <button data-v="no">Не подтверждено<span class="cnt">{{ waves|selectattr('v','equalto','no')|list|length }}</span></button>
+      <button data-v="part">Частично<span class="cnt">{{ waves|selectattr('v','equalto','part')|list|length }}</span></button>
+      <button data-v="tool">Инструмент<span class="cnt">{{ waves|selectattr('v','equalto','tool')|list|length }}</span></button>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="chron" id="chron">
+        {% for w in waves %}
+        <div class="chr" data-v="{{ w.v }}">
+          <div class="chr-rail"><span class="chr-dot {{ w.v }}">{{ w.n }}</span></div>
+          <div class="chr-b">
+            <div class="chr-h">
+              <span class="chr-t">{{ w.t }}</span>
+              <span class="badge {{ VERD[w.v][0] }}">{{ VERD[w.v][1] }}</span>
+              <span class="badge">{{ w.tag }}</span>
+              <span class="chr-when">{{ w.when }}</span>
+            </div>
+            <div class="chr-q">{{ w.q }}</div>
+            <div class="chr-num"><b class="{{ 'neg' if w.v == 'no' }}">{{ w.num }}</b>
+              <span>{{ w.cap }}</span></div>
+            <details>
+              <summary>подробнее</summary>
+              {% for p in w.more %}<p>{{ p }}</p>{% endfor %}
+              <p class="muted-2" style="font-size:11.5px">где смотреть: <code>{{ w.src }}</code></p>
+            </details>
+          </div>
+        </div>
+        {% endfor %}
       </div>
-      {% endfor %}
+      <p class="tv-hint" id="emptyNote" style="display:none">В этой группе пусто.</p>
+    </div>
+  </div>
+
+  <div>
+    <div class="h-sec">Что осталось после честной проверки</div>
+    <div class="card card--pad0">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>Бот</th><th>Сайт /pnl</th><th>Обучение 27.6 мес</th>
+            <th>Holdout 10.7 мес</th><th>Честная оценка</th><th>%/мес</th>
+            <th>Вердикт</th></tr></thead>
+          <tbody>
+            {% for b in [
+              ('DOGE', '+300.9', '+106.3', '+38.3', '+27.1', '+2.52', 'part', 'частично (3/4)'),
+              ('LTC',  '+203.3', '+107.6',  '+6.5',  '+2.4', '+0.22', 'no',   'не подтверждён (2/4)'),
+              ('BTC',  '+239.5', '+141.9',  '−1.7', '−11.0', '−1.03', 'no',   'не подтверждён (1/4)'),
+              ('ETH',   '+22.1',   '−2.2', '+23.5',  '+7.9', '+0.74', 'ok',   'подтверждён (4/4)'),
+              ('SOL',   '+50.5',  '+34.1', '+11.4',  '+2.7', '+0.26', 'ok',   'подтверждён (4/4)')] %}
+            <tr>
+              <td><b>{{ b[0] }}</b></td>
+              <td class="muted">{{ b[1] }}%</td>
+              <td class="muted">{{ b[2] }}%</td>
+              <td class="{{ 'pos' if not b[3].startswith('−') else 'neg' }}">{{ b[3] }}%</td>
+              <td class="{{ 'pos' if not b[4].startswith('−') else 'neg' }}">{{ b[4] }}%</td>
+              <td class="{{ 'pos' if not b[5].startswith('−') else 'neg' }}">{{ b[5] }}</td>
+              <td><span class="badge {{ VERD[b[6]][0] }}">{{ b[7] }}</span></td>
+            </tr>
+            {% endfor %}
+            <tr>
+              <td class="muted">среднее</td><td></td><td></td>
+              <td class="pos">+15.6%</td><td class="pos">+5.8%</td>
+              <td class="pos">+0.54</td><td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="note warn" style="margin-top:12px">
+      <span class="ico">!</span>
+      <div class="nb"><span class="t">Плюс на этом holdout — слабое доказательство,
+        минус — сильное.</span> 78% его баров были OOS-критерием отбора волн v4–v8,
+        то есть частично «просвечены».
+        <details>
+          <summary>как читать столбцы</summary>
+          <p>Чем правее столбец, тем честнее цифра. «Сайт /pnl» — прогон
+            с реинвестом на всей истории, включая период подбора. «Честная
+            оценка» — медиана 90 конфигов-соседей (геном ±10%): столько
+            разумно ожидать, когда рынок сдвинет оптимум.</p>
+          <p>Период экзамена 2025-09-04…2026-07-23 — сплошной медвежий рынок
+            (монеты упали на 41–67%), поэтому часть плюса объясняется
+            перекосом ботов в шорт, а не преимуществом.</p>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  {% set have = [] %}
+  {% for sym, coin in coins.items() %}{% if timeline.get(sym) and timeline[sym].waves %}{% set _ = have.append((sym, coin)) %}{% endif %}{% endfor %}
+
+  {% if have %}
+  <div>
+    <div class="h-sec">Поколения конфигов ботов</div>
+    <div class="card">
+      <details>
+        <summary>Как менялся доход конфигов от волны к волне (обучающий период,
+          {{ have|length }} монет)</summary>
+        <div class="note warn" style="margin-bottom:14px">
+          <span class="ico">↕</span>
+          <div class="nb"><span class="t">Это цифры подбора, а не доказательства.</span>
+            Между v6 и v7 сменилось правило выбора плеча, поэтому скачок дохода
+            там объясняется плечом. Честные цифры этих же ботов — в таблице выше.</div>
+        </div>
+        {% if have|length > 1 %}
+        <div class="seg" id="segCoin" style="margin-bottom:14px">
+          <button class="on" data-c="all">Все монеты</button>
+          {% for sym, coin in have %}<button data-c="{{ sym }}">{{ coin }}</button>{% endfor %}
+        </div>
+        {% endif %}
+        {% for sym, coin in have %}
+        {% set d = timeline[sym] %}
+        <div class="coin-card" data-c="{{ sym }}" style="margin-bottom:18px">
+          {% set last = d.waves[-1] %}
+          <div class="row-between" style="margin-bottom:10px">
+            <div class="h-card" style="margin:0">{{ coin }}
+              <span class="muted small" style="font-weight:400">{{ d.period }}</span></div>
+            <div class="badge-row">
+              <span class="badge">волн: {{ d.waves|length }}</span>
+              <span class="badge {{ 'badge--on' if last.ret >= 0 else 'badge--bad' }}">итог {{ '%+.1f'|format(last.ret) }}%</span>
+              <span class="badge">x{{ last.lev or 5 }}</span>
+            </div>
+          </div>
+          <div class="whead"><span>Волна</span><span>Что изменилось</span><span>Доход 3.2г</span><span>DD</span><span>Плечо</span></div>
+          {% set max_abs = d.waves | map(attribute='ret') | map('abs') | max %}
+          {% for w in d.waves %}
+          <div class="wave">
+            <span class="key">{{ w.key }}{% if w.get('adopted') == false %} <span class="muted" style="font-weight:400">(не принят)</span>{% endif %}</span>
+            <span class="desc">{{ w.label }} — {{ w.desc }}</span>
+            <span class="ret {{ 'pos' if w.ret >= 0 else 'neg' }}">{{ '%+.1f'|format(w.ret) }}%{% if w.ruined %} ✕{% endif %}</span>
+            <span class="dd">{{ w.dd }}%</span>
+            <span class="lev">x{{ w.lev or 5 }}</span>
+            <div class="bar-wrap"><div class="bar" style="width:{{ (w.ret|abs / max_abs * 100) if max_abs else 0 }}%; background:{{ 'var(--up)' if w.ret >= 0 else 'var(--down)' }}"></div></div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </details>
     </div>
   </div>
   {% endif %}
-  {% endfor %}
 
-  {% if not timeline %}
-  <div class="note">Данные эволюции ещё не собраны — запусти <code>python build_timeline.py</code>.</div>
-  {% endif %}
+  <p class="tv-hint">Все цифры на этой странице воспроизводятся запуском
+    соответствующего скрипта из корня проекта; вывод каждой волны лежит рядом
+    в файле <code>*_out.txt</code>.</p>
+
 </div>
+
+<script>
+/* фильтр хроники по вердикту */
+const segV = document.getElementById("segV");
+if (segV) segV.onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  for (const x of segV.querySelectorAll("button")) x.classList.toggle("on", x === b);
+  const v = b.dataset.v;
+  let shown = 0;
+  for (const row of document.querySelectorAll("#chron .chr")) {
+    const ok = (v === "all" || row.dataset.v === v);
+    row.style.display = ok ? "" : "none";
+    if (ok) shown++;
+  }
+  const note = document.getElementById("emptyNote");
+  if (note) note.style.display = shown ? "none" : "";
+};
+
+/* фильтр поколений по монете */
+const segCoin = document.getElementById("segCoin");
+if (segCoin) segCoin.onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  for (const x of segCoin.querySelectorAll("button")) x.classList.toggle("on", x === b);
+  const c = b.dataset.c;
+  for (const card of document.querySelectorAll(".coin-card"))
+    card.style.display = (c === "all" || card.dataset.c === c) ? "" : "none";
+};
+</script>
 </body>
 </html>

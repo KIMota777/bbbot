@@ -1,0 +1,1766 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} · {{ tf_label }}</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/lightweight-charts.js"></script>
+{% include '_chartkit.html' %}
+<style>
+  .selbox { background:var(--bg-elev); border:1px solid var(--line-soft);
+    border-radius:var(--r-md); padding:11px 14px; margin-top:12px;
+    font-size:12.5px; display:none; }
+  .exam-card { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
+  .exam-left { flex:0 0 auto; }
+  .exam-right { flex:1 1 320px; min-width:0; }
+  .bench { display:flex; gap:22px; flex-wrap:wrap; margin-top:14px;
+    padding-top:12px; border-top:1px solid var(--line-soft); font-size:12px;
+    color:var(--muted); font-variant-numeric:tabular-nums; }
+  .bench b { color:var(--ink); font-weight:590; }
+</style>
+</head>
+<body>
+{% set nav = 'signals' %}{% include '_nav.html' %}
+
+<div class="wrap stack">
+
+  <!-- ================= шапка ================= -->
+  <header>
+    <div class="badge-row" style="margin-bottom:10px">
+      <a href="/signals" class="badge" style="text-decoration:none">‹ сигналы BTC</a>
+      <span class="badge {{ 'badge--long' if base.endswith('long') else 'badge--short' }}">{{ 'LONG' if base.endswith('long') else 'SHORT' }}</span>
+      <span class="badge badge--info">ТФ {{ tf_label }}</span>
+      <span class="badge" id="bLev">x{{ rec.get('rec_lev', 15) }}</span>
+      <span class="badge">R:R 1:3 · безубытка нет</span>
+      <span class="badge {{ 'badge--live' if status_cls == 'sig' else ('badge--on' if status_cls == 'wait' else ('badge--watch' if status_cls == 'watch' else 'badge--off')) }}">{{ status }}</span>
+      <span class="badge" id="bPeriod" style="display:none"></span>
+      <span class="badge badge--watch" id="bProv" style="display:none">данные предварительные</span>
+      {% if v1_ok %}<a href="/signal_v1/{{ base }}" class="badge" style="text-decoration:none">старая страница v1</a>{% endif %}
+    </div>
+    <h1 class="h-page">{{ title }}</h1>
+    {% if descr %}<p class="h-sub">{{ descr }}</p>{% endif %}
+    {% if tfs|length > 1 %}
+    <div class="seg" style="margin-top:14px">
+      {% for t in tfs %}
+      <a href="/signal/{{ t.key }}" class="{{ 'on' if t.cur }}">{{ t.label }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </header>
+
+  <!-- ============ ЧЕСТНЫЙ ЭКЗАМЕН (главное) ============ -->
+  <div class="card {{ 'card--live' if rec.get('enabled') }}">
+    <div class="h-card">Честный экзамен
+      <span class="muted small" style="font-weight:400">holdout — данные, которых
+        не видели ни отбор, ни выбор победителя</span></div>
+    {% if holdout %}
+    <div class="exam-card">
+      <div class="exam-left">
+        <div class="exam-big {{ 'pos' if holdout.get('exp_r', 0) > 0 else 'neg' }}">{{ '%+.3f'|format(holdout.get('exp_r', 0)) }}R</div>
+        <div class="exam-cap"><b>на сделку</b>{{ holdout.get('period', '') }}</div>
+      </div>
+      <div class="exam-right">
+        <div class="metrics">
+          <div class="metric"><b>{{ holdout.get('n', '?') }}</b><span>сделок</span></div>
+          <div class="metric"><b>{{ holdout.get('wr', '?') }}%</b><span>winrate</span></div>
+          <div class="metric"><b>{{ holdout.get('pf', '?') }}</b><span>profit factor</span></div>
+          <div class="metric"><b class="{{ 'pos' if holdout.get('ret', 0) > 0 else 'neg' }}">{{ '%+.1f'|format(holdout.get('ret', 0)) }}%</b><span>итог, x{{ rec.get('rec_lev', 15) }}</span></div>
+          <div class="metric"><b>{{ holdout.get('dd', '?') }}%</b><span>просадка</span></div>
+          <div class="metric"><b>{{ holdout.get('tp', '?') }} / {{ holdout.get('stop', '?') }}</b><span>тейков / стопов</span></div>
+        </div>
+        <div class="bench">
+          {% if bench %}
+          <div>необученное семя (DEFAULTS2) на том же периоде:
+            <b>{{ '%+.3f'|format(bench.get('exp_r', 0)) }}R</b>, {{ bench.get('n', '?') }} сделок, PF {{ bench.get('pf', '?') }}</div>
+          {% endif %}
+          {% if rec.get('edge_exp_r') is not none %}
+          <div>преимущество отбора над семенем:
+            <b class="{{ 'pos' if rec.edge_exp_r > 0 else 'neg' }}">{{ '%+.3f'|format(rec.edge_exp_r) }}R</b></div>
+          {% endif %}
+          {% if inner %}
+          <div>внутренний OOS (на этапе отбора): <b>{{ '%+.3f'|format(inner.get('exp_r', 0)) }}R</b>, {{ inner.get('n', '?') }} сделок</div>
+          {% endif %}
+        </div>
+        {% if rec.get('verdict') %}
+        <div style="margin-top:12px;font-size:13px">
+          <span class="{{ 'pos' if rec.get('enabled') else 'muted' }}" style="font-weight:590">{{ rec.verdict }}</span>
+          {% if rec.get('reason') %}<div class="small" style="color:var(--muted);margin-top:3px">{{ rec.reason }}</div>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="ph">Честного экзамена у этого варианта ещё не было.</div>
+    {% endif %}
+
+    <div class="train-line">
+      <b>Обучающий период — не доказательство.</b>
+      {% if st %}
+      Полная история: {{ st.get('n', '?') }} сделок · WR {{ st.get('wr', '?') }}% ·
+      PF {{ st.get('pf', '?') }} · expectancy {{ '%+.3f'|format(st.get('exp_r', 0)) }}R ·
+      итог {{ st.get('ret', '?') }}% · DD {{ st.get('dd', '?') }}%.
+      {% endif %}
+      <details style="margin-top:6px">
+        <summary>почему на эти цифры нельзя опираться</summary>
+        <p style="margin:0">Они включают данные, на которых сетап и подбирался.
+          Всё, что ниже на странице (графики, сделки, near-miss, разбор ворот),
+          посчитано по ПОЛНОЙ истории — это инструмент разбора механики, а не
+          доказательство доходности.</p>
+      </details>
+    </div>
+
+    {% if ladder %}
+    <details style="margin-top:12px">
+      <summary>Экзамен при разных плечах</summary>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Плечо</th><th>Итог</th><th>Просадка</th><th>Сделок</th><th>WR</th><th>Exp R</th><th>PF</th></tr></thead>
+          <tbody>
+          {% for l in ladder %}
+          <tr><td>x{{ l.lev }}{{ ' ← выбрано' if l.lev == rec.get('rec_lev') else '' }}</td>
+            <td class="{{ 'pos' if l.ret > 0 else 'neg' }}">{{ '%+.1f'|format(l.ret) }}%</td>
+            <td>{{ l.dd }}%</td><td>{{ l.n }}</td><td>{{ l.wr }}%</td>
+            <td class="{{ 'pos' if l.exp_r > 0 else 'neg' }}">{{ '%+.3f'|format(l.exp_r) }}</td>
+            <td>{{ l.pf }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+
+  <!-- ============ состояние рынка ============ -->
+  {% include '_market.html' %}
+
+  <!-- ============ активный сигнал ============ -->
+  {% if act %}
+  <div class="plan {{ 'watch' if act.get('watch_only') }}">
+    <div class="hdr">{{ '👁 НАБЛЮДЕНИЕ — не рекомендация' if act.get('watch_only') else '⚡ АКТИВНЫЙ СИГНАЛ' }} · {{ act.side }} · {{ fmt_ts(act.signal_ts) }}</div>
+    Вход: <b>{{ act.entry }}</b>{{ ' (лимиткой на ретесте)' if act.get('entry_mode') == 1 else ' (по рынку)' }}<br>
+    Стоп: {{ act.stop }} (−{{ act.stop_pct }}%) · Тейк: {{ act.tp }} (+{{ act.tp_pct }}%, R:R 1:3)<br>
+    {% if act.get('margin') %}Маржа: <b>${{ act.margin }}</b> · Риск: −${{ act.risk_1r }} · Цель: +${{ '%.2f'|format(act.risk_1r * 3) }}<br>{% endif %}
+    Плечо: x{{ act.lev }} · держим до {{ fmt_ts(act.hold_until) }}
+  </div>
+  {% endif %}
+
+  <div class="card card--warn" id="stubCard" style="display:none">
+    <b>Аналитика сетапа не посчитана.</b>
+    <p id="stubHint" style="margin:6px 0 0">Запусти <code>build_signal_analytics2.py</code> —
+      он готовит <code>webapp/data/signal2_{{ name }}.json</code>.</p>
+  </div>
+  <div class="card card--err" id="errCard" style="display:none"></div>
+
+  <!-- ================= график ================= -->
+  <div class="card">
+    <div class="h-card">График сделок и почти-сигналов
+      <span class="muted small" style="font-weight:400" id="chartCnt"></span></div>
+    <div class="tv">
+      <div class="tv-toolbar">
+        <label class="chip on" id="cTrades"><input type="checkbox" id="tgTrades" checked><span class="dot" style="background:var(--up)"></span>сделки</label>
+        <label class="chip on" id="cLinks"><input type="checkbox" id="tgLinks" checked><span class="dot" style="background:var(--up);height:2px;border-radius:1px"></span>вход→выход</label>
+        <label class="chip on" id="cNear"><input type="checkbox" id="tgNear" checked><span class="dot" style="background:#787b86"></span>near-miss</label>
+        <label class="chip" id="cZone"><input type="checkbox" id="tgZone"><span class="dot" style="background:rgba(41,98,255,.6)"></span>зона {% if not layers.zone %}<span class="muted-2">·&nbsp;справочно</span>{% endif %}</label>
+        <label class="chip {{ 'on' if layers.level }}" id="cRange"><input type="checkbox" id="tgRange" {{ 'checked' if layers.level }}><span class="dot" style="background:#787b86"></span>уровни {% if not layers.level %}<span class="muted-2">·&nbsp;справочно</span>{% endif %}</label>
+        <label class="chip" id="cEma"><input type="checkbox" id="tgEma"><span class="dot" style="background:#7aa2f7"></span>EMA 50/200</label>
+        <span class="sep"></span>
+        <select class="sel" id="fTrades">
+          <option value="all">все сделки</option>
+          <option value="win">только прибыльные</option>
+          <option value="loss">только убыточные</option>
+        </select>
+        <span class="sep"></span>
+        <span class="pills" id="tfPills" title="таймфрейм графика (сигналы считаются на своём ТФ)"></span>
+        <span class="sep"></span>
+        <span class="pills" id="rng"></span>
+        <button class="btn" id="btnClear">показать всё</button>
+      </div>
+      <div class="tv-chart" id="chart">
+        <div class="tv-legend">
+          <div class="sym">BTC/USDT · <span id="legTf">{{ tf_label }}</span>
+            <span class="muted-2" style="font-weight:400">· сигналы: {{ tf_label }}</span></div>
+          <div class="ohlc" id="legOhlc"><span>наведи курсор на свечу</span></div>
+        </div>
+        <div class="tv-readout" id="readout"></div>
+      </div>
+      <div id="rsiWrap">
+        <div class="tv-chart rsi" id="rsiChart">
+          <div class="tv-legend">
+            <div class="sym" id="rsiTitle">RSI</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="legend-row">
+      <span><i style="background:var(--up)"></i>вход в лонг ▲ / <i style="background:var(--down)"></i>вход в шорт ▼</span>
+      <span>● выход: <b class="pos">тейк</b> / <b class="neg">стоп</b> / серый таймаут / <b class="liq">ликвидация</b>, подпись — итог в R</span>
+      <span><i style="background:#787b86"></i>■ near-miss — без подписи, наводи курсор</span>
+    </div>
+    <div class="note" style="margin-top:10px">
+      <span class="ico">■</span>
+      <div class="nb"><b>Серые квадратики — почти-сигналы</b>: одно условие
+        чуть-чуть не выполнилось. Наведи курсор — детали, клик — зум и линии.
+        <details><summary>что это НЕ значит</summary>
+          <p>Это не «не хватило денег» и не пропуск помощника: входа по правилам
+            не было. На баланс и статистику сделок near-miss не влияет — их
+            «гипо R» считается тем же честным движком только для разбора.</p>
+        </details></div>
+    </div>
+    <div class="selbox" id="selInfo"></div>
+  </div>
+
+  <!-- ================= условия входа ================= -->
+  <div class="card">
+    <div class="h-card">Условия входа — что реально проверяет движок
+      <span class="muted small" style="font-weight:400">разбор
+        <code>signal_engine2.gate_eval</code> для этого генома</span></div>
+    <div class="gates">
+      {% for q in gates %}
+      <div class="gate-row">
+        <span class="gate-n">{{ q.n }}</span>
+        <span class="gate-b">
+          <span class="gate-t">{{ q.name }} — {{ q.what }}</span>
+          <span class="gate-d">{{ q.detail }}</span>
+        </span>
+        <span class="gate-v">{{ q.val }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="tv-hint">Ворота проверяются в этом порядке на закрытии каждого
+      {{ tf_label }}-бара. Хватает одного невыполненного — входа нет. Тейк
+      всегда ровно 3 стопа, стоп в безубыток НЕ переносится.</p>
+    {% if refs %}
+    <div class="h-sec">Показано справочно — на вход НЕ влияет</div>
+    <div class="gates">
+      {% for r in refs %}
+      <div class="gate-row ref">
+        <span class="gate-n">·</span>
+        <span class="gate-b">
+          <span class="gate-t">{{ r.name }}</span>
+          <span class="gate-d">{{ r.detail }}</span>
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card" id="warnCard" style="display:none">
+    <div class="h-card">Что пошло не так и что важно знать
+      <span class="muted small" style="font-weight:400">автоматические выводы предпосчёта</span></div>
+    <ul id="warnList" style="margin:0;padding-left:20px;font-size:13px;line-height:1.7"></ul>
+  </div>
+
+  <div class="card" id="kpiCard">
+    <div class="h-card">Метрики полной истории
+      <span class="muted small" style="font-weight:400" id="kpiNote"></span></div>
+    <div class="tiles" id="kpiTiles"></div>
+    <div class="h-sec">Чем закончились сделки</div>
+    <div class="tbl-wrap"><table class="tbl" id="outTbl"></table></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card" id="qualityCard">
+      <div class="h-card">Качество стопа и тейка</div>
+      <div class="tiles" id="qTiles"></div>
+      <div class="h-sec">Ход против у ПРИБЫЛЬНЫХ (MAE)</div>
+      <div id="maeHist"></div>
+      <div class="h-sec">Ход в плюс у УБЫТОЧНЫХ (MFE)</div>
+      <div id="mfeHist"></div>
+      <div class="h-sec">Сколько прошло бы ПОСЛЕ тейка</div>
+      <div id="extraHist"></div>
+      <p class="tv-hint" id="qNote"></p>
+    </div>
+    <div class="card" id="regimeCard">
+      <div class="h-card">По режиму рынка
+        <span class="muted small" style="font-weight:400">режим — по вчерашнему дню, без заглядывания</span></div>
+      <div class="tbl-wrap"><table class="tbl" id="regTbl"></table></div>
+      <div class="h-sec">Пороги, с которыми сетап работал в каждом режиме</div>
+      <div class="tbl-wrap"><table class="tbl" id="thrTbl"></table></div>
+      <p class="tv-hint" id="regNote"></p>
+    </div>
+  </div>
+
+  <div class="grid2" id="distRow">
+    <div class="card">
+      <div class="h-card">Распределение R
+        <span class="muted small" style="font-weight:400">1R = риск на сделку</span></div>
+      <div class="vbars" id="rBars"></div>
+      <div class="vlabels" id="rLabels"></div>
+      <p class="tv-hint" id="rNote"></p>
+      <div class="h-sec">Сколько держим позицию</div>
+      <div id="holdHist"></div>
+    </div>
+    <div class="card">
+      <div class="h-card">Когда сетап входит</div>
+      <div class="h-sec">По часам входа (местное время)</div>
+      <div class="vbars" id="hBars"></div>
+      <div class="vlabels" id="hLabels"></div>
+      <div class="h-sec">По дням недели</div>
+      <div class="vbars" id="dBars"></div>
+      <div class="vlabels" id="dLabels"></div>
+      <p class="tv-hint" id="timeNote">Высота столбца — число сделок, цвет —
+        суммарный R. Наведи курсор для деталей.</p>
+    </div>
+  </div>
+
+  <div class="card" id="moCard">
+    <div class="h-card">Прибыль по месяцам
+      <span class="muted small" style="font-weight:400">полная история, реинвест от $50</span></div>
+    <div class="mchart" id="moBox"></div>
+  </div>
+
+  <div class="card" id="eqCard" style="display:none">
+    <div class="h-card">Капитал и просадка
+      <span class="muted small" style="font-weight:400" id="eqNote"></span></div>
+    <div class="tv"><div class="tv-chart small" id="eqChart">
+      <div class="tv-legend"><div class="ohlc" id="eqLeg"></div></div></div></div>
+    <div class="h-sec">Просадка от пика, %</div>
+    <div class="tv"><div class="tv-chart small" id="ddChart">
+      <div class="tv-legend"><div class="ohlc" id="ddLeg"></div></div></div></div>
+  </div>
+
+  <div class="card" id="whyCard">
+    <div class="h-card">Почему не заходили
+      <span class="muted small" style="font-weight:400">куда девались остальные бары и сигналы</span></div>
+    <div class="tiles" id="whyTiles"></div>
+    <div class="grid2" style="margin-top:16px">
+      <div>
+        <div class="h-sec">Первое непройденное ворото на каждом баре</div>
+        <div class="tbl-wrap"><table class="tbl" id="rejTbl"></table></div>
+        <div class="h-sec">Отсев каждым воротом по отдельности</div>
+        <div class="tbl-wrap"><table class="tbl" id="soloTbl"></table></div>
+        <div class="h-sec">Сигнал был, но сделки не вышло</div>
+        <div class="tbl-wrap"><table class="tbl" id="blkTbl"></table></div>
+      </div>
+      <div>
+        <div class="h-sec">Near-miss по воротам: чего именно не хватало</div>
+        <div class="tbl-wrap"><table class="tbl" id="nmGateTbl"></table></div>
+        <div class="tiles" id="nmTiles" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="h-card">Сделки <span class="muted small" style="font-weight:400" id="trCnt"></span></div>
+    <div class="tbl-wrap tall"><table class="tbl" id="trTbl"></table></div>
+    <p class="tv-hint">Клик по строке — зум графика на сделку и линии входа /
+      стопа / тейка. Клик по заголовку — сортировка. «тесен» = стоп выбил, но
+      до тейка цена дошла бы в пределах таймаута.</p>
+  </div>
+
+  <div class="card">
+    <div class="h-card">Near-miss <span class="muted small" style="font-weight:400" id="nmCnt"></span></div>
+    <div class="tbl-wrap tall"><table class="tbl" id="nmTbl"></table></div>
+    <p class="tv-hint">Почти-сигналы: провалено ровно одно ворото и совсем
+      немного. «Гипо R» — что было бы, если бы вошли (тот же честный движок:
+      комиссии, фандинг, стоп при спорной свече). На баланс и статистику сделок
+      это НЕ влияет.</p>
+  </div>
+
+  <div class="card" id="genCard">
+    <details id="genDet">
+      <summary>Геном сетапа и параметры расчёта</summary>
+      <div class="tbl-wrap tall"><table class="tbl" id="genTbl"></table></div>
+    </details>
+  </div>
+
+</div>
+
+<script>
+const NAME = "{{ name }}";                       // полный ключ: сетап@ТФ
+const INTERVAL_MIN = {{ interval_min }};         // ТФ сигнальных баров, мин
+const TF_LABEL = "{{ tf_label }}";
+const IS_LONG_SETUP = {{ 'true' if base.endswith('long') else 'false' }};
+const FALLBACK_LEV = {{ rec.get('rec_lev', 15) }};
+const LAYERS = { rsi: {{ 'true' if layers.rsi else 'false' }},
+                 zone: {{ 'true' if layers.zone else 'false' }},
+                 level: {{ 'true' if layers.level else 'false' }} };
+/* палитра TradingView */
+const C = { up:"#26a69a", down:"#ef5350", accent:"#2962ff", muted:"#787b86",
+  ink:"#d1d4dc", line:"#2a2e39", grid:"#1e222d", bg:"#131722", liq:"#ff5370",
+  nm:"#787b86", ema50:"#7aa2f7", ema200:"#bb9af7", range:"#5d6068",
+  zone:"rgba(41,98,255,0.55)", zoneFill:"rgba(41,98,255,0.07)" };
+const BAR = INTERVAL_MIN * 60;                   // длительность бара, сек
+const RSI_SET = [7, 10, 14, 21];
+const REASON_RU = { tp:"ТЕЙК", stop:"СТОП", liq:"ЛИКВИДАЦИЯ", timeout:"ТАЙМАУТ" };
+const REG_RU = ["бычий", "боковик", "медвежий"];
+const DAY_RU = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+
+/* ---------- утилиты ---------- */
+const $ = id => document.getElementById(id);
+const num = v => (typeof v === "number" && isFinite(v)) ? v : null;
+const f = (v, d) => num(v) === null ? "–" : v.toFixed(d === undefined ? 2 : d);
+const sg = (v, d) => num(v) === null ? "–"
+  : (v >= 0 ? "+" : "") + v.toFixed(d === undefined ? 2 : d);
+const fr = (v, d) => num(v) === null ? "–" : f(v, d) + "R";
+const sgr = (v, d) => num(v) === null ? "–" : sg(v, d) + "R";
+function fa(v) {          // порогов много разных: RSI 66, зона 0.102, ATR 0.0472
+  if (num(v) === null) return "–";
+  const a = Math.abs(v);
+  return v.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : a >= 1 ? 2 : 4);
+}
+const esc = s => String(s === null || s === undefined ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;");
+function normTs(t) {              // и мс, и секунды -> секунды
+  t = Number(t);
+  if (!isFinite(t) || t <= 0) return null;
+  return Math.floor(t > 1e11 ? t / 1000 : t);
+}
+const DT = ts => ts === null ? "–" : new Date(ts * 1000).toLocaleString("ru",
+  { day:"2-digit", month:"2-digit", year:"2-digit", hour:"2-digit", minute:"2-digit" });
+const DATE = ts => ts === null ? "–" : new Date(ts * 1000).toLocaleDateString("ru");
+function regName(v) {
+  if (v === null || v === undefined) return "–";
+  if (typeof v === "number") return REG_RU[v] || String(v);
+  const m = { bull:"бычий", range:"боковик", bear:"медвежий" };
+  return m[String(v)] || String(v);
+}
+function regIdx(v) {
+  if (typeof v === "number") return (v >= 0 && v <= 2) ? v : null;
+  const m = { bull:0, range:1, bear:2 };
+  const k = String(v);
+  return (k in m) ? m[k] : null;
+}
+const cls = v => num(v) === null ? "" : (v > 0 ? "pos" : v < 0 ? "neg" : "");
+const reasonColor = r => r === "tp" ? C.up : r === "stop" ? C.down
+  : r === "liq" ? C.liq : C.muted;
+const reasonRu = r => REASON_RU[r] || (r ? String(r) : "–");
+function avg(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
+
+/* ---------- состояние ---------- */
+let DATA = null, CANDLES = [], TIMES = [];
+let TRADES = [], NEAR = [];
+let priceLines = [], SEL = null;
+let sortTr = { k:"entry_ts", dir:-1 }, sortNm = { k:"ts", dir:-1 };
+let miniBuilt = false;
+let BY_BAR = new Map();          // время бара -> {trades:[], exits:[], near:[]}
+
+/* ---------- графики (оформление TradingView) ---------- */
+function baseOpts(h) {
+  return {
+    layout: { background: { color: C.bg }, textColor: C.muted,
+      fontFamily: getComputedStyle(document.body).fontFamily },
+    grid: { vertLines: { color: C.grid }, horzLines: { color: C.grid } },
+    /* minBarSpacing по умолчанию 0.5px: на 1150 днях 1ч-свечей «весь период»
+       иначе не влезает и виден только хвост истории */
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: C.line,
+      minBarSpacing: 0.02 },
+    rightPriceScale: { borderColor: C.line, minimumWidth: 80 },
+    crosshair: { mode: 0,
+      vertLine: { color: "#4c525e", width: 1, style: 3,
+        labelBackgroundColor: "#363a45" },
+      horzLine: { color: "#4c525e", width: 1, style: 3,
+        labelBackgroundColor: "#363a45" } },
+    height: h, autoSize: true,
+  };
+}
+const chart = LightweightCharts.createChart($("chart"), baseOpts(540));
+const rsiChart = LightweightCharts.createChart($("rsiChart"),
+  Object.assign(baseOpts(148), {
+    timeScale: { visible: false, borderColor: C.line },
+    rightPriceScale: { borderColor: C.line, minimumWidth: 80 },
+  }));
+
+// порядок создания = порядок отрисовки: заливка зоны внизу, свечи сверху
+const zoneHiS = chart.addAreaSeries({
+  topColor: C.zoneFill, bottomColor: C.zoneFill, lineColor: C.zone,
+  lineWidth: 1, invertFilledArea: false, visible: false,
+  priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+});
+const zoneLoS = chart.addAreaSeries({
+  topColor: C.zoneFill, bottomColor: C.zoneFill, lineColor: C.zone,
+  lineWidth: 1, invertFilledArea: true, visible: false,
+  priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+});
+const lineOpts = (color, w) => ({ color: color, lineWidth: w || 1,
+  priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+const rangeLoS = chart.addLineSeries(Object.assign(lineOpts(C.range),
+  { visible: LAYERS.level }));
+const rangeHiS = chart.addLineSeries(Object.assign(lineOpts(C.range),
+  { visible: LAYERS.level }));
+const ema50S = chart.addLineSeries(Object.assign(lineOpts(C.ema50), { visible: false }));
+const ema200S = chart.addLineSeries(Object.assign(lineOpts(C.ema200), { visible: false }));
+const candleS = chart.addCandlestickSeries({
+  upColor: C.up, downColor: C.down, wickUpColor: C.up, wickDownColor: C.down,
+  borderVisible: false, priceFormat: { type: "price", precision: 1, minMove: 0.1 },
+});
+const rsiS = rsiChart.addLineSeries({ color: C.ema50, lineWidth: 2,
+  priceLineVisible: false, lastValueVisible: false,
+  priceFormat: { type: "price", precision: 1, minMove: 0.1 } });
+const rsiThrS = rsiChart.addLineSeries({ color: C.accent, lineWidth: 1,
+  priceLineVisible: false, lastValueVisible: false,
+  visible: LAYERS.rsi });
+
+// синхронизация видимого диапазона в обе стороны
+let syncing = false;
+function link(a, b) {
+  a.timeScale().subscribeVisibleLogicalRangeChange(r => {
+    if (syncing || !r) return;
+    syncing = true;
+    try { b.timeScale().setVisibleLogicalRange(r); } catch (e) {}
+    syncing = false;
+  });
+}
+link(chart, rsiChart);
+link(rsiChart, chart);
+let crossGuard = false;
+function linkCross(src, dst, dstSeries) {
+  src.subscribeCrosshairMove(p => {
+    if (crossGuard) return;
+    crossGuard = true;
+    try {
+      if (!p || !p.time) dst.clearCrosshairPosition();
+      else dst.setCrosshairPosition(0, p.time, dstSeries);
+    } catch (e) {}
+    crossGuard = false;
+  });
+}
+linkCross(chart, rsiChart, rsiS);
+linkCross(rsiChart, chart, candleS);
+
+function miniChart(id) {
+  return LightweightCharts.createChart($(id), Object.assign(baseOpts(190), {
+    timeScale: { timeVisible: false, borderColor: C.line },
+    rightPriceScale: { borderColor: C.line,
+      scaleMargins: { top: .12, bottom: .08 } },
+  }));
+}
+
+/* ---------- привязка к сетке свечей своего ТФ ---------- */
+function snap(ts) {
+  if (ts === null || !TIMES.length) return null;
+  if (ts <= TIMES[0]) return TIMES[0];
+  if (ts >= TIMES[TIMES.length - 1]) return TIMES[TIMES.length - 1];
+  let lo = 0, hi = TIMES.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (TIMES[mid] <= ts) lo = mid; else hi = mid - 1;
+  }
+  return TIMES[lo];
+}
+function gridSeries(pairs) {         // [[ts,val]] -> данные на сетке свечей
+  const m = new Map();
+  for (const p of (pairs || [])) {
+    if (!Array.isArray(p) || p.length < 2) continue;
+    const t = normTs(p[0]);
+    if (t === null || num(p[1]) === null) continue;
+    m.set(snap(t), p[1]);
+  }
+  if (!m.size) return [];
+  return CANDLES.map(c => {
+    const v = m.get(c.time);
+    return (v === undefined) ? { time: c.time } : { time: c.time, value: v };
+  });
+}
+
+/* ---------- загрузка ---------- */
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + " -> HTTP " + r.status);
+  return await r.json();
+}
+
+/* ТФ ОТОБРАЖЕНИЯ: сигналы всегда считаются на своём ТФ, но смотреть их
+   можно на любом — как в терминале. Маркеры и линии пересчитываются под
+   новую сетку баров. */
+let VIEW_TF = String(INTERVAL_MIN);
+let VIEW_BAR = BAR;
+const TF_LIST = [["15", "15м"], ["60", "1ч"], ["240", "4ч"], ["D", "1д"]];
+const tfSec = tf => tf === "D" ? 86400 : Number(tf) * 60;
+
+async function switchTF(tf) {
+  if (tf === VIEW_TF) return;
+  const prev = VIEW_TF;
+  try {
+    const cc = await getJSON("/api/signal_candles?interval=" + tf);
+    if (!Array.isArray(cc) || !cc.length) throw new Error("пусто");
+    VIEW_TF = tf; VIEW_BAR = tfSec(tf);
+    CANDLES = TVK.bars(cc);
+    TIMES = CANDLES.map(c => c.time);
+    candleS.setData(CANDLES);
+    buildBarIndex();            // индекс «что было на баре» — под новую сетку
+    applyMarkers();
+    if (LINKS) { LINKS.win.setData([]); LINKS.loss.setData([]); }
+    drawLinks();
+    TVK.fit(chart);
+    rng.refresh();
+    document.querySelectorAll("#tfPills button").forEach(b =>
+      b.classList.toggle("on", b.dataset.tf === tf));
+    $("legTf").textContent = (TF_LIST.find(x => x[0] === tf) || [, tf])[1];
+  } catch (e) {
+    showErr("ТФ " + tf + " не загрузился: " + e.message);
+    VIEW_TF = prev;
+  }
+}
+
+function buildTFPills() {
+  const host = $("tfPills");
+  host.innerHTML = TF_LIST.map(([v, lab]) =>
+    '<button type="button" data-tf="' + v + '"'
+    + (v === VIEW_TF ? ' class="on"' : '') + '>' + lab + '</button>').join("");
+  host.onclick = e => {
+    const b = e.target.closest("button");
+    if (b) switchTF(b.dataset.tf);
+  };
+}
+
+async function load() {
+  let candles = [], data = null;
+  try {
+    candles = await getJSON("/api/signal_candles?interval=" + INTERVAL_MIN);
+  } catch (e) {
+    showErr("Свечи не загрузились: " + e.message);
+  }
+  try {
+    data = await getJSON("/api/signal2/" + NAME);
+  } catch (e) {
+    showErr("Аналитика не загрузилась: " + e.message);
+  }
+  CANDLES = TVK.bars(candles);          // сортировка + схлопывание дублей ts
+  TIMES = CANDLES.map(c => c.time);
+  DATA = (data && typeof data === "object") ? data : { available: false };
+  if (CANDLES.length) {
+    candleS.setData(CANDLES);
+    TVK.fit(chart);
+    rng.refresh();
+  } else {
+    showErr("Нет " + TF_LABEL + " свечей BTC — проверь history_BTCUSDT_"
+      + INTERVAL_MIN + "m_1150d.json");
+  }
+  if (DATA.available === false) {
+    $("stubCard").style.display = "";
+    if (DATA.hint) $("stubHint").textContent = DATA.hint;
+    for (const id of ["kpiCard", "qualityCard", "regimeCard", "whyCard",
+                      "distRow", "genCard"])
+      $(id).style.display = "none";
+    $("rsiWrap").style.display = "none";
+    drawActive();
+    applyMarkers();
+    renderTrades(); renderNM();
+    return;
+  }
+  try {
+    prepare();
+    drawSeries();
+    drawActive();
+    applyMarkers();
+    drawLinks();
+    renderHead();
+    renderWarnings();
+    renderKpi();
+    renderQuality();
+    renderRegime();
+    renderRDist();
+    renderTime();
+    renderWhy();
+    renderTrades();
+    renderNM();
+    renderGenome();
+    buildMini();
+  } catch (e) {
+    showErr("Ошибка отрисовки: " + (e && e.message ? e.message : e)
+      + " — проверь формат webapp/data/signal2_" + NAME + ".json");
+  }
+}
+
+function showErr(msg) {
+  const el = $("errCard");
+  el.style.display = "";
+  el.innerHTML = (el.innerHTML ? el.innerHTML + "<br>" : "") + esc(msg);
+}
+
+/* ---------- нормализация сделок / near-miss ---------- */
+function prepare() {
+  TRADES = (DATA.trades || []).map((t, i) => {
+    const o = Object.assign({}, t);
+    o.idx = num(t.idx) === null ? i + 1 : t.idx;
+    o.entry_ts = normTs(t.entry_ts);
+    o.exit_ts = normTs(t.exit_ts);
+    o.long = (t.side === "L" || t.side === "LONG" || t.side === "long");
+    o.r = num(t.r) === null ? 0 : t.r;
+    o.pnl = num(t.pnl) === null ? 0 : t.pnl;
+    // цена выхода: из данных, иначе выводим из исхода (старые файлы)
+    if (num(t.exit_px) === null) {
+      const risk = Math.abs(num(t.entry) - num(t.stop));
+      const sg2 = (t.side === "L" || t.side === "LONG") ? 1 : -1;
+      o.exit_px = t.reason === "tp" ? num(t.tp)
+                : t.reason === "stop" ? num(t.stop)
+                : num(t.entry) + sg2 * o.r * risk;
+    }
+    o.reg = regIdx(t.regime);
+    return o;
+  }).filter(t => t.entry_ts !== null);
+  NEAR = (DATA.near_misses || []).map((n, i) => {
+    const o = Object.assign({}, n);
+    o.idx = i + 1;
+    o.ts = normTs(n.ts);
+    o.long = (n.side === "L" || n.side === "LONG" || n.side === "long");
+    o.reg = regIdx(n.regime);
+    return o;
+  }).filter(n => n.ts !== null);
+  buildBarIndex();
+}
+
+/* индекс «что произошло на этом баре» — для плашки при наведении.
+   Пересобирается при смене ТФ: сетка баров другая, привязка тоже. */
+function buildBarIndex() {
+  BY_BAR = new Map();
+  const put = (t, key, v) => {
+    if (t === null) return;
+    let o = BY_BAR.get(t);
+    if (!o) { o = { trades: [], exits: [], near: [] }; BY_BAR.set(t, o); }
+    o[key].push(v);
+  };
+  for (const t of TRADES) { put(snap(t.entry_ts), "trades", t); put(snap(t.exit_ts), "exits", t); }
+  for (const n of NEAR) put(snap(n.ts), "near", n);
+}
+function pick(key, dflt) {
+  const srcs = [DATA, DATA.stats, DATA.why, DATA.diag, DATA.run];
+  for (const s of srcs)
+    if (s && typeof s === "object" && s[key] !== undefined && s[key] !== null)
+      return s[key];
+  return dflt;
+}
+const ST = () => (DATA && DATA.stats && typeof DATA.stats === "object") ? DATA.stats : {};
+const SUB = k => {
+  const v = ST()[k];
+  return (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+};
+const ARR = k => { const v = ST()[k]; return Array.isArray(v) ? v : []; };
+function sv() {          // первое найденное число среди имён (разные версии stats)
+  const st = ST();
+  for (let i = 0; i < arguments.length; i++)
+    if (num(st[arguments[i]]) !== null) return st[arguments[i]];
+  return null;
+}
+const ov = (o, k) => (o && num(o[k]) !== null) ? o[k] : null;
+function fmtPeriod(v) {
+  if (num(v) !== null) return DATE(normTs(v));
+  return v ? String(v) : "?";
+}
+
+/* ---------- серии индикаторов и зон ---------- */
+function drawSeries() {
+  const s = (DATA.series && typeof DATA.series === "object") ? DATA.series : {};
+  const has = k => Array.isArray(s[k]) && s[k].length;
+  rangeLoS.setData(gridSeries(s.range_lo));
+  rangeHiS.setData(gridSeries(s.range_hi));
+  zoneLoS.setData(gridSeries(s.zone_lo));
+  zoneHiS.setData(gridSeries(s.zone_hi));
+  ema50S.setData(gridSeries(s.ema50));
+  ema200S.setData(gridSeries(s.ema200));
+  const rsiData = gridSeries(s.rsi);
+  rsiS.setData(rsiData);
+  rsiThrS.setData(LAYERS.rsi ? gridSeries(s.rsi_thr) : []);
+  const per = num(DATA.genome && DATA.genome.rsi_idx) !== null
+    ? RSI_SET[DATA.genome.rsi_idx] : null;
+  if (!rsiData.length) {
+    $("rsiWrap").style.display = "none";
+  } else {
+    for (const lv of [30, 70])
+      rsiS.createPriceLine({ price: lv, color: "#363a45", lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+        title: String(lv) });
+    $("rsiTitle").innerHTML = "RSI(" + (per || "?") + ")"
+      + (LAYERS.rsi ? ' <span style="color:' + C.accent + '">— порог входа</span>'
+        : ' <span style="color:#5d6068">— справочно, на вход НЕ влияет</span>');
+  }
+  $("chartCnt").textContent = TRADES.length + " сделок · " + NEAR.length
+    + " near-miss" + (per ? " · RSI(" + per + ")" : "");
+  if (!has("zone_lo")) $("cZone").style.display = "none";
+  if (!has("range_lo")) $("cRange").style.display = "none";
+  if (!has("ema50") && !has("ema200")) $("cEma").style.display = "none";
+}
+
+/* ---------- активный живой сигнал ---------- */
+function drawActive() {
+  const a = DATA && DATA.active;
+  if (!a) return;
+  window.ACTIVE_MARK = null;
+  const t = snap(normTs(a.bar_ts || a.signal_ts));
+  if (t !== null) {
+    const long = String(a.side || "").toUpperCase().indexOf("LONG") === 0;
+    window.ACTIVE_MARK = { time: t, position: long ? "belowBar" : "aboveBar",
+      color: C.accent, shape: long ? "arrowUp" : "arrowDown", text: "сигнал" };
+  }
+}
+
+/* ---------- пунктир «вход -> выход» по каждой сделке ---------- */
+let LINKS = null;
+function drawLinks() {
+  LINKS = TVK.tradeLines(chart, TRADES.map(t => ({
+    entry_ts: t.entry_ts, exit_ts: t.exit_ts,
+    entry_px: t.entry, exit_px: t.exit_px, r: t.r,
+  })), { bar: VIEW_BAR });
+  LINKS.setVisible($("tgLinks").checked);
+}
+
+/* ---------- маркеры (компактные, без текстовой каши) ---------- */
+function tradeVisible(t) {
+  const fl = $("fTrades").value;
+  if (fl === "win") return t.pnl > 0;
+  if (fl === "loss") return t.pnl <= 0;
+  return true;
+}
+function applyMarkers() {
+  const mk = [];
+  if ($("tgTrades").checked) {
+    for (const t of TRADES) {
+      if (!tradeVisible(t)) continue;
+      const te = snap(t.entry_ts);
+      if (te !== null)
+        mk.push({ time: te, position: t.long ? "belowBar" : "aboveBar",
+          color: t.long ? C.up : C.down, shape: t.long ? "arrowUp" : "arrowDown",
+          text: "" });
+      const tx = snap(t.exit_ts);
+      if (tx !== null)
+        mk.push({ time: tx, position: t.long ? "aboveBar" : "belowBar",
+          color: reasonColor(t.reason), shape: "circle", size: 0.8,
+          text: sg(t.r, 1) + "R" });
+    }
+  }
+  if ($("tgNear").checked) {
+    // near-miss: маленький нейтральный квадрат БЕЗ подписи — детали в плашке
+    for (const n of NEAR) {
+      const t = snap(n.ts);
+      if (t === null) continue;
+      mk.push({ time: t, position: n.long ? "belowBar" : "aboveBar",
+        color: C.nm, shape: "square", size: 0.5, text: "" });
+    }
+  }
+  if (window.ACTIVE_MARK) mk.push(window.ACTIVE_MARK);
+  mk.sort((a, b) => a.time - b.time);
+  candleS.setMarkers(mk);
+}
+
+/* ---------- плашка-ридаут при наведении (как в TradingView) ---------- */
+const nfp = v => num(v) === null ? "–"
+  : Number(v).toLocaleString("ru", { maximumFractionDigits: 1 });
+chart.subscribeCrosshairMove(p => {
+  const leg = $("legOhlc"), ro = $("readout");
+  const b = (p && p.seriesData) ? p.seriesData.get(candleS) : null;
+  if (!b) {
+    leg.innerHTML = "<span>наведи курсор на свечу</span>";
+    ro.classList.remove("show");
+    return;
+  }
+  const up = b.close >= b.open;
+  leg.innerHTML = "<span>" + DT(p.time) + "</span>  <span>O</span> " + nfp(b.open)
+    + " <span>H</span> " + nfp(b.high) + " <span>L</span> " + nfp(b.low)
+    + ' <span>C</span> <b style="color:' + (up ? C.up : C.down) + '">'
+    + nfp(b.close) + "</b>";
+  const o = BY_BAR.get(p.time);
+  if (!o) { ro.classList.remove("show"); return; }
+  const parts = [];
+  for (const t of o.trades) parts.push(
+    '<div class="rt">' + (t.long ? "▲ вход LONG" : "▼ вход SHORT") + " #" + t.idx + "</div>"
+    + row("вход / стоп / тейк", f(t.entry, 1) + " / " + f(t.stop, 1) + " / " + f(t.tp, 1))
+    + row("итог", sg(t.r) + "R", cls(t.r)));
+  for (const t of o.exits) parts.push(
+    '<div class="rt">● выход #' + t.idx + " — " + reasonRu(t.reason) + "</div>"
+    + row("итог", sg(t.r) + "R (" + sg(t.pnl) + "$)", cls(t.r))
+    + row("удержание", f(t.hold_h, 1) + "ч"));
+  for (const n of o.near.slice(0, 3)) parts.push(
+    '<div class="rt">■ near-miss — не хватило: ' + esc(n.gate || "?") + "</div>"
+    + row("было → нужно", fa(n.got) + " → " + fa(n.need))
+    + row("недобор", fa(n.margin))
+    + row("гипотетически", sg(n.hypo_r) + "R", cls(n.hypo_r)));
+  if (!parts.length) { ro.classList.remove("show"); return; }
+  ro.innerHTML = parts.join('<div style="height:7px"></div>');
+  ro.classList.add("show");
+});
+function row(k, v, c) {
+  return '<div class="rl"><span>' + esc(k) + '</span><b class="' + (c || "")
+    + '">' + esc(v) + "</b></div>";
+}
+// клик по бару — выделяем сделку / near-miss этого бара
+chart.subscribeClick(p => {
+  if (!p || !p.time) return;
+  const o = BY_BAR.get(p.time);
+  if (!o) return;
+  if (o.trades.length) selectTrade(o.trades[0]);
+  else if (o.exits.length) selectTrade(o.exits[0]);
+  else if (o.near.length) selectNM(o.near[0]);
+});
+
+/* ---------- выделение сделки / near-miss ---------- */
+function clearLines() {
+  for (const pl of priceLines) { try { candleS.removePriceLine(pl); } catch (e) {} }
+  priceLines = [];
+}
+function addLine(price, color, title) {
+  if (num(price) === null) return;
+  priceLines.push(candleS.createPriceLine({ price: price, color: color,
+    lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+    axisLabelVisible: true, title: title }));
+}
+function focusRange(t0, t1) {
+  if (!TIMES.length) return;
+  const a = t0 === null ? t1 : t0, b = t1 === null ? t0 : t1;
+  if (a === null) return;
+  const pad = Math.max(12 * BAR, (b - a) * 0.6);
+  const from = Math.max(TIMES[0], a - pad);
+  const to = Math.min(TIMES[TIMES.length - 1], b + pad);
+  try { chart.timeScale().setVisibleRange({ from: from, to: to }); } catch (e) {}
+}
+function markSel(tblId, key) {
+  for (const tb of [$("trTbl"), $("nmTbl")])
+    for (const tr of tb.querySelectorAll("tr.sel")) tr.classList.remove("sel");
+  const row = $(tblId).querySelector('tr[data-key="' + key + '"]');
+  if (row) row.classList.add("sel");
+}
+function selInfo(pairs) {
+  const el = $("selInfo");
+  el.style.display = "";
+  el.innerHTML = '<div class="kv">' + pairs.map(p =>
+    "<div><span>" + esc(p[0]) + "</span> <b class=\"" + (p[2] || "") + "\">"
+    + esc(p[1]) + "</b></div>").join("") + "</div>";
+}
+function selectTrade(t) {
+  SEL = { kind: "trade", id: t.idx };
+  clearLines();
+  addLine(t.entry, C.accent, "вход");
+  addLine(t.stop, C.down, "стоп");
+  addLine(t.tp, C.up, "тейк");
+  focusRange(t.entry_ts, t.exit_ts === null ? t.entry_ts : t.exit_ts);
+  markSel("trTbl", "t" + t.idx);
+  const pairs = [
+    ["сделка", "#" + t.idx + " " + (t.long ? "LONG" : "SHORT")],
+    ["вход", DT(t.entry_ts) + " по " + f(t.entry, 1)],
+    ["выход", DT(t.exit_ts) + " — " + reasonRu(t.reason)],
+    ["стоп / тейк", f(t.stop, 1) + " / " + f(t.tp, 1)],
+    ["ширина стопа", f(t.stop_pct, 2) + "%"],
+    ["итог", sg(t.r) + "R (" + sg(t.pnl) + "$)", cls(t.r)],
+    ["ход против / в пользу", f(t.mae_r) + "R / " + f(t.mfe_r) + "R"],
+    ["до худшей / лучшей точки", f(t.time_to_mae_h, 1) + "ч / " + f(t.time_to_mfe_h, 1) + "ч"],
+    ["режим", regName(t.regime) + trendTag(t.reg).replace(/<[^>]*>/g, " ")],
+    ["RSI / порог", f(t.rsi, 1) + " / " + (LAYERS.rsi ? f(num(t.rsi_thr) === null
+      ? null : (IS_LONG_SETUP ? t.rsi_thr : 100 - t.rsi_thr), 1) : "не ворото")],
+    ["диапазон", f(t.range_lo, 0) + " — " + f(t.range_hi, 0)],
+    ["удержание", f(t.hold_h, 1) + "ч"],
+  ];
+  if (t.reason === "stop" && t.would_hit_tp_later)
+    pairs.push(["стоп был тесен", "да — до тейка дошло бы позже", "neg"]);
+  if (t.reason === "tp" && num(t.mfe_after_tp_r) !== null)
+    pairs.push(["после тейка прошло бы ещё", sg(t.mfe_after_tp_r) + "R", "muted"]);
+  selInfo(pairs);
+}
+function selectNM(n) {
+  SEL = { kind: "nm", id: n.idx };
+  clearLines();
+  addLine(n.entry, C.accent, "вход (гипо)");
+  addLine(n.stop, C.down, "стоп (гипо)");
+  addLine(n.tp, C.up, "тейк (гипо)");
+  focusRange(n.ts, n.ts + 12 * BAR);
+  markSel("nmTbl", "n" + n.idx);
+  selInfo([
+    ["near-miss", DT(n.ts) + " " + (n.long ? "LONG" : "SHORT")],
+    ["не хватило ворота", String(n.gate || "–")],
+    ["было / нужно", fa(n.got) + " / " + fa(n.need)],
+    ["недобор", fa(n.margin)],
+    ["вход / стоп / тейк", f(n.entry, 1) + " / " + f(n.stop, 1) + " / " + f(n.tp, 1)],
+    ["гипотетически", sg(n.hypo_r) + "R (" + reasonRu(n.hypo_reason) + ")", cls(n.hypo_r)],
+    ["ход в пользу", f(n.hypo_mfe_r) + "R"],
+    ["режим / RSI", regName(n.regime) + " / " + f(n.rsi, 1)],
+  ]);
+}
+
+/* ---------- шапка и плитки ---------- */
+function holdAvg() {
+  const v = sv("avg_hold_h");
+  return v !== null ? v : ov(SUB("timing"), "hold_avg_h");
+}
+function renderHead() {
+  const lev = num(DATA.lev) !== null ? DATA.lev : (sv("lev") || FALLBACK_LEV);
+  $("bLev").textContent = "x" + lev;
+  const p0 = DATA.period_start !== undefined ? DATA.period_start : ST().period_start;
+  const p1 = DATA.period_end !== undefined ? DATA.period_end : ST().period_end;
+  if (p0 || p1) {
+    $("bPeriod").style.display = "";
+    $("bPeriod").textContent = "история " + fmtPeriod(p0) + " — " + fmtPeriod(p1);
+  }
+  if (DATA.provisional) $("bProv").style.display = "";
+}
+function renderWarnings() {
+  const w = ARR("warnings");
+  if (!w.length) return;
+  $("warnCard").style.display = "";
+  $("warnList").innerHTML = w.map(x => "<li>" + esc(x) + "</li>").join("");
+}
+function tile(v, label, klass, hint) {
+  return '<div class="tile" title="' + esc(hint || "") + '"><b class="'
+    + (klass || "") + '">' + esc(v) + "</b><span>" + esc(label) + "</span></div>";
+}
+function renderKpi() {
+  const ri = SUB("reinvest");
+  const fu = ov(ri, "final_usd");
+  const base = ov(ri, "start_usd") !== null ? ov(ri, "start_usd") : 50;
+  const fp = ov(ri, "final_pct");
+  const ret = sv("ret_pct", "ret"), dd = sv("dd_pct", "dd");
+  const wr = sv("wr"), be = sv("wr_breakeven"), beRR = sv("wr_breakeven_rr");
+  const t = [];
+  if (fu !== null)
+    t.push(tile("$" + f(fu, 1), "итог из $" + f(base, 0) + " с реинвестом ("
+      + sg(fp, 1) + "%)", cls(fp),
+      "как на страницах ботов: маржа — доля капитала"
+      + (ov(ri, "max_dd_pct") !== null ? ", просадка " + f(ov(ri, "max_dd_pct"), 1) + "%" : "")));
+  if (ret !== null)
+    t.push(tile(sg(ret, 1) + "%", "итог бэктеста (фикс. маржа $"
+      + f(sv("margin_usd") === null ? 5 : sv("margin_usd"), 0) + " от $"
+      + f(sv("start_usd") === null ? 20 : sv("start_usd"), 0) + ")", cls(ret)));
+  t.push(tile(sgr(sv("exp_r"), 3), "expectancy — средний R на сделку",
+    cls(sv("exp_r")), "главная метрика: сколько R приносит сделка в среднем"
+    + (sv("exp_usd") !== null ? " (" + sg(sv("exp_usd"), 2) + "$)" : "")));
+  t.push(tile(sv("pf") === null ? "–" : f(sv("pf"), 2), "profit factor",
+    sv("pf") === null ? "" : (sv("pf") >= 1.2 ? "pos" : "neg"),
+    sv("gross_profit") !== null ? "заработано " + f(sv("gross_profit"), 1)
+      + "$ / потеряно " + f(sv("gross_loss"), 1) + "$" : ""));
+  t.push(tile(f(wr, 1) + "%", "winrate (" + (sv("wins") === null ? "?" : sv("wins"))
+    + " из " + (sv("n") === null ? TRADES.length : sv("n")) + ")"
+    + (be !== null ? ", безубыток " + f(be, 1) + "%" : ""),
+    (wr !== null && be !== null) ? (wr >= be ? "pos" : "neg") : "",
+    beRR !== null ? "чистый 1:3 окупается с " + f(beRR, 1)
+      + "%, с комиссиями и фандингом — с " + f(be, 1) + "%" : ""));
+  t.push(tile(f(dd, 1) + "%", "макс. просадка"
+    + (ov(ri, "max_dd_pct") !== null ? " (с реинвестом " + f(ov(ri, "max_dd_pct"), 1) + "%)" : ""),
+    dd !== null && dd >= 50 ? "neg" : ""));
+  t.push(tile(String(sv("n") === null ? TRADES.length : sv("n")),
+    "сделок · " + f(sv("tpm"), 2) + " в месяц"
+    + (sv("months") !== null ? " за " + f(sv("months"), 1) + " мес" : "")));
+  const tm = SUB("timing");
+  t.push(tile(f(holdAvg(), 1) + "ч", "среднее удержание"
+    + (ov(tm, "hold_med_h") !== null ? " (медиана " + f(ov(tm, "hold_med_h"), 0) + "ч)" : "")));
+  t.push(tile(sgr(sv("avg_win_r"), 2) + " / " + sgr(sv("avg_loss_r"), 2),
+    "средняя прибыльная / убыточная, R"));
+  if (ov(ri, "months_pos") !== null)
+    t.push(tile(ov(ri, "months_pos") + " из " + ov(ri, "months_total"),
+      "месяцев в плюсе (" + f(ov(ri, "months_pos_pct"), 0) + "%)"));
+  if (ov(ri, "best_month_pct") !== null)
+    t.push(tile(sg(ov(ri, "best_month_pct"), 1) + "% / "
+      + sg(ov(ri, "worst_month_pct"), 1) + "%", "лучший / худший месяц"));
+  if (sv("max_win_streak") !== null)
+    t.push(tile(sv("max_win_streak") + " / " + sv("max_loss_streak"),
+      "макс. серия побед / убытков"));
+  if (sv("sum_r") !== null)
+    t.push(tile(sgr(sv("sum_r"), 1), "суммарный R за период", cls(sv("sum_r"))));
+  if (ST().ruined || DATA.ruined) t.push(tile("слив", "счёт обнулялся", "neg"));
+  $("kpiTiles").innerHTML = t.join("");
+
+  const oc = SUB("outcomes");
+  const names = { tp: "ТЕЙК", stop: "СТОП", timeout: "ТАЙМАУТ", liq: "ЛИКВИДАЦИЯ" };
+  const keys = Object.keys(names).filter(k => oc[k]);
+  if (keys.length) {
+    $("outTbl").innerHTML = "<thead><tr><th>Исход</th><th>Сделок</th><th>Доля</th>"
+      + "<th>Сумма R</th><th>Средний R</th><th>PnL $</th></tr></thead><tbody>"
+      + keys.map(k => {
+        const o = oc[k];
+        return "<tr><td>" + names[k] + "</td><td>" + o.n + "</td><td>"
+          + f(o.share_pct, 1) + "%</td><td class=\"" + cls(o.sum_r) + "\">"
+          + sg(o.sum_r, 1) + "</td><td class=\"" + cls(o.avg_r) + "\">"
+          + sg(o.avg_r, 2) + "</td><td class=\"" + cls(o.sum_usd) + "\">"
+          + sg(o.sum_usd, 2) + "</td></tr>";
+      }).join("") + "</tbody>";
+  } else {
+    const rs = {};
+    for (const x of TRADES) rs[x.reason] = (rs[x.reason] || 0) + 1;
+    $("outTbl").innerHTML = "<thead><tr><th>Исход</th><th>Сделок</th></tr></thead><tbody>"
+      + (Object.keys(rs).length
+        ? Object.keys(rs).map(k => "<tr><td>" + reasonRu(k) + "</td><td>"
+          + rs[k] + "</td></tr>").join("")
+        : '<tr><td colspan="2" class="empty">сделок нет</td></tr>') + "</tbody>";
+  }
+  const bits = [];
+  const lev = num(DATA.lev) !== null ? DATA.lev : sv("lev");
+  if (lev !== null) bits.push("плечо x" + lev);
+  if (sv("avg_risk_usd") !== null)
+    bits.push("риск на сделку ≈ " + f(sv("avg_risk_usd"), 2) + "$");
+  if (DATA.built_at) bits.push("посчитано " + DT(DATA.built_at));
+  $("kpiNote").textContent = bits.length
+    ? "обучающий период · " + bits.join(", ") : "обучающий период";
+}
+
+/* ---------- гистограммы-полоски ---------- */
+function hbars(id, items, color) {
+  const el = $(id);
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="muted small">нет данных</div>'; return;
+  }
+  const mx = Math.max(1, ...items.map(i => num(i.n) || 0));
+  el.innerHTML = items.map(i => {
+    const n = num(i.n) || 0;
+    const sh = num(i.share_pct);
+    return '<div class="hrow"><span class="hlab">' + esc(i.label)
+      + '</span><span class="htrack"><span class="hfill" style="width:'
+      + Math.round(n / mx * 100) + "%;background:" + (i.color || color || C.accent)
+      + '"></span></span><span class="hval">' + n
+      + (sh === null ? "" : " (" + f(sh, 1) + "%)") + "</span></div>";
+  }).join("");
+}
+
+/* ---------- качество стопа и тейка ---------- */
+function renderQuality() {
+  const sq = SUB("stop_quality"), tq = SUB("tp_quality");
+  const wins = TRADES.filter(t => t.r > 0), loss = TRADES.filter(t => t.r <= 0);
+  const stops = TRADES.filter(t => t.reason === "stop");
+  const tps = TRADES.filter(t => t.reason === "tp");
+  const tight = stops.filter(t => t.would_hit_tp_later);
+  const val = (o, k, fb) => ov(o, k) !== null ? ov(o, k) : fb;
+  const maeW = val(sq, "mae_wins_avg",
+    avg(wins.map(t => num(t.mae_r)).filter(v => v !== null)));
+  const maeL = val(sq, "mae_losses_avg",
+    avg(loss.map(t => num(t.mae_r)).filter(v => v !== null)));
+  const mfeL = val(sq, "mfe_losses_avg",
+    avg(loss.map(t => num(t.mfe_r)).filter(v => v !== null)));
+  const nStop = val(sq, "n_stop", stops.length);
+  const thenTp = val(sq, "stop_then_tp_n", tight.length);
+  const lostR = val(sq, "stop_then_tp_lost_r",
+    tight.reduce((a, t) => a + (3 - t.r), 0));
+  const extra = val(tq, "extra_avg_r", avg(tps.map(t => num(t.mfe_after_tp_r))
+    .filter(v => v !== null)));
+  const t = [];
+  t.push(tile(fr(maeW), "ср. ход против у ПРИБЫЛЬНЫХ (MAE)"
+    + (ov(sq, "mae_wins_max") !== null ? ", максимум " + f(ov(sq, "mae_wins_max")) + "R" : ""),
+    "", "чем ближе к 1R, тем чаще стоп выбивал бы будущих победителей"));
+  if (ov(sq, "stop_headroom_r") !== null)
+    t.push(tile(fr(ov(sq, "stop_headroom_r")), "запас до стопа у худшего победителя",
+      ov(sq, "stop_headroom_r") < 0.15 ? "neg" : "pos",
+      "1R минус самый глубокий MAE прибыльной сделки"));
+  if (ov(sq, "wins_near_stop_n") !== null)
+    t.push(tile(ov(sq, "wins_near_stop_n") + " ("
+      + f(ov(sq, "wins_near_stop_share"), 1) + "%)",
+      "победителей прошли ближе " + f(ov(sq, "near_stop_thr_r"), 2) + "R к стопу"));
+  t.push(tile(fr(maeL), "ср. ход против у УБЫТОЧНЫХ (MAE)"));
+  t.push(tile(fr(mfeL), "ср. ход в пользу у УБЫТОЧНЫХ (MFE)", "",
+    "если больше 1R — цена шла в нашу сторону, но развернулась"));
+  if (ov(sq, "losses_in_profit_n") !== null)
+    t.push(tile(ov(sq, "losses_in_profit_n") + " ("
+      + f(ov(sq, "losses_in_profit_share"), 1) + "%)",
+      "убыточных были в плюсе больше "
+      + f(ov(sq, "in_profit_thr_r"), 1) + "R", "neg"));
+  t.push(tile(thenTp + " из " + nStop
+    + (ov(sq, "stop_then_tp_share") !== null
+      ? " (" + f(ov(sq, "stop_then_tp_share"), 1) + "%)" : ""),
+    "стопов, дошедших бы до тейка позже",
+    nStop && thenTp > nStop / 3 ? "neg" : "",
+    "would_hit_tp_later — признак слишком тесного стопа"));
+  t.push(tile(fr(lostR, 1), "упущено на этих стопах"
+    + (ov(sq, "stop_then_tp_avg_lost_r") !== null
+      ? " (~" + f(ov(sq, "stop_then_tp_avg_lost_r"), 1) + "R на сделку)" : "")
+    + (ov(sq, "stop_then_tp_lost_usd") !== null
+      ? ", " + f(ov(sq, "stop_then_tp_lost_usd"), 1) + "$" : ""), "neg"));
+  t.push(tile(sgr(extra), "проходило бы ещё ПОСЛЕ тейка"
+    + (ov(tq, "extra_max_r") !== null ? ", максимум " + sg(ov(tq, "extra_max_r")) + "R" : ""),
+    "", "жёсткий тейк 1:3 обрезает тренды"));
+  if (ov(tq, "potential_rr") !== null)
+    t.push(tile("1:" + f(ov(tq, "potential_rr"), 1),
+      "какой R:R вытянул бы лучший тейк", "",
+      "по максимуму хода после текущего тейка"));
+  if (ov(tq, "tp_with_extra_1r_n") !== null)
+    t.push(tile(ov(tq, "tp_with_extra_1r_n") + " ("
+      + f(ov(tq, "tp_with_extra_1r_share"), 0) + "%)",
+      "тейков, после которых прошло ещё больше 1R"));
+  if (ov(tq, "tp_no_extra_n") !== null)
+    t.push(tile(ov(tq, "tp_no_extra_n") + " ("
+      + f(ov(tq, "tp_no_extra_share"), 0) + "%)",
+      "тейков «в самый верх» (дальше не пошло)", "pos"));
+  const medStop = sv("med_stop_pct");
+  if (medStop !== null)
+    t.push(tile(f(medStop, 2) + "%", "медианная ширина стопа"
+      + (sv("avg_stop_pct") !== null ? " (ср. " + f(sv("avg_stop_pct"), 2) + "%)" : ""),
+      "", "жёсткий лимит задаёт ген stop_cap — иначе ликвидация раньше стопа"));
+  if (sv("avg_atr_pct") !== null)
+    t.push(tile(f(sv("avg_atr_pct"), 2) + "%", "средний дневной ATR на входе"));
+  $("qTiles").innerHTML = t.join("");
+  hbars("maeHist", sq.mae_hist_wins, "rgba(38,166,154,.85)");
+  hbars("mfeHist", sq.mfe_hist_losses, "rgba(239,83,80,.85)");
+  hbars("extraHist", tq.extra_hist, "rgba(41,98,255,.75)");
+  $("qNote").textContent = "Стоп в безубыток НЕ переносится вообще — поэтому MAE "
+    + "честно показывает, насколько близко цена подходила к стопу. Если у "
+    + "прибыльных сделок MAE близко к 1R, стоп стоит на волосок: любое "
+    + "ужесточение убьёт этих победителей. Если у убыточных велик MFE — цена "
+    + "успевала уйти в плюс и вернуться.";
+}
+
+/* ---------- по режиму рынка ---------- */
+const TREND_RU = { counter: "против тренда", with: "по тренду",
+  range: "базовые пороги" };
+function trendMode(k, mode) {
+  if (mode) return mode;
+  const o = SUB("by_regime")[["bull", "range", "bear"][k]];
+  if (o && o.trend_mode) return o.trend_mode;
+  if ((IS_LONG_SETUP && k === 2) || (!IS_LONG_SETUP && k === 0)) return "counter";
+  if ((IS_LONG_SETUP && k === 0) || (!IS_LONG_SETUP && k === 2)) return "with";
+  return "range";
+}
+function trendTag(k, mode) {
+  const m = trendMode(k, mode);
+  if (m === "range") return "";
+  return ' <span class="muted">' + (TREND_RU[m] || m) + "</span>";
+}
+function renderRegime() {
+  const br = SUB("by_regime");
+  const keys = ["bull", "range", "bear"];
+  const rows = keys.map((name, k) => {
+    const o = br[name];
+    if (o && typeof o === "object") return Object.assign({ k: k, src: "pre" }, o);
+    const arr = TRADES.filter(t => t.reg === k);
+    const w = arr.filter(t => t.r > 0).length;
+    return { k: k, src: "calc", n: arr.length,
+      wr: arr.length ? w / arr.length * 100 : null,
+      exp_r: arr.length ? avg(arr.map(t => t.r)) : null,
+      sum_r: arr.reduce((a, t) => a + t.r, 0),
+      sum_usd: arr.reduce((a, t) => a + t.pnl, 0),
+      near: NEAR.filter(n => n.reg === k).length };
+  });
+  const unk = TRADES.filter(t => t.reg === null).length;
+  let html = "<thead><tr><th>Режим</th><th>Сделок</th><th>Доля</th><th>WR</th>"
+    + "<th>Exp R</th><th>Сумма R</th><th>PnL $</th><th>Вклад</th>"
+    + "<th>MAE R</th><th>MFE R</th><th>Удерж, ч</th><th>Сигналов</th>"
+    + "<th>near-miss</th></tr></thead><tbody>";
+  for (const r of rows) {
+    const c = (v, d, suf) => "<td>" + (num(v) === null ? "–" : f(v, d) + (suf || "")) + "</td>";
+    html += "<tr><td>" + REG_RU[r.k] + trendTag(r.k, r.trend_mode) + "</td><td>"
+      + (num(r.n) === null ? "–" : r.n) + "</td>"
+      + c(r.share_trades_pct, 0, "%") + c(r.wr, 1, "%")
+      + '<td class="' + cls(r.exp_r) + '">' + sg(r.exp_r, 3) + "</td>"
+      + '<td class="' + cls(r.sum_r) + '">' + sg(r.sum_r, 1) + "</td>"
+      + '<td class="' + cls(r.sum_usd) + '">' + sg(r.sum_usd, 2) + "</td>"
+      + '<td class="' + cls(r.contrib_pct) + '">'
+      + (num(r.contrib_pct) === null ? "–" : f(r.contrib_pct, 0) + "%") + "</td>"
+      + c(r.avg_mae_r, 2) + c(r.avg_mfe_r, 2) + c(r.avg_hold_h, 0)
+      + "<td>" + (num(r.signals) === null ? "–" : r.signals) + "</td>"
+      + "<td>" + (num(r.near) === null ? "–" : r.near) + "</td></tr>";
+  }
+  if (unk) html += '<tr><td>режим неизвестен</td><td>' + unk
+    + '</td><td colspan="11" class="muted">нет разметки режима</td></tr>';
+  $("regTbl").innerHTML = html + "</tbody>";
+  $("regNote").textContent = "Полного запрета режима нет, если все три гена "
+    + "reg_* включены: в против-трендовом режиме пороги строже (RSI глубже на "
+    + "counter_rsi_shift, зона уже в counter_zone_mult раз), в по-трендовом — "
+    + "мягче на with_rsi_shift. «Вклад» — доля итогового результата.";
+
+  const thr = {};
+  for (const x of TRADES.concat(NEAR)) {
+    const k = x.reg;
+    if (k === null) continue;
+    if (!thr[k]) thr[k] = {};
+    if (thr[k].rsi === undefined && num(x.rsi_thr) !== null) thr[k].rsi = x.rsi_thr;
+    if (thr[k].zone === undefined && num(x.zone_thr) !== null) thr[k].zone = x.zone_thr;
+  }
+  if (!Object.keys(thr).length) { $("thrTbl").innerHTML = ""; return; }
+  const eff = v => num(v) === null ? null : (IS_LONG_SETUP ? v : 100 - v);
+  let h2 = "<thead><tr><th>Режим</th><th>Роль</th><th>Порог RSI"
+    + (LAYERS.rsi ? (IS_LONG_SETUP ? " (вход при RSI ≤)" : " (вход при RSI ≥)")
+      : " (справочно)")
+    + "</th><th>Порог «зоны»</th></tr></thead><tbody>";
+  for (const k of [0, 1, 2]) {
+    if (!thr[k]) continue;
+    h2 += "<tr><td>" + REG_RU[k] + "</td><td class=\"muted\">"
+      + (TREND_RU[trendMode(k)] || trendMode(k))
+      + "</td><td>" + f(eff(thr[k].rsi), 1) + "</td><td>"
+      + f(thr[k].zone, 3) + "</td></tr>";
+  }
+  $("thrTbl").innerHTML = h2 + "</tbody>";
+}
+
+/* ---------- столбики ---------- */
+function vbars(barsId, labelsId, items) {
+  const mx = Math.max(1, ...items.map(i => i.value));
+  $(barsId).innerHTML = items.map(i =>
+    '<div class="col" title="' + esc(i.hint || "") + '"><div class="fill" style="height:'
+    + Math.max(2, Math.round(i.value / mx * 100)) + "%;background:" + i.color
+    + '"></div></div>').join("");
+  $(labelsId).innerHTML = items.map(i =>
+    "<div>" + esc(i.label) + "</div>").join("");
+}
+const barColor = sum => sum > 0 ? "rgba(38,166,154,.85)"
+  : sum < 0 ? "rgba(239,83,80,.85)" : "rgba(120,123,134,.55)";
+
+function renderRDist() {
+  const hist = ARR("r_hist");
+  if (hist.length) {
+    vbars("rBars", "rLabels", hist.map(b => {
+      const mid = num(b.hi) !== null ? b.hi : (num(b.lo) !== null ? b.lo + 0.1 : 0);
+      return { value: num(b.n) || 0, label: String(b.label || "").replace("R", ""),
+        color: barColor(mid > 0 ? 1 : -1),
+        hint: b.label + ": " + b.n + " сделок (" + f(b.share_pct, 1) + "% всех)" };
+    }));
+  } else {
+    const edges = [-Infinity, -1, -0.5, 0, 0.5, 1, 2, 3, Infinity];
+    const names = ["< −1", "−1…−0.5", "−0.5…0", "0…0.5", "0.5…1", "1…2", "2…3", "≥ 3"];
+    const bins = names.map(() => []);
+    for (const t of TRADES) {
+      for (let i = 0; i < names.length; i++) {
+        const lo = edges[i], hi = edges[i + 1];
+        const ok = (i === 0) ? t.r < hi : (i === names.length - 1 ? t.r >= lo
+          : (t.r >= lo && t.r < hi));
+        if (ok) { bins[i].push(t.r); break; }
+      }
+    }
+    vbars("rBars", "rLabels", bins.map((b, i) => {
+      const s = b.reduce((a, v) => a + v, 0);
+      return { value: b.length, label: names[i], color: barColor(s),
+        hint: names[i] + "R: " + b.length + " сделок, суммарно " + sg(s, 1) + "R" };
+    }));
+  }
+  const rs = TRADES.map(t => t.r).sort((a, b) => a - b);
+  const bits = [];
+  if (sv("worst_r") !== null) bits.push("худшая " + sg(sv("worst_r")) + "R");
+  else if (rs.length) bits.push("худшая " + sg(rs[0]) + "R");
+  if (sv("best_r") !== null) bits.push("лучшая " + sg(sv("best_r")) + "R");
+  else if (rs.length) bits.push("лучшая " + sg(rs[rs.length - 1]) + "R");
+  if (sv("med_win_r") !== null) bits.push("медиана победы " + sg(sv("med_win_r")) + "R");
+  if (sv("med_loss_r") !== null) bits.push("медиана убытка " + sg(sv("med_loss_r")) + "R");
+  if (sv("sum_r") !== null) bits.push("сумма " + sg(sv("sum_r"), 1) + "R");
+  else if (rs.length) bits.push("сумма " + sg(rs.reduce((a, v) => a + v, 0), 1) + "R");
+  $("rNote").textContent = bits.length ? bits.join(", ") : "сделок нет";
+  hbars("holdHist", SUB("timing").hold_hist, "rgba(122,162,247,.85)");
+}
+function renderTime() {
+  const hours = ARR("by_hour"), wds = ARR("by_weekday");
+  if (hours.length === 24) {
+    vbars("hBars", "hLabels", hours.map(h => ({
+      value: num(h.n) || 0, label: h.hour % 3 === 0 ? String(h.hour) : "",
+      color: barColor(h.sum_r),
+      hint: h.hour + ":00 — " + h.n + " сделок, WR " + f(h.wr, 0) + "%, "
+        + sg(h.sum_r, 1) + "R (" + sg(h.sum_usd, 1) + "$)" })));
+  } else {
+    const byH = {};
+    for (const t of TRADES) {
+      const k = new Date(t.entry_ts * 1000).getHours();
+      (byH[k] = byH[k] || []).push(t);
+    }
+    const items = [];
+    for (let h = 0; h < 24; h++) {
+      const arr = byH[h] || [];
+      const s = arr.reduce((a, t) => a + t.r, 0);
+      items.push({ value: arr.length, label: h % 3 === 0 ? String(h) : "",
+        color: barColor(s),
+        hint: h + ":00 — " + arr.length + " сделок, " + sg(s, 1) + "R" });
+    }
+    vbars("hBars", "hLabels", items);
+  }
+  if (wds.length === 7) {
+    vbars("dBars", "dLabels", wds.map(d => ({
+      value: num(d.n) || 0, label: d.name || DAY_RU[(d.wd + 1) % 7],
+      color: barColor(d.sum_r),
+      hint: (d.name || "") + ": " + d.n + " сделок, WR " + f(d.wr, 0) + "%, "
+        + sg(d.sum_r, 1) + "R (" + sg(d.sum_usd, 1) + "$)" })));
+  } else {
+    const byD = {};
+    for (const t of TRADES) {
+      const k = new Date(t.entry_ts * 1000).getDay();
+      (byD[k] = byD[k] || []).push(t);
+    }
+    vbars("dBars", "dLabels", [1, 2, 3, 4, 5, 6, 0].map(d => {
+      const arr = byD[d] || [];
+      const s = arr.reduce((a, t) => a + t.r, 0);
+      return { value: arr.length, label: DAY_RU[d], color: barColor(s),
+        hint: DAY_RU[d] + ": " + arr.length + " сделок, " + sg(s, 1) + "R" };
+    }));
+  }
+  const tm = SUB("timing"), bits = [];
+  if (ov(tm, "hold_tp_avg_h") !== null)
+    bits.push("до тейка в среднем " + f(ov(tm, "hold_tp_avg_h"), 0) + "ч");
+  if (ov(tm, "hold_stop_avg_h") !== null)
+    bits.push("до стопа " + f(ov(tm, "hold_stop_avg_h"), 0) + "ч");
+  if (ov(tm, "time_to_mae_avg_h") !== null)
+    bits.push("худшая точка наступает через " + f(ov(tm, "time_to_mae_avg_h"), 0) + "ч");
+  if (ov(tm, "time_to_mfe_avg_h") !== null)
+    bits.push("лучшая — через " + f(ov(tm, "time_to_mfe_avg_h"), 0) + "ч");
+  $("timeNote").textContent = bits.length
+    ? bits.join(", ") + ". Высота столбца — число сделок, цвет — суммарный R."
+    : "Высота столбца — число сделок, цвет — суммарный R. Наведи курсор для деталей.";
+}
+
+/* ---------- почему не заходили ---------- */
+function gateTable(id, list, bars, headN, headShare) {
+  let items = [];
+  if (Array.isArray(list)) {
+    items = list.map(x => ({ name: x.name, n: x.n, share: x.share_bars_pct }));
+  } else if (list && typeof list === "object") {
+    items = Object.keys(list).map(k => ({ name: k, n: list[k],
+      share: bars ? list[k] / bars * 100 : null }));
+  }
+  items.sort((a, b) => (num(b.n) || 0) - (num(a.n) || 0));
+  const mx = Math.max(1, ...items.map(x => num(x.n) || 0));
+  $(id).innerHTML = "<thead><tr><th>Ворото</th><th>" + headN + "</th><th>"
+    + headShare + "</th><th></th></tr></thead><tbody>"
+    + (items.length ? items.map(x =>
+      "<tr><td>" + esc(x.name) + "</td><td>" + (num(x.n) === null ? "–" : x.n)
+      + "</td><td>" + (num(x.share) === null ? "–" : f(x.share, 1) + "%")
+      + '</td><td style="width:34%"><span class="htrack"><span class="hfill"'
+      + ' style="width:' + Math.round((num(x.n) || 0) / mx * 100)
+      + '%;background:rgba(239,83,80,.7)"></span></span></td></tr>').join("")
+      : '<tr><td colspan="4" class="empty">предпосчёт не передал разбор ворот</td></tr>')
+    + "</tbody>";
+}
+function renderWhy() {
+  const rj = SUB("rejects");
+  const bars = ov(rj, "bars_eval") !== null ? ov(rj, "bars_eval")
+    : (num(pick("bars_eval")) || 0);
+  const signals = ov(rj, "signals") !== null ? ov(rj, "signals") : pick("signals");
+  const busy = ov(rj, "blocked_busy") !== null ? ov(rj, "blocked_busy")
+    : pick("blocked_busy");
+  const cool = ov(rj, "blocked_cooldown") !== null ? ov(rj, "blocked_cooldown")
+    : pick("blocked_cooldown");
+  const ruin = ov(rj, "blocked_ruined") !== null ? ov(rj, "blocked_ruined")
+    : pick("blocked_ruined");
+  const nr = SUB("near");
+
+  const wt = [];
+  if (bars) wt.push(tile(String(bars), TF_LABEL + "-баров проверено"));
+  if (num(signals) !== null)
+    wt.push(tile(String(signals), "сигналов прошло все ворота"
+      + (bars ? " (" + f(signals / bars * 100, 1) + "% баров)" : "")));
+  wt.push(tile(String(ov(rj, "executed") !== null ? ov(rj, "executed") : TRADES.length),
+    "стали сделками"
+    + (ov(rj, "signal_yield_pct") !== null
+      ? " (" + f(ov(rj, "signal_yield_pct"), 0) + "% сигналов)" : ""),
+    ov(rj, "signal_yield_pct") !== null && ov(rj, "signal_yield_pct") < 60 ? "neg" : ""));
+  if (num(busy) !== null)
+    wt.push(tile(String(busy), "съела занятость — позиция уже открыта"
+      + (ov(rj, "blocked_busy_pct") !== null
+        ? " (" + f(ov(rj, "blocked_busy_pct"), 0) + "% сигналов)" : ""), "neg"));
+  if (num(cool) !== null)
+    wt.push(tile(String(cool), "съел кулдаун"
+      + (ov(rj, "blocked_cooldown_pct") !== null
+        ? " (" + f(ov(rj, "blocked_cooldown_pct"), 0) + "% сигналов)" : ""), "neg"));
+  if (num(ruin) !== null && ruin > 0)
+    wt.push(tile(String(ruin), "пропущено после слива счёта", "neg"));
+  if (rj.top_gate)
+    wt.push(tile(f(ov(rj, "top_gate_share_pct"), 1) + "%",
+      "главная причина отказа: " + rj.top_gate, "neg",
+      "первое непройденное ворото на большинстве баров"));
+  if (rj.worst_solo_gate)
+    wt.push(tile(f(ov(rj, "worst_solo_share_pct"), 1) + "%",
+      "самое жёсткое ворото в одиночку: " + rj.worst_solo_gate, "neg"));
+  $("whyTiles").innerHTML = wt.join("");
+
+  gateTable("rejTbl", rj.gates || pick("reject_counts"), bars,
+    "Баров отсеяно", "% баров");
+  gateTable("soloTbl", rj.gate_solo || pick("gate_solo"), bars,
+    "Отсеивает баров", "% баров");
+
+  const rows = [
+    ["ретест не налился / нет 15м-данных",
+      Array.isArray(rj.exec) && rj.exec.length
+        ? rj.exec.map(x => x.name + ": " + x.n).join(", ") : "не было"],
+    ["сигналов", num(signals) !== null ? signals : "–"],
+    ["съедено занятостью", num(busy) !== null ? busy : "–"],
+    ["съедено кулдауном", num(cool) !== null ? cool : "–"],
+    ["сделок в итоге", TRADES.length],
+  ];
+  $("blkTbl").innerHTML = "<thead><tr><th>Что</th><th>Сколько</th></tr></thead><tbody>"
+    + rows.map(r => "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1])
+      + "</td></tr>").join("") + "</tbody>";
+
+  const bg = Array.isArray(nr.by_gate) ? nr.by_gate : null;
+  if (bg) {
+    $("nmGateTbl").innerHTML = "<thead><tr><th>Не хватило</th><th>Случаев</th>"
+      + "<th>Ср. гипо R</th><th>Сумма R</th><th>Прибыльных</th>"
+      + "<th>Было → нужно</th><th>Ср. недобор</th></tr></thead><tbody>"
+      + bg.map(x => "<tr><td>" + esc(x.gate) + "</td><td>" + x.n
+        + '</td><td class="' + cls(x.avg_r) + '">' + sg(x.avg_r, 3)
+        + '</td><td class="' + cls(x.sum_r) + '">' + sg(x.sum_r, 1)
+        + "</td><td>" + x.wins + " (" + f(x.win_share, 0) + "%)</td><td>"
+        + fa(x.avg_got) + " → " + fa(x.avg_need) + "</td><td>"
+        + fa(x.avg_margin) + "</td></tr>").join("") + "</tbody>";
+  } else {
+    const byGate = {};
+    for (const n of NEAR) {
+      const g = String(n.gate || "?");
+      if (!byGate[g]) byGate[g] = { n: 0, sum: 0, wins: 0 };
+      byGate[g].n++;
+      byGate[g].sum += num(n.hypo_r) || 0;
+      if (num(n.hypo_r) > 0) byGate[g].wins++;
+    }
+    const gk = Object.keys(byGate).sort((a, b) => byGate[b].n - byGate[a].n);
+    $("nmGateTbl").innerHTML = "<thead><tr><th>Не хватило</th><th>Случаев</th>"
+      + "<th>Ср. гипо R</th><th>Прибыльных</th></tr></thead><tbody>"
+      + (gk.length ? gk.map(g => "<tr><td>" + esc(g) + "</td><td>" + byGate[g].n
+        + '</td><td class="' + cls(byGate[g].sum) + '">'
+        + sg(byGate[g].sum / byGate[g].n, 3) + "</td><td>" + byGate[g].wins
+        + "</td></tr>").join("")
+        : '<tr><td colspan="4" class="empty">near-miss нет</td></tr>') + "</tbody>";
+  }
+
+  const hr = NEAR.map(n => num(n.hypo_r)).filter(v => v !== null);
+  const nAvg = ov(nr, "avg_r") !== null ? ov(nr, "avg_r") : avg(hr);
+  const nWins = ov(nr, "wins") !== null ? ov(nr, "wins") : hr.filter(v => v > 0).length;
+  const nAll = ov(nr, "n") !== null ? ov(nr, "n") : NEAR.length;
+  const t = [];
+  t.push(tile(String(nAll), "near-miss всего"
+    + (ov(nr, "n_hypo") !== null ? ", посчитано " + ov(nr, "n_hypo") : "")));
+  t.push(tile(sgr(nAvg, 3), "средний гипотетический R", cls(nAvg),
+    "если бы входили во все near-miss"));
+  if (ov(nr, "med_r") !== null)
+    t.push(tile(sgr(ov(nr, "med_r"), 2), "медианный гипо R", cls(ov(nr, "med_r"))));
+  t.push(tile(nWins + (nAll ? " (" + f(ov(nr, "win_share") !== null
+    ? ov(nr, "win_share") : nWins / nAll * 100, 0) + "%)" : ""),
+    "были бы прибыльными"));
+  if (ov(nr, "sum_r") !== null)
+    t.push(tile(sgr(ov(nr, "sum_r"), 1), "суммарный гипо R",
+      cls(ov(nr, "sum_r")), "плюс здесь означал бы, что пороги слишком строги"));
+  const best = (Array.isArray(nr.best) && nr.best.length ? nr.best[0]
+    : NEAR.filter(n => num(n.hypo_r) !== null)
+      .sort((a, b) => b.hypo_r - a.hypo_r)[0]);
+  if (best) t.push(tile(sgr(best.hypo_r), "лучший пропуск: " + (best.gate || "")
+    + " " + DATE(normTs(best.ts)), "pos"));
+  const rr = nr.reasons;
+  if (rr && typeof rr === "object")
+    t.push(tile((rr.tp || 0) + " / " + (rr.stop || 0) + " / " + (rr.timeout || 0),
+      "гипо-исходы: тейк / стоп / таймаут"));
+  $("nmTiles").innerHTML = t.join("");
+}
+
+/* ---------- таблица сделок ---------- */
+const TR_COLS = [
+  ["idx", "№"], ["entry_ts", "Вход"], ["exit_ts", "Выход"], ["side", "Напр."],
+  ["entry", "Вход $"], ["stop", "Стоп $"], ["tp", "Тейк $"], ["stop_pct", "Стоп %"],
+  ["reason", "Исход"], ["r", "R"], ["pnl", "PnL $"], ["mae_r", "MAE R"],
+  ["mfe_r", "MFE R"], ["would_hit_tp_later", "тесен"], ["regime", "Режим"],
+  ["rsi", "RSI"], ["hold_h", "Удерж, ч"],
+];
+function cmp(a, b, k, dir) {
+  let x = a[k], y = b[k];
+  if (k === "side") { x = a.long ? 1 : 0; y = b.long ? 1 : 0; }
+  if (k === "would_hit_tp_later") { x = x ? 1 : 0; y = y ? 1 : 0; }
+  if (typeof x === "string" || typeof y === "string")
+    return String(x).localeCompare(String(y)) * dir;
+  x = num(x) === null ? -Infinity : x;
+  y = num(y) === null ? -Infinity : y;
+  return (x - y) * dir;
+}
+function renderTrades() {
+  const rows = TRADES.filter(tradeVisible).slice()
+    .sort((a, b) => cmp(a, b, sortTr.k, sortTr.dir));
+  const head = "<thead><tr>" + TR_COLS.map(c => '<th data-k="' + c[0] + '">' + c[1]
+    + (sortTr.k === c[0] ? (sortTr.dir > 0 ? " ▲" : " ▼") : "") + "</th>").join("")
+    + "</tr></thead>";
+  const body = rows.map(t =>
+    '<tr data-key="t' + t.idx + '" data-idx="' + t.idx + '">'
+    + "<td>" + t.idx + "</td><td>" + DT(t.entry_ts) + "</td><td>" + DT(t.exit_ts)
+    + '</td><td class="' + (t.long ? "pos" : "neg") + '">' + (t.long ? "LONG" : "SHORT")
+    + "</td><td>" + f(t.entry, 1) + "</td><td>" + f(t.stop, 1) + "</td><td>"
+    + f(t.tp, 1) + "</td><td>" + f(t.stop_pct, 2) + '</td><td class="'
+    + (t.reason === "tp" ? "pos" : t.reason === "stop" ? "neg"
+      : t.reason === "liq" ? "liq" : "") + '">' + reasonRu(t.reason)
+    + '</td><td class="' + cls(t.r) + '">' + sg(t.r) + '</td><td class="' + cls(t.pnl)
+    + '">' + sg(t.pnl) + "</td><td>" + f(t.mae_r) + "</td><td>" + f(t.mfe_r)
+    + "</td><td>" + (t.would_hit_tp_later ? "✓" : "") + "</td><td>"
+    + regName(t.regime) + "</td><td>" + f(t.rsi, 1) + "</td><td>"
+    + f(t.hold_h, 1) + "</td></tr>").join("");
+  $("trTbl").innerHTML = head + "<tbody>"
+    + (body || '<tr><td colspan="17" class="empty">'
+      + (TRADES.length ? "под фильтр не попало ни одной сделки"
+        : "сделок нет — смотри «Почему не заходили»") + "</td></tr>") + "</tbody>";
+  $("trCnt").textContent = rows.length + " из " + TRADES.length;
+  for (const th of $("trTbl").querySelectorAll("th[data-k]"))
+    th.onclick = () => {
+      const k = th.getAttribute("data-k");
+      sortTr = { k: k, dir: sortTr.k === k ? -sortTr.dir : -1 };
+      renderTrades();
+      if (SEL && SEL.kind === "trade") markSel("trTbl", "t" + SEL.id);
+    };
+  for (const tr of $("trTbl").querySelectorAll("tr[data-idx]"))
+    tr.onclick = () => {
+      const t = TRADES.find(x => String(x.idx) === tr.getAttribute("data-idx"));
+      if (t) selectTrade(t);
+    };
+}
+
+/* ---------- таблица near-miss ---------- */
+const NM_COLS = [
+  ["ts", "Время"], ["side", "Напр."], ["gate", "Не хватило"], ["got", "Было"],
+  ["need", "Нужно"], ["margin", "Недобор"], ["entry", "Вход $"], ["stop", "Стоп $"],
+  ["dist", "Стоп %"], ["hypo_r", "Гипо R"], ["hypo_reason", "Гипо исход"],
+  ["hypo_mfe_r", "Гипо MFE R"], ["regime", "Режим"], ["rsi", "RSI"],
+];
+function renderNM() {
+  const rows = NEAR.slice().sort((a, b) => cmp(a, b, sortNm.k, sortNm.dir));
+  const head = "<thead><tr>" + NM_COLS.map(c => '<th data-k="' + c[0] + '">' + c[1]
+    + (sortNm.k === c[0] ? (sortNm.dir > 0 ? " ▲" : " ▼") : "") + "</th>").join("")
+    + "</tr></thead>";
+  const body = rows.map(n => {
+    const dist = num(n.dist) !== null ? f(n.dist * 100, 2) : f(n.stop_pct, 2);
+    return '<tr data-key="n' + n.idx + '" data-idx="' + n.idx + '"><td>' + DT(n.ts)
+      + '</td><td class="' + (n.long ? "pos" : "neg") + '">'
+      + (n.long ? "LONG" : "SHORT") + "</td><td>" + esc(n.gate || "–")
+      + "</td><td>" + fa(n.got) + "</td><td>" + fa(n.need) + '</td><td class="neg">'
+      + fa(n.margin) + "</td><td>" + f(n.entry, 1) + "</td><td>" + f(n.stop, 1)
+      + "</td><td>" + dist + '</td><td class="' + cls(n.hypo_r) + '">' + sg(n.hypo_r)
+      + "</td><td>" + reasonRu(n.hypo_reason) + "</td><td>" + f(n.hypo_mfe_r)
+      + "</td><td>" + regName(n.regime) + "</td><td>" + f(n.rsi, 1) + "</td></tr>";
+  }).join("");
+  $("nmTbl").innerHTML = head + "<tbody>"
+    + (body || '<tr><td colspan="14" class="empty">near-miss нет</td></tr>')
+    + "</tbody>";
+  $("nmCnt").textContent = NEAR.length + " шт.";
+  for (const th of $("nmTbl").querySelectorAll("th[data-k]"))
+    th.onclick = () => {
+      const k = th.getAttribute("data-k");
+      sortNm = { k: k, dir: sortNm.k === k ? -sortNm.dir : -1 };
+      renderNM();
+      if (SEL && SEL.kind === "nm") markSel("nmTbl", "n" + SEL.id);
+    };
+  for (const tr of $("nmTbl").querySelectorAll("tr[data-idx]"))
+    tr.onclick = () => {
+      const n = NEAR.find(x => String(x.idx) === tr.getAttribute("data-idx"));
+      if (n) selectNM(n);
+    };
+}
+
+/* ---------- геном ---------- */
+const GEN_RU = {
+  rsi_idx: "период RSI (индекс в 7/10/14/21)",
+  window: "окно уровней диапазона, баров своего ТФ",
+  zone: "зона входа — доля диапазона от границы",
+  rsi_os: "базовый порог RSI (для шорта зеркально)",
+  buf_atr: "буфер стопа за структурой, дневных ATR",
+  stop_mode: "способ постановки стопа",
+  swing_bars: "свинг-экстремум: сколько баров назад",
+  stop_atr_k: "стоп = k × дневной ATR от входа",
+  stop_cap: "жёсткий лимит ширины стопа",
+  poke_atr: "sweep: минимальная глубина прокола, ATR",
+  age: "sweep: возраст уровня, баров своего ТФ",
+  drop_frac: "размер движения (нож / рост)",
+  drop_days: "за сколько дней это движение",
+  hold_days: "таймаут позиции, дней",
+  cooldown: "кулдаун после выхода, баров своего ТФ",
+  reg_bull: "торговать в бычьем режиме",
+  reg_range: "торговать в боковике",
+  reg_bear: "торговать в медвежьем режиме",
+  counter_rsi_shift: "против тренда: RSI строже на",
+  counter_zone_mult: "против тренда: зона уже во столько раз",
+  with_rsi_shift: "по тренду: RSI мягче на",
+  entry_mode: "способ входа",
+  retest_atr: "ретест: цена лучше на, ATR",
+  retest_bars: "ретест: сколько 15м-баров ждём",
+  bounce_min_atr: "bounce: мин. отскок от дна ножа, дневных ATR",
+  bounce_max_frac: "bounce: восстановлено не больше этой доли падения",
+  ma_gate: "rally: ворото тренда — шорт только под SMA",
+  ma_len: "rally: период SMA тренда, баров своего ТФ",
+  fund_gate: "ворото funding: включено?",
+  fund_thr: "funding: мин. ставка %/8ч для шорта (лонг зеркально)",
+  aroon_gate: "ворото Aroon: включено?",
+  aroon_n: "Aroon: окно свежести экстремума, баров",
+  aroon_thr: "Aroon: порог линии (0..100)",
+  storm_gate: "ворото шторма: включено?",
+  storm_day: "шторм: порог хода за сутки",
+  storm_week: "шторм: порог хода за неделю",
+  storm_atr_rank: "шторм: порог перцентиля дневного ATR",
+  storm_mode: "0 — не торговать в шторм, 1 — не входить против шторма, 2 — только в шторм",
+  score_gate: "ворото скоринга модели: включено?",
+  score_min: "скоринг: минимальный балл модели",
+};
+const STOP_MODES = ["0 — за границей диапазона (как v1)",
+  "1 — за свинг-экстремумом", "2 — k × дневной ATR от входа",
+  "3 — за фитилём сигнального бара"];
+const ENTRY_MODES = ["0 — по рынку (open первой 15м-свечи после закрытия бара своего ТФ)",
+  "1 — лимитка на ретесте"];
+function genVal(k, v) {
+  if (k === "stop_mode") return STOP_MODES[v] || v;
+  if (k === "entry_mode") return ENTRY_MODES[v] || v;
+  if (k === "rsi_idx") return v + " → RSI(" + (RSI_SET[v] || "?") + ")";
+  if (k === "reg_bull" || k === "reg_range" || k === "reg_bear")
+    return v ? "да" : "НЕТ (режим запрещён)";
+  if (k === "stop_cap" || k === "drop_frac" || k === "storm_day"
+      || k === "storm_week")
+    return v + " (" + f(v * 100, 2) + "%)";
+  return v;
+}
+function renderGenome() {
+  const g = DATA.genome;
+  if (!g || typeof g !== "object") { $("genCard").style.display = "none"; return; }
+  $("genTbl").innerHTML = "<thead><tr><th>Ген</th><th>Значение</th><th>Смысл</th></tr></thead><tbody>"
+    + Object.keys(g).map(k => "<tr><td>" + esc(k) + "</td><td>" + esc(genVal(k, g[k]))
+      + '</td><td class="muted" style="white-space:normal">' + esc(GEN_RU[k] || "")
+      + "</td></tr>").join("")
+    + "<tr><td>RR</td><td>3.0</td><td class=\"muted\">тейк = 3 × стоп, жёстко</td></tr>"
+    + "<tr><td>плечо</td><td>x" + (num(DATA.lev) !== null ? DATA.lev : FALLBACK_LEV)
+    + "</td><td class=\"muted\">ликвидация при ходе против ≈ 0.95/плечо</td></tr>"
+    + "</tbody>";
+}
+
+/* ---------- мини-графики (дубликаты ts схлопывает TVK.points) ---------- */
+function buildMini() {
+  if (miniBuilt) return;
+  const eq = Array.isArray(DATA.equity) ? DATA.equity : [];
+  const dd = Array.isArray(DATA.drawdown) ? DATA.drawdown : [];
+  if (!eq.length && !dd.length) return;
+  miniBuilt = true;
+  $("eqCard").style.display = "";
+  if (eq.length) {
+    const c = miniChart("eqChart");
+    const s = c.addAreaSeries({ lineColor: C.accent, lineWidth: 2,
+      topColor: "rgba(41,98,255,.25)", bottomColor: "rgba(41,98,255,0)",
+      priceLineVisible: false });
+    const data = TVK.points(eq);
+    s.setData(data);
+    TVK.fit(c);
+    TVK.lineLegend(c, "eqLeg", [{ series: s, label: "капитал", color: C.accent,
+      fmt: v => TVK.fmtUsd(v, 2) }], { idle: "наведи курсор" });
+    const last = data[data.length - 1];
+    if (last) $("eqNote").textContent = "итог $" + f(last.value, 1)
+      + " — обучающий период, не доказательство";
+  }
+  if (dd.length) {
+    const c = miniChart("ddChart");
+    const s = c.addAreaSeries({ lineColor: C.down, lineWidth: 1,
+      topColor: "rgba(239,83,80,0)", bottomColor: "rgba(239,83,80,.3)",
+      priceLineVisible: false });
+    s.setData(TVK.points(dd));
+    TVK.fit(c);
+    TVK.lineLegend(c, "ddLeg", [{ series: s, label: "просадка", color: C.down,
+      fmt: v => TVK.fmtN(v, 1) + "%" }], { idle: "наведи курсор" });
+  }
+}
+
+/* ---------- прибыль по месяцам ---------- */
+TVK.monthChart("moBox", "sig_" + NAME, { caption: "доход за месяц",
+  onEmpty: () => { $("moCard").style.display = "none"; } });
+
+/* ---------- тумблеры ---------- */
+function bindChip(chipId, inputId, fn) {
+  const chip = $(chipId), inp = $(inputId);
+  const sync = () => chip.classList.toggle("on", inp.checked);
+  inp.onchange = () => { sync(); fn(inp.checked); };
+  sync();
+}
+bindChip("cTrades", "tgTrades", applyMarkers);
+bindChip("cLinks", "tgLinks", v => { if (LINKS) LINKS.setVisible(v); });
+bindChip("cNear", "tgNear", applyMarkers);
+bindChip("cZone", "tgZone", v => {
+  zoneLoS.applyOptions({ visible: v });
+  zoneHiS.applyOptions({ visible: v });
+});
+bindChip("cRange", "tgRange", v => {
+  rangeLoS.applyOptions({ visible: v });
+  rangeHiS.applyOptions({ visible: v });
+});
+bindChip("cEma", "tgEma", v => {
+  ema50S.applyOptions({ visible: v });
+  ema200S.applyOptions({ visible: v });
+});
+$("fTrades").onchange = () => { applyMarkers(); renderTrades(); };
+/* пилюли масштаба: 1М / 3М / 6М / 1Г / Всё + сброс (двигают и RSI-панель) */
+const rng = TVK.ranges("rng", [chart, rsiChart],
+  () => TIMES.length ? [TIMES[0], TIMES[TIMES.length - 1]] : [], { def: 0 });
+$("btnClear").onclick = () => {          // снять выделение И вернуть весь период
+  clearLines();
+  SEL = null;
+  $("selInfo").style.display = "none";
+  for (const tb of [$("trTbl"), $("nmTbl")])
+    for (const tr of tb.querySelectorAll("tr.sel")) tr.classList.remove("sel");
+  rng.set(0);
+};
+
+buildTFPills();
+load();
+</script>
+</body>
+</html>

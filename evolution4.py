@@ -110,7 +110,16 @@ def ga_tools(genes):
         out = dict(g)
         for k, (lo, hi, ii) in genes.items():
             if random.random() < 0.25:
-                out[k] = out[k] + random.gauss(0, 0.15 * (hi - lo))
+                # Гены-переключатели (0/1) гауссовым шумом почти не менялись:
+                # сдвиг 0.15*(hi-lo)=0.15 требует 3.3 сигмы, чтобы округление
+                # дало другое значение. Из-за этого включаемые ворота
+                # (funding/aroon/шторм/скоринг) оставались в популяции почти
+                # всегда выключенными и эволюция их просто не пробовала.
+                # Для таких генов мутация = честное переключение.
+                if ii and hi - lo == 1:
+                    out[k] = hi if int(round(out[k])) == lo else lo
+                else:
+                    out[k] = out[k] + random.gauss(0, 0.15 * (hi - lo))
         return clamp(out)
 
     def cross(a, b):

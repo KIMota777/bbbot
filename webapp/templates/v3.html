@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сетапы v3</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+{% set nav = 'v3' %}{% include '_nav.html' %}
+
+<div class="wrap stack">
+
+  <header>
+    <h1 class="h-page">Сетапы v3</h1>
+    <p class="h-sub">Движок signal_engine3: 6 сетапов (пробой Дончиана,
+      тренд-пулбэк, капитуляция и перегрев) на пяти монетах, у каждого есть
+      зеркало. Жёсткого RR&nbsp;1:3 больше нет — цель, трейлинг и безубыток
+      выбирает отбор, набор позиции сеткой разрешён.</p>
+  </header>
+
+  {% if not exists %}
+
+  <div class="stub">
+    <div class="ic">◌</div>
+    <h2>Отбор v3 ещё не запускался</h2>
+    <p>Показывать нечего: файла <code>setups_v3.json</code> нет. Это ожидаемое
+      состояние, а не поломка — страница читает файл при каждом открытии и
+      наполнится сама, как только отбор отработает.</p>
+    <div class="steps">
+      <div><span class="n">1</span><span><code>python evolution14.py</code> — отбор геномов с holdout и тремя зёрнами</span></div>
+      <div><span class="n">2</span><span><code>python finalize_v3.py</code> — вердикты и пороги, запись <code>setups_v3.json</code></span></div>
+      <div><span class="n">3</span><span><code>python build_v3_analytics.py</code> — предпосчёт страниц сетапов</span></div>
+    </div>
+  </div>
+
+  <div class="note warn">
+    <span class="ico">!</span>
+    <div class="nb"><span class="t">Черновой прогон уже был и ничего не нашёл.</span>
+      Две проверенные связки (пробой на BTC и ETH, 4ч) дали на holdout −0.797R
+      и −0.535R, воспроизводимость 0 из 2.
+      <details>
+        <summary>что это значит для полного отбора</summary>
+        <p>Зёрна отбора сходятся к похожим геномам (среднее расстояние 0.133
+          против 0.366 у случайных пар) — то есть отбор устойчив, но устойчиво
+          находит то, что не работает вне обучающего периода.</p>
+        <p>Полная картина по всем волнам — <a href="/evolution">хроника
+          исследования</a>.</p>
+      </details>
+    </div>
+  </div>
+
+  {% else %}
+
+  <div class="stripe">
+    <div><div class="k">сетапов</div><div class="v">{{ cards|length }}</div></div>
+    <div><div class="k">торговых</div>
+      <div class="v {{ 'pos' if n_on else 'neg' }}">{{ n_on }}</div></div>
+    <div><div class="k">наблюдение</div><div class="v">{{ n_watch }}</div></div>
+    <div><div class="k">не подтверждены</div><div class="v">{{ n_off }}</div></div>
+    <div><div class="k">страниц посчитано</div><div class="v">{{ n_pages }} <small>из {{ cards|length }}</small></div></div>
+    {% if built_txt %}<div><div class="k">пересчёт</div><div class="v" style="font-size:14px">{{ built_txt }}</div></div>{% endif %}
+  </div>
+
+  <div class="note {{ 'ok' if n_on else 'warn' }}">
+    <span class="ico">{{ '✓' if n_on else '!' }}</span>
+    <div class="nb"><span class="t">Торговый статус выдаётся только за пять проверок сразу</span>
+      — иначе сетап показан как «наблюдение» с причиной.
+      <details>
+        <summary>какие это проверки и почему их пять</summary>
+        <p>Измерено на этом проекте: случайный геном проходит наш порог в 1.4%
+          случаев, отобранный — в 25%, но при смене случайного зерна побеждают
+          каждый раз ДРУГИЕ конфиги. Значит отбор находит параметры, случайно
+          подошедшие к отрезку. Поэтому:</p>
+        <p>1) <b>воспроизводимость</b> — подтверждён в 2+ независимых прогонах
+          отбора; 2) <b>порог на holdout</b> — на невиданных данных хватает
+          сделок, expectancy&nbsp;&gt;&nbsp;0, PF и |t|&nbsp;≥&nbsp;2 (плюс без
+          t-статистики — шум); 3) <b>лучше необученного семени</b>;
+          4) <b>переносимость</b> — тот же геном даёт плюс хотя бы на одной
+          другой монете; 5) <b>обе половины истории</b> — иначе плюс объясняется
+          направлением рынка (holdout 2025-09…2026-07 — сплошной медведь, и
+          любая шортовая сторона там зарабатывает без преимущества).</p>
+        <p>Цифры «всей истории» включают обучающий период — это подгонка, а не
+          доказательство, и на карточке они помечены отдельно.</p>
+      </details>
+    </div>
+  </div>
+
+  {% if cards %}
+  <div class="seg" id="segStatus">
+    <button class="on" data-f="all">Все<span class="cnt">{{ cards|length }}</span></button>
+    <button data-f="on">Торговые<span class="cnt">{{ n_on }}</span></button>
+    <button data-f="watch">Наблюдение<span class="cnt">{{ n_watch }}</span></button>
+    <button data-f="off">Не подтверждены<span class="cnt">{{ n_off }}</span></button>
+  </div>
+  {% if coins|length > 1 %}
+  <div class="seg" id="segCoin">
+    <button class="on" data-c="all">Все монеты</button>
+    {% for c in coins %}<button data-c="{{ c }}">{{ c }}</button>{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card card--pad0">
+    <div class="list" id="v3List">
+      {% for c in cards %}
+      {% set h = c.holdout %}
+      <a class="list-row list-row--top v3-row" href="/v3/{{ c.key }}" data-f="{{ c.filt }}" data-c="{{ c.coin }}">
+        <div class="avatar {{ 'avatar--long' if c.long else 'avatar--short' }}">{{ '▲' if c.long else '▼' }}</div>
+        <div class="lr-main">
+          <div class="lr-title">{{ c.title }}</div>
+          <div class="badge-row" style="margin-top:6px">
+            <span class="badge badge--info">{{ c.coin }}</span>
+            <span class="badge">{{ c.tf }}</span>
+            <span class="badge">x{{ c.lev }}</span>
+            <span class="badge {{ c.status_cls }}">{{ c.status }}</span>
+            <span class="badge">проверок {{ c.n_ok }}/{{ c.n_checks }}</span>
+            {% if c.grid.get('levels', 1) > 1 %}<span class="badge">сетка {{ c.grid.levels }} колена</span>{% endif %}
+            {% if not c.has_page %}<span class="badge badge--bad">страница не посчитана</span>{% endif %}
+          </div>
+          {% if h and h.get('n') is not none %}
+          <div class="exam-mini">
+            <div><b>{{ h.get('n') }}</b><span>сделок</span></div>
+            <div><b>{{ h.get('wr') }}%</b><span>winrate</span></div>
+            <div><b>{{ h.get('pf') if h.get('pf') is not none else '—' }}</b><span>PF</span></div>
+            <div><b class="{{ 'pos' if (h.get('ret') or 0) > 0 else 'neg' }}">{{ '%+.1f'|format(h.get('ret') or 0) }}%</b><span>итог</span></div>
+            <div><b>{{ h.get('dd') if h.get('dd') is not none else '—' }}%</b><span>просадка</span></div>
+            <div><b>{{ '%.2f'|format(h.get('t')) if h.get('t') is not none else '—' }}</b><span>t-стат.</span></div>
+          </div>
+          <div class="lr-sub" style="margin-top:6px">экзамен на невиданных данных: {{ h.get('period', '—') }}</div>
+          {% else %}
+          <div class="lr-sub">результата на holdout нет — отбор его не передал</div>
+          {% endif %}
+          {% if c.checks %}
+          <div class="ck">
+            {% for ch in c.checks %}<i class="{{ 'ok' if ch.ok else 'no' }}" title="{{ ch.txt }}">{{ '✓' if ch.ok else '✕' }} {{ ch.name }}</i>{% endfor %}
+          </div>
+          {% endif %}
+          {% if c.reason %}
+          <div class="lr-sub" style="color:var(--muted-2)">причина: {{ c.reason }}</div>
+          {% endif %}
+          {% if c.stats and c.stats.get('n') is not none %}
+          <div class="lr-sub" style="color:var(--muted-2)">вся история (включает обучение — не доказательство):
+            {{ c.stats.get('n') }} сделок · WR {{ c.stats.get('wr') }}% · exp {{ c.stats.get('exp_r') }}R · итог {{ c.stats.get('ret') }}%</div>
+          {% endif %}
+        </div>
+        <div class="lr-exam">
+          {% if h and h.get('exp_r') is not none %}
+          <div class="r-big {{ 'pos' if h.get('exp_r') > 0 else 'neg' }}">{{ '%+.3f'|format(h.get('exp_r')) }}R</div>
+          <div class="r-cap">экзамен, на сделку</div>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </div>
+        <div class="chev">›</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  <p class="tv-hint" id="emptyNote" style="display:none">В этой группе пусто.</p>
+  {% else %}
+  <div class="stub">
+    <div class="ic">◌</div>
+    <h2>Файл есть, но сетапов в нём нет</h2>
+    <p>В <code>setups_v3.json</code> нет ни одной записи: отбор либо не нашёл
+      ничего, либо все записи были отброшены как битые — смотри
+      <code>__meta__.skipped</code> в файле.</p>
+  </div>
+  {% endif %}
+
+  {% if meta.get('thresholds') %}
+  <div class="card">
+    <details>
+      <summary>Пороги, по которым выданы статусы (из <code>setups_v3.json</code>)</summary>
+      <div class="tbl-wrap" style="margin-top:10px">
+        <table class="tbl">
+          <thead><tr><th>Порог</th><th>Значение</th></tr></thead>
+          <tbody>
+          {% for k, v in meta.thresholds.items() %}<tr><td>{{ k }}</td><td class="tnum">{{ v }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if meta.get('skipped') %}
+      <p class="tv-hint">Пропущено записей: {{ meta.skipped|length }} —
+        {% for s in meta.skipped %}{{ s.key }} ({{ s.why }}){{ '; ' if not loop.last }}{% endfor %}</p>
+      {% endif %}
+    </details>
+  </div>
+  {% endif %}
+  {% endif %}
+
+</div>
+
+<script>
+/* два независимых фильтра: статус и монета */
+function applyFilters() {
+  const st = document.querySelector("#segStatus button.on");
+  const cn = document.querySelector("#segCoin button.on");
+  const f = st ? st.dataset.f : "all";
+  const c = cn ? cn.dataset.c : "all";
+  let shown = 0;
+  for (const row of document.querySelectorAll("#v3List .v3-row")) {
+    const ok = (f === "all" || row.dataset.f === f)
+            && (c === "all" || row.dataset.c === c);
+    row.style.display = ok ? "" : "none";
+    if (ok) shown++;
+  }
+  const note = document.getElementById("emptyNote");
+  if (note) note.style.display = shown ? "none" : "";
+}
+for (const id of ["segStatus", "segCoin"]) {
+  const seg = document.getElementById(id);
+  if (!seg) continue;
+  seg.onclick = e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    for (const x of seg.querySelectorAll("button")) x.classList.toggle("on", x === b);
+    applyFilters();
+  };
+}
+applyFilters();
+</script>
+</body>
+</html>

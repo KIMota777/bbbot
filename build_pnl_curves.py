@@ -19,6 +19,7 @@ $50 (5 ботов + 2 рабочих сигнальных сетапа = 7 ли�
 
 import json
 import os
+import time
 from collections import defaultdict
 
 import config
@@ -27,7 +28,7 @@ import evolution2 as e2
 import evolution7 as e7
 import evolution8 as e8
 import ext_data as xd
-import signal_engine as se
+import signal_engine2 as se   # движок сигналов v2 (геномы v10)
 
 OUT = os.path.join("webapp", "data", "pnl_curves.json")
 MAX_POINTS = 1600
@@ -38,7 +39,11 @@ MONTH = 30 * 86400
 COLORS = {
     "DOGEUSDT": "#f0b90b", "LTCUSDT": "#4aa8ff", "BTCUSDT": "#ff7a30",
     "ETHUSDT": "#c88cff", "SOLUSDT": "#46C186",
-    "pump_short": "#e056a2", "range_long": "#7ee0d2",
+    # сигнальные сетапы (после отбора v10 их рабочих пять)
+    "range_long": "#7ee0d2", "range_short": "#4fc3a1",
+    "sweep_long": "#ffb86c", "sweep_short": "#ff79c6",
+    "dump_long": "#8be9fd", "pump_short": "#e056a2",
+    "bounce_short": "#e056a2", "rally_short": "#b48ead",
 }
 # бенчмарки "купил на $50 и держал" (yfinance, дневные закрытия)
 BENCHMARKS = [
@@ -47,12 +52,54 @@ BENCHMARKS = [
     ("bench_spx", "S&P 500 — холд $50", "^GSPC", "#6f8ef2"),
 ]
 RU_SETUPS = {
+    "range_short": "Сигналы: шорт от верха боковика",
+    "sweep_long": "Сигналы: ложный пробой низа",
+    "sweep_short": "Сигналы: ложный пробой верха",
+    "dump_long": "Сигналы: лонг после обвала",
+    "bounce_short": "Сигналы: нож→откат, шорт",
+    "rally_short": "Сигналы: тренд-шорт",
     "range_long": "Сигналы: лонг от низа боковика",
     "pump_short": "Сигналы: шорт после пампа",
 }
 
 
+def holdout_start_ts():
+    """Момент начала честного экзамена (в секундах).
+
+    Берём из bots_honest.json — там граница зафиксирована один раз и
+    используется всеми проверками проекта; если файла нет, считаем как
+    везде: последние 28% истории.
+    """
+    p = os.path.join("webapp", "data", "bots_honest.json")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            per = json.load(fh)["periods"]["holdout"]["start"]
+        return int(time.mktime(time.strptime(per, "%Y-%m-%d")))
+    except (OSError, ValueError, KeyError):
+        c = ev.fetch("BTCUSDT", "240", 1150)
+        return c[int(len(c) * 0.72)][0] // 1000
+
+
+def dedup(points):
+    """Схлопываем точки с ОДИНАКОВЫМ временем, оставляя последнее значение.
+
+    Две сделки могут закрыться в одну и ту же секунду (особенно в
+    портфельной линии, где потоки складываются) — и тогда в серии появляются
+    два значения на один ts. Библиотека графиков на этом падает с ошибкой
+    сортировки и обрывает ВЕСЬ скрипт страницы: график, легенда и плитки
+    просто не отрисовываются. Поэтому дедупликация обязательна.
+    """
+    out = []
+    for ts, v in points:
+        if out and out[-1][0] == ts:
+            out[-1] = [ts, v]
+        else:
+            out.append([ts, v])
+    return out
+
+
 def downsample(points):
+    points = dedup(points)
     if len(points) <= MAX_POINTS:
         return points
     step = len(points) / MAX_POINTS
@@ -86,10 +133,19 @@ def bot_pnls(sym, p, pct5):
                       if e_["type"] == "close"]
 
 
-def signal_pnls(name, rec, c4, ctx, c15, ts15):
-    r = se.run_setup(name, rec["genome"], c4, ctx, c15, ts15,
-                     rec.get("rec_lev", 15))
-    start_ts = c4[0][0] // 1000
+def signal_pnls(key, rec, c15, ts15, ctx_cache):
+    """key может быть мульти-ТФ ('bounce_short@60'); свечи и контекст — ТФ
+    конфига."""
+    setup = key.split("@")[0]
+    iv = int(rec.get("interval_min") or (key.split("@")[1] if "@" in key
+                                         else 240))
+    if iv not in ctx_cache:
+        cc = ev.fetch("BTCUSDT", str(iv), 1150)
+        ctx_cache[iv] = (cc, se.prep_context(cc, interval_min=iv))
+    cc, ctx = ctx_cache[iv]
+    r = se.run_setup(setup, rec["genome"], cc, ctx, c15, ts15,
+                     rec.get("rec_lev", 15), collect_diag=False)
+    start_ts = cc[0][0] // 1000
     return start_ts, [(t["exit_ts"] // 1000, t["pnl"]) for t in r["trades"]]
 
 
@@ -106,7 +162,8 @@ def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     pct5 = xd.fetch_daily_pct5()
 
-    streams = []  # (key, label, color, group, start_ts, [(ts, pnl)])
+    # (key, label, color, group, start_ts, [(ts, pnl)], в_портфель)
+    streams = []
     for sym, modes in config.SYMBOL_PARAMS.items():
         p = modes.get("final")
         if not p:
@@ -115,75 +172,140 @@ def main():
         st, pnls = bot_pnls(sym, p, pct5)
         streams.append((f"bot_{sym}",
                         f"{sym.replace('USDT','')} — бот x{p.get('lev', 5)}",
-                        COLORS.get(sym, "#aaaaaa"), "bot", st, pnls))
+                        COLORS.get(sym, "#aaaaaa"), "bot", st, pnls, True))
 
-    with open("signal_setups.json", encoding="utf-8") as fh:
+    # сетапы v2 (отбор v10) если готовы, иначе старые v1
+    setups_file = ("signal_setups2.json" if os.path.exists("signal_setups2.json")
+                   else "signal_setups.json")
+    print(f"сетапы: {setups_file}")
+    with open(setups_file, encoding="utf-8") as fh:
         setups = json.load(fh)
-    c4 = ev.fetch("BTCUSDT", "240", 1150)
     c15 = ev.fetch("BTCUSDT", "15", 1150)
     ts15 = [c[0] for c in c15]
-    ctx = se.prep_context(c4)
-    for name, rec in setups.items():
-        if not rec.get("enabled"):
-            continue
-        print(f"{name}: сделки сигналов (x{rec.get('rec_lev', 15)})...")
-        st, pnls = signal_pnls(name, rec, c4, ctx, c15, ts15)
-        streams.append((f"sig_{name}",
-                        f"{RU_SETUPS.get(name, name)} x{rec.get('rec_lev', 15)}",
-                        COLORS.get(name, "#dddddd"), "signal", st, pnls))
+    ctx_cache = {}
+    # Сигналы показываем ВСЕ — для сравнения с ботами и бенчмарками, но
+    # неподтверждённые рисуем пунктиром и НЕ включаем в портфель: портфельные
+    # линии должны состоять только из того, что прошло проверку, иначе
+    # «капитал портфеля» надувается тем, чему мы сами не верим.
+    for key, rec in sorted(setups.items()):
+        setup = key.split("@")[0]
+        iv = int(rec.get("interval_min") or (key.split("@")[1] if "@" in key
+                                             else 240))
+        tf = "4ч" if iv == 240 else "1ч"
+        enabled = bool(rec.get("enabled"))
+        watch = bool(rec.get("watch"))
+        mark = ("" if enabled else
+                (" · наблюдение" if watch else " · не подтверждён"))
+        print(f"{key}: сделки сигналов (x{rec.get('rec_lev', 15)}, {tf})"
+              f"{mark}...")
+        st, pnls = signal_pnls(key, rec, c15, ts15, ctx_cache)
+        streams.append((f"sig_{key}",
+                        f"{RU_SETUPS.get(setup, setup)} {tf} "
+                        f"x{rec.get('rec_lev', 15)}{mark}",
+                        COLORS.get(setup, "#dddddd"), "signal", st, pnls,
+                        enabled))
 
-    n = len(streams)
+    # в портфель идут боты и ПОДТВЕРЖДЁННЫЕ сигналы
+    in_pf = [s for s in streams if s[3] == "bot" or s[6]]
+    n = len(in_pf)
     t0 = min(s[4] for s in streams)
     total0 = SLEEVE0 * n
 
-    series = []
-    for key, label, color, group, st, pnls in streams:
+    # ГРАНИЦА ЭКЗАМЕНА: всё, что левее, — период, на котором параметры и
+    # подбирались, поэтому кривая там нарисована задним числом. Строим ВТОРОЙ
+    # набор точек, начинающийся ровно на границе: капитал снова стартует с
+    # $50, и итог показывает, что стратегия заработала бы, если бы её
+    # включили в момент окончания подбора. Это единственная цифра, которую
+    # честно называть результатом.
+    hold_ts = holdout_start_ts()
+    print(f"граница экзамена: {time.strftime('%Y-%m-%d', time.gmtime(hold_ts))}")
+
+    def curve(pnls, since=None):
+        """(точки, итог$, итог%, просадка%) — капитал от $50 с момента since."""
+        start = since if since is not None else t0
         eq = SLEEVE0
-        pts = [[t0, round(SLEEVE0, 2)]]
+        pts = [[start, round(SLEEVE0, 2)]]
         for ts, pnl in pnls:
+            if since is not None and ts < since:
+                continue
             eq *= (1 + pnl / BT_BASE)
             pts.append([ts, round(eq, 2)])
+        return (downsample(pts), round(eq, 2),
+                round((eq / SLEEVE0 - 1) * 100, 1), dd_of(pts))
+
+    series = []
+    for key, label, color, group, st, pnls, pf in streams:
+        pts, fin, fpct, dd = curve(pnls)
+        h_pts, h_fin, h_fpct, h_dd = curve(pnls, since=hold_ts)
+        n_hold = sum(1 for ts, _ in pnls if ts >= hold_ts)
         series.append(dict(
             key=key, label=label, group=group, color=color,
-            final_usd=round(eq, 2),
-            final_pct=round((eq / SLEEVE0 - 1) * 100, 1),
-            dd=dd_of(pts), points=downsample(pts)))
+            final_usd=fin, final_pct=fpct, dd=dd, points=pts,
+            # честная часть: только данные, которых подбор не видел
+            honest_usd=h_fin, honest_pct=h_fpct, honest_dd=h_dd,
+            honest_points=h_pts, honest_trades=n_hold,
+            # пунктир = не прошло проверку, в портфель не входит
+            dashed=(not pf), in_portfolio=pf))
 
-    # события всех стратегий по времени — для портфельных линий
+    # события ПОДТВЕРЖДЁННЫХ стратегий по времени — для портфельных линий
     merged = []
-    for key, label, color, group, st, pnls in streams:
+    for key, label, color, group, st, pnls, pf in in_pf:
         for ts, pnl in pnls:
             merged.append((ts, key, pnl))
     merged.sort()
 
     # портфель без ребаланса: сумма независимых капиталов
-    sleeves = {s[0]: SLEEVE0 for s in streams}
-    pts_cons = [[t0, round(total0, 2)]]
-    for ts, key, pnl in merged:
-        sleeves[key] *= (1 + pnl / BT_BASE)
-        pts_cons.append([ts, round(sum(sleeves.values()), 2)])
+    def pf_curve(since=None):
+        start = since if since is not None else t0
+        sl = {s[0]: SLEEVE0 for s in in_pf}
+        pts = [[start, round(total0, 2)]]
+        for ts, key, pnl in merged:
+            if since is not None and ts < since:
+                continue
+            sl[key] *= (1 + pnl / BT_BASE)
+            pts.append([ts, round(sum(sl.values()), 2)])
+        return pts
+
+    pts_cons = pf_curve()
+    h_cons = pf_curve(since=hold_ts)
     series.append(dict(
-        key="pf_cons", label="ПОРТФЕЛЬ $350 — без ребаланса",
+        key="pf_cons", label=f"ПОРТФЕЛЬ ${total0:.0f} — без ребаланса",
         group="portfolio", color="#e8e6df",
         final_usd=pts_cons[-1][1],
         final_pct=round((pts_cons[-1][1] / total0 - 1) * 100, 1),
-        dd=dd_of(pts_cons), points=downsample(pts_cons)))
+        dd=dd_of(pts_cons), points=downsample(pts_cons),
+        honest_usd=h_cons[-1][1],
+        honest_pct=round((h_cons[-1][1] / total0 - 1) * 100, 1),
+        honest_dd=dd_of(h_cons), honest_points=downsample(h_cons)))
 
     # портфель с ежемесячным ребалансом: r_мес = сумм. PnL / (n x $20-база)
     monthly = defaultdict(float)
     for ts, key, pnl in merged:
         monthly[ts // MONTH] += pnl
     eq = total0
-    pts_reb = [[t0, round(eq, 2)]]
-    for m in sorted(monthly):
-        eq *= (1 + monthly[m] / (n * BT_BASE))
-        pts_reb.append([(m + 1) * MONTH, round(eq, 2)])
+    def reb_curve(since=None):
+        e = total0
+        start = since if since is not None else t0
+        pts = [[start, round(e, 2)]]
+        for m in sorted(monthly):
+            ts = (m + 1) * MONTH
+            if since is not None and ts < since:
+                continue
+            e *= (1 + monthly[m] / (n * BT_BASE))
+            pts.append([ts, round(e, 2)])
+        return pts
+
+    pts_reb = reb_curve()
+    h_reb = reb_curve(since=hold_ts)
     series.append(dict(
-        key="pf_reb", label="ПОРТФЕЛЬ $350 — ежемесячный ребаланс",
+        key="pf_reb", label=f"ПОРТФЕЛЬ ${total0:.0f} — ежемесячный ребаланс",
         group="portfolio", color="#E3A83E",
         final_usd=pts_reb[-1][1],
         final_pct=round((pts_reb[-1][1] / total0 - 1) * 100, 1),
-        dd=dd_of(pts_reb), points=downsample(pts_reb)))
+        dd=dd_of(pts_reb), points=downsample(pts_reb),
+        honest_usd=h_reb[-1][1],
+        honest_pct=round((h_reb[-1][1] / total0 - 1) * 100, 1),
+        honest_dd=dd_of(h_reb), honest_points=downsample(h_reb)))
 
     # бенчмарки: золото / серебро / S&P 500 как холд от $50 с той же даты
     try:
@@ -199,16 +321,26 @@ def main():
                 continue
             base = rows[0][1]
             pts = [[ts, round(SLEEVE0 * c / base, 2)] for ts, c in rows]
+            # бенчмарк на честном отрезке считаем от той же границы, иначе
+            # сравнение было бы нечестным: стратегия с сентября, а «купил и
+            # держал» — с самого начала истории
+            h_rows = [(ts, c) for ts, c in rows if ts >= hold_ts]
+            h_pts = ([[ts, round(SLEEVE0 * c / h_rows[0][1], 2)]
+                      for ts, c in h_rows] if h_rows else pts[-1:])
             series.append(dict(
                 key=key, label=label, group="bench", color=color,
                 final_usd=pts[-1][1],
                 final_pct=round((pts[-1][1] / SLEEVE0 - 1) * 100, 1),
-                dd=dd_of(pts), points=downsample(pts)))
+                dd=dd_of(pts), points=downsample(pts),
+                honest_usd=h_pts[-1][1],
+                honest_pct=round((h_pts[-1][1] / SLEEVE0 - 1) * 100, 1),
+                honest_dd=dd_of(h_pts), honest_points=downsample(h_pts)))
     except Exception as e:
         print(f"  бенчмарки пропущены: {e}")
 
     with open(OUT, "w", encoding="utf-8") as fh:
-        json.dump(dict(sleeve=SLEEVE0, total=total0, series=series),
+        json.dump(dict(sleeve=SLEEVE0, total=total0, series=series,
+                       holdout_from=hold_ts),
                   fh, ensure_ascii=False)
     for s in series:
         print(f"  {s['label']:44} ${s['final_usd']:>9.2f} "

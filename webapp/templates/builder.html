@@ -1,0 +1,1431 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Свой сигнал — конструктор</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/lightweight-charts.js"></script>
+{% include '_chartkit.html' %}
+<style>
+/* Стили только этой страницы: форма конструктора. Общие компоненты
+   (.card/.seg/.pills/.note/.tiles/.tbl/.ck/.stripe) берутся из app.css. */
+.bld-grid { display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.bld-box { background: var(--bg-elev); border: 1px solid var(--line-soft);
+  border-radius: var(--r-md); padding: 13px 15px; min-width: 0; }
+.bld-box > .bl { color: var(--muted); font-size: 10.5px; font-weight: 640;
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 9px; }
+.bld-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
+  margin-top: 9px; }
+.bf { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bf > span { color: var(--muted); font-size: 11px; }
+.bin, select.bin {
+  background: var(--card-2); color: var(--ink-hi); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 6px 9px; font: 590 13px var(--font);
+  width: 92px; font-variant-numeric: tabular-nums;
+}
+select.bin { width: auto; min-width: 108px; max-width: 100%; font-weight: 500; }
+.bin:focus, select.bin:focus { outline: none; border-color: rgba(41,98,255,.65); }
+.bin:disabled, select.bin:disabled { opacity: .4; cursor: not-allowed; }
+.bin.w { width: 128px; }
+
+.bld-cond { background: var(--card-2); border: 1px solid var(--line-soft);
+  border-radius: var(--r-md); padding: 11px 13px; }
+.bld-cond + .bld-cond { margin-top: 9px; }
+.bc-h { display: flex; gap: 10px; align-items: baseline; }
+.bc-n { flex: 0 0 22px; height: 22px; border-radius: 7px; font-size: 11px;
+  font-weight: 700; display: flex; align-items: center; justify-content: center;
+  background: var(--accent-bg); color: #91aaff; align-self: flex-start; }
+.bc-t { flex: 1 1 auto; min-width: 0; font-size: 13.5px; font-weight: 590;
+  color: var(--ink-hi); overflow-wrap: anywhere; }
+.bc-x { appearance: none; background: transparent; border: 0; cursor: pointer;
+  color: var(--muted-2); font-size: 15px; line-height: 1; padding: 2px 4px; }
+.bc-x:hover { color: var(--down); }
+.bc-d { font-size: 11.5px; color: var(--muted-2); margin: 3px 0 0 32px;
+  line-height: 1.45; }
+.bc-f { display: flex; gap: 10px 14px; flex-wrap: wrap; margin: 9px 0 0 32px;
+  align-items: flex-end; }
+@media (max-width: 560px) { .bc-f, .bc-d { margin-left: 0; } }
+
+.bld-add { position: relative; display: inline-block; margin-top: 10px; }
+.bld-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0;
+  width: min(420px, 88vw); max-height: 60vh; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: 0 14px 40px rgba(0,0,0,.55);
+  padding: 8px; }
+.bld-pop[hidden] { display: none; }
+.bld-pop .gt { color: var(--muted); font-size: 10.5px; font-weight: 640;
+  text-transform: uppercase; letter-spacing: .05em; padding: 8px 9px 4px; }
+.bld-pop button { display: block; width: 100%; text-align: left; appearance: none;
+  background: transparent; border: 0; border-radius: var(--r-sm); cursor: pointer;
+  padding: 7px 9px; color: var(--ink); font: 500 13px var(--font); }
+.bld-pop button:hover { background: var(--card-2); }
+.bld-pop button b { display: block; font-weight: 590; color: var(--ink-hi); }
+.bld-pop button span { display: block; font-size: 11.5px; color: var(--muted);
+  margin-top: 2px; line-height: 1.4; }
+.bld-pop .gw { font-size: 11px; color: #f2c073; padding: 2px 9px 6px; }
+
+.btn-go { appearance: none; border: 0; border-radius: 11px; cursor: pointer;
+  background: var(--accent); color: #fff; font: 640 15px var(--font);
+  padding: 12px 26px; letter-spacing: -.2px; }
+.btn-go:hover { filter: brightness(1.08); }
+.btn-go:disabled { opacity: .5; cursor: default; filter: none; }
+.btn-go.sec { background: var(--card-2); color: var(--ink); font-size: 13px;
+  padding: 10px 18px; border: 1px solid var(--line); }
+
+.spin { display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.28); border-top-color: #fff;
+  animation: bsp .8s linear infinite; vertical-align: -2px; margin-right: 7px; }
+@keyframes bsp { to { transform: rotate(360deg); } }
+
+.bld-verdict { border-radius: var(--r-lg); padding: 18px 20px;
+  border: 1px solid var(--line-soft); background: var(--card); }
+.bld-verdict.v-ok { background: rgba(38,166,154,.10); border-color: rgba(38,166,154,.42); }
+.bld-verdict.v-watch { background: rgba(255,159,10,.09); border-color: rgba(255,159,10,.40); }
+.bld-verdict.v-no { background: rgba(239,83,80,.09); border-color: rgba(239,83,80,.38); }
+.bv-t { font-size: 30px; font-weight: 700; letter-spacing: -.8px; line-height: 1.1;
+  overflow-wrap: anywhere; }
+.v-ok .bv-t { color: #4fd1c4; } .v-watch .bv-t { color: #f5b342; }
+.v-no .bv-t { color: #f5837f; }
+.bv-s { color: var(--muted); font-size: 12.5px; margin-top: 5px; line-height: 1.5; }
+.bv-list { margin: 14px 0 0; padding: 0; list-style: none; display: flex;
+  flex-direction: column; gap: 6px; }
+.bv-list li { display: flex; gap: 9px; font-size: 12.5px; color: var(--ink);
+  line-height: 1.5; }
+.bv-list li > i { font-style: normal; flex: 0 0 16px; }
+.bv-list li.no > i { color: var(--down); } .bv-list li.ok > i { color: var(--up); }
+.bv-list li.no { color: var(--muted); }
+
+.bld-saved-row { display: flex; gap: 12px; align-items: center; padding: 12px 16px;
+  border-bottom: 1px solid var(--line-soft); }
+.bld-saved-row:last-child { border-bottom: 0; }
+.bsr-m { flex: 1 1 auto; min-width: 0; }
+.bsr-m b { display: block; font-size: 14px; font-weight: 590; color: var(--ink-hi);
+  overflow-wrap: anywhere; }
+.bsr-m span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.bld-count { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+{% set nav = 'builder' %}{% include '_nav.html' %}
+
+<div class="wrap stack">
+
+  <header>
+    <h1 class="h-page">Свой сигнал</h1>
+    <p class="h-sub">Соберите идею из блоков — «когда входим», «где стоп»,
+      «где цель» — и прогоните её через тот же экзамен, что и всё остальное
+      в проекте: последние 28% истории движок не видел при настройке, вход
+      сравнивается со случайным входом той же частоты, а параметры трясутся
+      на ±10%. Вердикт «не подтверждён» — обычный, нормальный исход.</p>
+  </header>
+
+  {% if not engine_ok %}
+  <div class="note danger">
+    <span class="ico">✕</span>
+    <div class="nb"><span class="t">Движок конструктора не запустился</span>
+      — {{ engine_err }}. Проверка недоступна, форма ниже не будет работать.</div>
+  </div>
+  {% endif %}
+
+  <div class="stripe">
+    <div><div class="k">проверено вариантов</div>
+      <div class="v bld-count" id="stTried">0</div></div>
+    <div><div class="k">порог значимости</div>
+      <div class="v" id="stThr">p &lt; 0.05</div></div>
+    <div><div class="k">экзамен</div><div class="v">28%<small> истории</small></div></div>
+    <div><div class="k">сохранено</div><div class="v" id="stSaved">{{ saved|length }}</div></div>
+    <div><div class="k">подтверждено в проекте</div><div class="v neg">0<small> сетапов</small></div></div>
+  </div>
+
+  <div class="note" id="triedNote">
+    <span class="ico">◔</span>
+    <div class="nb"><span class="t">Счётчик попыток — это не украшение</span>
+      Каждая новая проверка повышает шанс, что «хороший» результат окажется
+      случайностью: при 20 вариантах один почти наверняка покажется рабочим
+      сам по себе. Поэтому число попыток идёт в движок, и порог значимости
+      ужесточается (поправка Бонферрони: p умножается на число попыток).
+      <details>
+        <summary>почему это самая частая ошибка</summary>
+        <p>За 14 волн исследования проверено 246 вариантов только в одной волне.
+          Случайно сгенерированный набор параметров проходил наш порог в 1.4%
+          случаев, отобранные — в 25%, но при смене случайного зерна побеждали
+          каждый раз ДРУГИЕ конфигурации. Это и есть подгонка.</p>
+        <p>Если вы уже перебирали идеи руками (в голове, в таблице, где угодно) —
+          впишите их число в поле «уже просмотрено вариантов» рядом с кнопкой.
+          Иначе значимость будет завышена.</p>
+      </details>
+    </div>
+  </div>
+
+  <!-- ===================================================== КОНСТРУКТОР -->
+  <div class="card" id="formCard">
+    <div class="h-card">Конструктор
+      <span class="badge badge--info" id="specBadge">новый сетап</span></div>
+
+    <div class="h-sec">С чего начать</div>
+    <div class="pills" id="presets">
+      {% for p in presets %}
+      <button type="button" data-v="{{ loop.index0 }}" title="{{ p.about }}">{{ p.name }}</button>
+      {% endfor %}
+      <button type="button" data-v="clear" title="убрать все условия">очистить</button>
+    </div>
+    <p class="tv-hint" id="presetAbout">Пресет — только отправная точка: после
+      загрузки меняйте что угодно.</p>
+
+    <div class="h-sec">Инструмент</div>
+    <div class="bld-grid">
+      <div class="bld-box">
+        <div class="bl">монета</div>
+        <div class="pills" id="pSym"></div>
+        <div class="bl" style="margin:12px 0 9px">таймфрейм сигнала</div>
+        <div class="pills" id="pIv"></div>
+        <p class="tv-hint" id="ivHint" style="margin-top:8px"></p>
+      </div>
+      <div class="bld-box">
+        <div class="bl">направление</div>
+        <div class="seg" id="pSide">
+          <button type="button" data-v="long">Лонг</button>
+          <button type="button" data-v="short">Шорт</button>
+        </div>
+        <div class="bl" style="margin:14px 0 9px">пауза после выхода</div>
+        <div class="bld-row" style="margin:0">
+          <label class="bf"><span>баров своего ТФ</span>
+            <input class="bin" type="number" data-path="cooldown_bars"
+                   min="0" max="200" step="1"></label>
+        </div>
+        <p class="tv-hint" style="margin-top:8px">0 — входим сразу, как только
+          снова сработали условия.</p>
+      </div>
+      <div class="bld-box">
+        <div class="bl">плечо</div>
+        <div class="bld-row" style="margin:0">
+          <label class="bf"><span>x</span>
+            <input class="bin" type="number" data-path="lev" min="1" max="25"
+                   step="1"></label>
+          <div class="pills" id="pLev">
+            <button type="button" data-v="3">x3</button>
+            <button type="button" data-v="5">x5</button>
+            <button type="button" data-v="10">x10</button>
+            <button type="button" data-v="20">x20</button>
+          </div>
+        </div>
+        <div id="liqBox" style="margin-top:11px"></div>
+      </div>
+    </div>
+
+    <div class="h-sec">Условия входа <span class="muted"
+      style="text-transform:none;letter-spacing:0;font-weight:500">— все
+      должны выполниться ОДНОВРЕМЕННО, порядок не важен</span></div>
+    <div id="conds"></div>
+    <div class="bld-add">
+      <button type="button" class="btn" id="addBtn">+ условие</button>
+      <div class="bld-pop" id="addPop" hidden></div>
+    </div>
+
+    <div class="h-sec">Выход из сделки</div>
+    <div class="bld-grid">
+      <div class="bld-box">
+        <div class="bl">стоп — обязателен</div>
+        <div class="seg" id="pStop">
+          <button type="button" data-v="atr">в ATR</button>
+          <button type="button" data-v="pct">в процентах</button>
+          <button type="button" data-v="swing">за свингом</button>
+        </div>
+        <div class="bld-row">
+          <label class="bf"><span id="stopLab">множитель ATR</span>
+            <input class="bin" type="number" data-path="exit.stop.value"
+                   min="0.1" max="60" step="0.1"></label>
+          <label class="bf" id="bufWrap"><span>запас, ATR</span>
+            <input class="bin" type="number" data-path="exit.stop.buf_atr"
+                   min="0" max="3" step="0.05"></label>
+          <label class="bf"><span>потолок стопа, % цены</span>
+            <input class="bin" type="number" data-path="exit.max_stop_pct"
+                   min="0.5" max="15" step="0.5"></label>
+        </div>
+        <p class="tv-hint" id="stopHint"></p>
+      </div>
+      <div class="bld-box">
+        <div class="bl">цель</div>
+        <div class="seg" id="pTp">
+          <button type="button" data-v="r">в R (риск)</button>
+          <button type="button" data-v="atr">в ATR</button>
+          <button type="button" data-v="pct">в процентах</button>
+        </div>
+        <div class="bld-row">
+          <label class="bf"><span id="tpLab">сколько рисков</span>
+            <input class="bin" type="number" data-path="exit.tp.value"
+                   min="0.1" max="30" step="0.1"></label>
+          <label class="bf"><span>таймаут, суток</span>
+            <input class="bin" type="number" data-path="exit.timeout_days"
+                   min="1" max="120" step="1"></label>
+        </div>
+        <p class="tv-hint">R — это ваш риск на сделку. Цель «2R» значит
+          «зарабатываем вдвое больше, чем теряем на стопе».</p>
+      </div>
+      <div class="bld-box">
+        <div class="bl">сопровождение</div>
+        <label class="chip" style="margin-bottom:9px">
+          <input type="checkbox" id="trailOn"> трейлинг вместо цели</label>
+        <div class="bld-row" style="margin:0">
+          <label class="bf"><span>трейлинг за N барами</span>
+            <input class="bin" type="number" data-path="exit.trail.bars"
+                   min="2" max="400" step="1"></label>
+          <label class="bf"><span>безубыток после, R</span>
+            <input class="bin" type="number" data-path="exit.be_after_r"
+                   min="0" max="5" step="0.25"></label>
+        </div>
+        <p class="tv-hint">Трейлинг ЗАМЕНЯЕТ цель: движок умеет один режим
+          выхода. Безубыток 0 — выключен.</p>
+      </div>
+    </div>
+
+    <div class="h-sec">Набор позиции (сетка)</div>
+    <div class="bld-grid">
+      <div class="bld-box">
+        <div class="bl">колена</div>
+        <div class="pills" id="pGrid">
+          <button type="button" data-v="1">1 — без сетки</button>
+          <button type="button" data-v="2">2</button>
+          <button type="button" data-v="3">3</button>
+          <button type="button" data-v="4">4</button>
+        </div>
+        <div class="bld-row">
+          <label class="bf"><span>шаг между коленами, ATR</span>
+            <input class="bin" type="number" data-path="grid.step_atr"
+                   min="0.1" max="5" step="0.1"></label>
+          <label class="bf"><span>множитель объёма</span>
+            <input class="bin" type="number" data-path="grid.mult"
+                   min="1" max="3" step="0.1"></label>
+        </div>
+      </div>
+      <div class="bld-box" style="grid-column: span 2; min-width: 0">
+        <div class="bl">что делает сетка</div>
+        <p class="tv-hint" style="margin-top:0">Сетка снижает просадку и
+          улучшает среднюю цену входа, но <b>не создаёт прибыль</b> — это
+          управление риском, а не источник преимущества. В волне 3 проверка
+          сетки усреднения показала: плато прибыльности нет, а издержки
+          съедали до 118% валовой прибыли. Если идея не работает с одним
+          входом, сетка её не спасёт — она лишь растянет тот же результат
+          во времени.</p>
+      </div>
+    </div>
+
+    <div class="h-sec">Проверка</div>
+    <div class="bld-row" style="align-items:center">
+      <button type="button" class="btn-go" id="runBtn">Проверить честно</button>
+      <label class="bf"><span>уже просмотрено вариантов</span>
+        <input class="bin" type="number" id="triedIn" min="1" max="10000" step="1"></label>
+      <label class="bf"><span>имя сетапа (для сохранения)</span>
+        <input class="bin w" type="text" id="nameIn" placeholder="моя идея"></label>
+      <button type="button" class="btn-go sec" id="saveBtn">Сохранить</button>
+      <button type="button" class="btn-go sec" id="jsonBtn">Показать JSON</button>
+    </div>
+    <p class="tv-hint" id="runHint">Проверка занимает от 1 секунды (4ч) до
+      30 секунд (15м): считается прогон на обучении, экзамен на невиданных
+      данных, 40 случайных контролей и 30 возмущений параметров.</p>
+    <div id="specJson" hidden style="margin-top:10px">
+      <div class="tbl-wrap"><pre class="mono small" id="specJsonPre"
+        style="margin:0;padding:12px;background:var(--bg-elev);border-radius:var(--r-md);overflow-x:auto"></pre></div>
+    </div>
+    <div id="errBox" style="margin-top:12px"></div>
+  </div>
+
+  <!-- ======================================================= РЕЗУЛЬТАТ -->
+  <div id="result" hidden class="stack"></div>
+
+  <!-- ====================================================== СОХРАНЁННЫЕ -->
+  <div>
+    <div class="h-sec">Сохранённые сетапы</div>
+    <div class="card card--pad0" id="savedCard">
+      <div id="savedList"></div>
+    </div>
+    <p class="tv-hint">Хранятся в файле <code>webapp/data/user_signals.json</code>
+      вместе с последним вердиктом. «Загрузить» вернёт сетап в конструктор —
+      его можно поменять и перепроверить.</p>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------- данные */
+var SCHEMA = {{ (schema or {})|tojson }};
+var PRESETS = {{ presets|tojson }};
+var DISPLAY_IV = {{ display_intervals|tojson }};
+var SAVED = {{ saved|tojson }};
+var ENGINE_OK = {{ 'true' if engine_ok else 'false' }};
+
+var $ = function (id) { return document.getElementById(id); };
+var esc = TVK.esc, C = TVK.P;
+var num = function (v) { var x = Number(v); return isFinite(x) ? x : null; };
+var f = function (v, d) { return num(v) === null ? "–" : Number(v).toFixed(d === undefined ? 2 : d); };
+var sg = function (v, d) { return num(v) === null ? "–" : (v >= 0 ? "+" : "") + Number(v).toFixed(d === undefined ? 2 : d); };
+var pc = function (v, d) { return num(v) === null ? "–" : (v >= 0 ? "+" : "") + Number(v).toFixed(d === undefined ? 1 : d) + "%"; };
+var cls = TVK.cls;
+
+var IV_RU = { "15": "15м", "60": "1ч", "240": "4ч", "D": "1д" };
+var WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+var REGIME_RU = { bull: "рост", range: "боковик", bear: "падение" };
+var REGIME_N = { 0: "рост", 1: "боковик", 2: "падение" };
+var LEVEL_RU = { swing_low: "свинг-минимум", swing_high: "свинг-максимум",
+                 round: "круглая цена", volume_poc: "максимум объёма (POC)" };
+var KIND_RU = { tp: "цель", stop: "стоп", be: "безубыток", trail: "трейлинг",
+                liq: "ЛИКВИДАЦИЯ", timeout: "таймаут" };
+
+/* меню условий: человеческие названия и одна строка «что это» */
+var COND_GROUPS = [
+  { t: "Цена и импульс", it: [
+    ["drop", "Падение", "цена упала на X% за N дней"],
+    ["rise", "Рост", "цена выросла на X% за N дней"],
+    ["breakout", "Пробой экстремума", "закрытие за максимумом или минимумом N дней"],
+    ["candle", "Свеча", "направление и минимальное тело сигнальной свечи"],
+    ["rsi", "RSI", "перекупленность или перепроданность"],
+    ["divergence", "Дивергенция RSI", "новый экстремум цены без нового у RSI"],
+    ["macd", "MACD", "гистограмма растёт/падает или пересечение сигнальной"] ] },
+  { t: "Тренд", it: [
+    ["ema", "EMA против EMA", "быстрая скользящая относительно медленной"],
+    ["ema_price", "Цена против EMA", "закрытие выше или ниже скользящей"],
+    ["regime", "Режим рынка", "рост / боковик / падение по вчерашнему дню"] ] },
+  { t: "Объём и уровни", it: [
+    ["volume", "Объём", "объём бара против медианы предыдущих"],
+    ["level_dist", "Близко к уровню", "свинг, круглая цена или максимум объёма"] ] },
+  { t: "Состояние рынка", it: [
+    ["atr_rank", "Волатильность (ATR)", "перцентиль дневного ATR за 90 суток"],
+    ["funding", "Фандинг", "ставка фандинга бессрочного контракта"] ] },
+  { t: "Время — осторожно", w: "фильтр по времени — самый частый источник ложных находок, вердикт по нему стоит читать особенно строго",
+    it: [
+    ["hour", "Час входа", "только определённые часы UTC"],
+    ["weekday", "День недели", "только определённые дни"] ] }
+];
+
+var PARAM_RU = {
+  period: "период", op: "условие", value: "значение", pct: "процент",
+  days: "дней", fast: "быстрая", slow: "медленная", signal: "сигнальная",
+  cond: "событие", dir: "направление", body_min: "тело, доля свечи",
+  allow: "разрешить", mult: "множитель", window: "окно, баров",
+  level: "уровень", max_atr: "не дальше, ATR", pivot: "плечо пивота",
+  rsi_period: "период RSI", from: "с часа", to: "по час"
+};
+var ENUM_RU = {
+  "<": "ниже", ">": "выше", above: "выше", below: "ниже",
+  cross_up: "пересекла снизу вверх", cross_down: "пересекла сверху вниз",
+  hist_up: "гистограмма растёт", hist_down: "гистограмма падает",
+  high: "максимума", low: "минимума", green: "зелёная", red: "красная",
+  bull: "бычья", bear: "медвежья", range: "боковик",
+  swing_low: "свинг-минимум", swing_high: "свинг-максимум",
+  round: "круглая цена", volume_poc: "максимум объёма (POC)"
+};
+var ENUM_RU_BY_COND = {
+  regime: { bull: "рост", range: "боковик", bear: "падение" },
+  breakout: { high: "максимум", low: "минимум" }
+};
+
+/* ---------------------------------------------------------- состояние */
+var SPEC = null, RESULT = null, RUNNING = false, RAN_SPEC = null;
+var TRIED = [];                 /* хэши уже проверенных вариантов (сессия) */
+var CHART = null, CANDLE_S = null, LINKS_T = null, LINKS_H = null;
+var CANDLES = [], TIMES = [], DISP_IV = "240", PD = 2;
+
+function deep(o) { return JSON.parse(JSON.stringify(o)); }
+
+function defSpec() {
+  return deep(PRESETS.length ? PRESETS[0].spec : {
+    symbol: "BTCUSDT", interval: "240", side: "long", entry: [],
+    exit: { stop: { type: "atr", value: 2, buf_atr: 0.2 },
+            tp: { type: "r", value: 2 }, be_after_r: 0, timeout_days: 30,
+            max_stop_pct: 6 },
+    grid: { levels: 1, step_atr: 1, mult: 1.5 }, lev: 5, cooldown_bars: 0 });
+}
+
+/* умолчания условия из схемы движка — форму строим по контракту, не по памяти */
+function condDefaults(kind) {
+  var d = (SCHEMA.conditions || {})[kind];
+  var out = { kind: kind };
+  if (!d) return out;
+  for (var k in d.params) out[k] = deep(d.params[k].default);
+  return out;
+}
+
+function specHash(s) {
+  var c = deep(s);
+  delete c.tried_variants; delete c.title;
+  return JSON.stringify(c);
+}
+
+/* --------------------------------------------- человеческое описание */
+function plural(n, a, b, c) {
+  n = Math.abs(Math.round(n)) % 100;
+  var n1 = n % 10;
+  if (n > 10 && n < 20) return c;
+  if (n1 > 1 && n1 < 5) return b;
+  if (n1 === 1) return a;
+  return c;
+}
+function nn(v) { return TVK.fmtN(Number(v), 4); }
+
+function condText(c) {
+  var k = c.kind;
+  switch (k) {
+    case "rsi": return "RSI(" + c.period + ") " + (c.op === "<" ? "ниже " : "выше ") + nn(c.value);
+    case "drop": return "падение " + nn(c.pct) + "% за " + nn(c.days) + " " + plural(c.days, "день", "дня", "дней");
+    case "rise": return "рост " + nn(c.pct) + "% за " + nn(c.days) + " " + plural(c.days, "день", "дня", "дней");
+    case "ema": return "EMA" + c.fast + " " + (ENUM_RU[c.op] || c.op) + " EMA" + c.slow;
+    case "ema_price": return "цена " + (c.op === "above" ? "выше" : "ниже") + " EMA" + c.period;
+    case "macd": return "MACD(" + c.fast + "," + c.slow + "," + c.signal + "): "
+      + ({ hist_up: "гистограмма растёт", hist_down: "гистограмма падает",
+           cross_up: "пересечение сигнальной вверх",
+           cross_down: "пересечение сигнальной вниз" }[c.cond] || c.cond);
+    case "breakout": return "пробой " + (c.dir === "high" ? "максимума" : "минимума")
+      + " " + nn(c.days) + " " + plural(c.days, "дня", "дней", "дней");
+    case "candle": return (c.dir === "green" ? "зелёная" : "красная") + " свеча"
+      + (Number(c.body_min) > 0 ? ", тело ≥ " + Math.round(c.body_min * 100) + "% диапазона" : "");
+    case "regime": return "режим рынка: " + (c.allow || []).map(function (x) { return REGIME_RU[x] || x; }).join(", ");
+    case "atr_rank": return "волатильность " + (c.op === ">" ? "выше" : "ниже") + " "
+      + Math.round(c.value * 100) + "% дней последних 90 суток";
+    case "volume": return "объём ≥ " + nn(c.mult) + "× медианы " + c.window + " баров";
+    case "funding": return "фандинг " + (c.op === "<" ? "ниже " : "выше ") + nn(c.value) + "% за 8ч";
+    case "level_dist": return "до уровня «" + (LEVEL_RU[c.level] || c.level) + "» не больше " + nn(c.max_atr) + " ATR";
+    case "divergence": return (c.dir === "bull" ? "бычья" : "медвежья") + " дивергенция RSI("
+      + c.rsi_period + ") за " + c.period + " баров";
+    case "hour": return "час входа с " + c.from + ":00 по " + c.to + ":59 UTC";
+    case "weekday": return "дни недели: " + (c.days || []).map(function (d) { return WD[d]; }).join(", ");
+  }
+  return k;
+}
+function condDoc(kind) {
+  var d = (SCHEMA.conditions || {})[kind];
+  return d && d.doc ? d.doc : "";
+}
+
+/* ---------------------------------------------------- отрисовка формы */
+function pillHtml(items, cur, dis) {
+  return items.map(function (x) {
+    var off = dis && dis.indexOf(x[0]) >= 0;
+    return '<button type="button" data-v="' + esc(x[0]) + '"'
+      + (off ? ' class="dis" disabled title="нет локальной истории"' : (String(x[0]) === String(cur) ? ' class="on"' : ''))
+      + ">" + esc(x[1]) + "</button>";
+  }).join("");
+}
+
+function renderRoot() {
+  var syms = Object.keys((SCHEMA.data || {}));
+  $("pSym").innerHTML = pillHtml(syms.map(function (s) {
+    return [s, s.replace("USDT", "")]; }), SPEC.symbol);
+  var have = (SCHEMA.data || {})[SPEC.symbol] || [];
+  var all = ["240", "60", "15"];
+  $("pIv").innerHTML = pillHtml(all.map(function (i) { return [i, IV_RU[i]]; }),
+    SPEC.interval, all.filter(function (i) { return have.indexOf(i) < 0; }));
+  $("ivHint").innerHTML = "Есть история: " + have.map(function (i) { return IV_RU[i]; }).join(", ")
+    + ". 15м — это 110 тысяч баров, проверка займёт до 30 секунд.";
+  var sd = $("pSide").querySelectorAll("button");
+  for (var i = 0; i < sd.length; i++)
+    sd[i].classList.toggle("on", sd[i].dataset.v === SPEC.side);
+
+  setVal("lev", SPEC.lev); setVal("cooldown_bars", SPEC.cooldown_bars);
+  markPills("pLev", SPEC.lev);
+  markSeg("pStop", SPEC.exit.stop.type);
+  markSeg("pTp", SPEC.exit.tp.type);
+  markPills("pGrid", SPEC.grid.levels);
+  setVal("exit.stop.value", SPEC.exit.stop.value);
+  setVal("exit.stop.buf_atr", SPEC.exit.stop.buf_atr === undefined ? 0.2 : SPEC.exit.stop.buf_atr);
+  setVal("exit.max_stop_pct", SPEC.exit.max_stop_pct);
+  setVal("exit.tp.value", SPEC.exit.tp.value);
+  setVal("exit.timeout_days", SPEC.exit.timeout_days);
+  setVal("exit.be_after_r", SPEC.exit.be_after_r);
+  setVal("exit.trail.bars", (SPEC.exit.trail && SPEC.exit.trail.bars) || 60);
+  setVal("grid.step_atr", SPEC.grid.step_atr);
+  setVal("grid.mult", SPEC.grid.mult);
+  $("trailOn").checked = !!SPEC.exit.trail;
+  syncExitUi();
+  syncLiq();
+  $("specBadge").textContent = SPEC.symbol.replace("USDT", "") + " · "
+    + IV_RU[SPEC.interval] + " · " + (SPEC.side === "long" ? "лонг" : "шорт")
+    + " · x" + SPEC.lev + " · условий " + SPEC.entry.length;
+  if (!$("specJson").hidden) $("specJsonPre").textContent = JSON.stringify(SPEC, null, 1);
+}
+
+function setVal(path, v) {
+  var el = document.querySelector('[data-path="' + path + '"]');
+  if (el && v !== undefined && v !== null) el.value = v;
+}
+function markPills(id, v) {
+  var bs = $(id).querySelectorAll("button");
+  for (var i = 0; i < bs.length; i++) bs[i].classList.toggle("on", String(bs[i].dataset.v) === String(v));
+}
+function markSeg(id, v) { markPills(id, v); }
+
+function syncExitUi() {
+  var st = SPEC.exit.stop.type;
+  $("stopLab").textContent = st === "atr" ? "множитель ATR"
+    : st === "pct" ? "процент цены" : "свинг за N баров";
+  $("bufWrap").style.display = st === "swing" ? "" : "none";
+  var tp = SPEC.exit.tp.type;
+  $("tpLab").textContent = tp === "r" ? "сколько рисков" : tp === "atr" ? "множитель ATR" : "процент цены";
+  var trail = !!SPEC.exit.trail;
+  document.querySelector('[data-path="exit.tp.value"]').disabled = trail;
+  var tb = document.querySelector('[data-path="exit.trail.bars"]');
+  tb.disabled = !trail;
+  var pt = $("pTp").querySelectorAll("button");
+  for (var i = 0; i < pt.length; i++) pt[i].disabled = trail;
+  var single = Number(SPEC.grid.levels) <= 1;
+  document.querySelector('[data-path="grid.step_atr"]').disabled = single;
+  document.querySelector('[data-path="grid.mult"]').disabled = single;
+}
+
+/* ---- плечо и ликвидация: считаем ровно как движок (1/плечо − 0.5%) ---- */
+var ATR_INFO = {};
+function atrKey() { return SPEC.symbol + "@" + SPEC.interval; }
+function loadAtr() {
+  var k = atrKey();
+  if (ATR_INFO[k] !== undefined) { syncLiq(); return; }
+  ATR_INFO[k] = null;
+  fetch("/api/builder/atr?symbol=" + encodeURIComponent(SPEC.symbol)
+        + "&interval=" + encodeURIComponent(SPEC.interval))
+    .then(function (r) { return r.json(); })
+    .then(function (d) { if (d && d.ok) ATR_INFO[k] = d; syncLiq(); })
+    .catch(function () {});
+}
+function stopPctEstimate() {
+  var st = SPEC.exit.stop, a = ATR_INFO[atrKey()];
+  if (st.type === "pct") return { v: Number(st.value), exact: true };
+  if (st.type === "atr" && a) return { v: Number(st.value) * a.atr_pct, exact: false };
+  return { v: null, exact: false };
+}
+function syncLiq() {
+  var lev = Math.max(1, Number(SPEC.lev) || 1);
+  var liq = 100 / lev - 0.5;
+  var cap = 0.8 * liq;
+  var e = stopPctEstimate(), a = ATR_INFO[atrKey()];
+  var html = '<div class="kv"><div><span>ликвидация при</span><b class="neg">−'
+    + f(liq, 2) + '%</b></div><div><span>движок пускает стоп до</span><b>'
+    + f(Math.min(cap, Number(SPEC.exit.max_stop_pct)), 2) + '%</b></div></div>';
+  var msg = "", klass = "";
+  if (e.v !== null) {
+    var rel = e.v / liq;
+    html += '<div class="kv" style="margin-top:5px"><div><span>ваш стоп</span><b class="'
+      + (rel > 0.8 ? "neg" : "") + '">' + (e.exact ? "" : "≈ ") + f(e.v, 2)
+      + '%</b></div><div><span>это</span><b>' + Math.round(rel * 100)
+      + '% пути до ликвидации</b></div></div>';
+    if (rel > 0.8) { klass = "danger"; msg = "Стоп шире, чем движок вообще допускает при плече x"
+      + lev + ": часть сигналов будет отброшена, а на остальных ликвидация наступит раньше стопа. "
+      + "Именно на этом сгорело плечо x20–25 в волне 8. Уменьшите плечо или стоп."; }
+    else if (rel > 0.6) { klass = "warn"; msg = "Стоп занимает больше 60% пути до ликвидации — запаса почти нет."; }
+  } else if (SPEC.exit.stop.type === "swing") {
+    html += '<p class="tv-hint" style="margin:6px 0 0">Ширина стопа за свингом заранее '
+      + 'неизвестна — ограничивает её «потолок стопа» ' + f(SPEC.exit.max_stop_pct, 1) + '%.</p>';
+    if (Number(SPEC.exit.max_stop_pct) > cap) { klass = "warn";
+      msg = "Потолок стопа " + f(SPEC.exit.max_stop_pct, 1) + "% больше допустимого "
+        + f(cap, 2) + "% при x" + lev + " — движок обрежет и отбросит часть сигналов."; }
+  } else if (!a) {
+    html += '<p class="tv-hint" style="margin:6px 0 0">Считаю типичный ATR монеты…</p>';
+  }
+  if (a) $("stopHint").innerHTML = "Медиана ATR " + SPEC.symbol.replace("USDT", "")
+    + " на " + IV_RU[SPEC.interval] + " — " + f(a.atr_pct, 2) + "% цены (обычный разброс "
+    + f(a.atr_p10, 2) + "–" + f(a.atr_p90, 2) + "%). Стоп «" + f(SPEC.exit.stop.value, 2)
+    + " ATR» — это примерно " + f(SPEC.exit.stop.value * a.atr_pct, 2) + "% хода цены.";
+  if (msg) html += '<div class="note ' + klass + '" style="margin-top:9px"><span class="ico">'
+    + (klass === "danger" ? "✕" : "!") + '</span><div class="nb">' + esc(msg) + "</div></div>";
+  $("liqBox").innerHTML = html;
+}
+
+/* ------------------------------------------------- условия: отрисовка */
+function fieldHtml(i, kind, name, p, val) {
+  var lab = PARAM_RU[name] || name;
+  var idp = 'data-i="' + i + '" data-k="' + esc(name) + '"';
+  if (p.type === "enum") {
+    var map = ENUM_RU_BY_COND[kind] || {};
+    var opts = p.values.map(function (v) {
+      return '<option value="' + esc(v) + '"' + (v === val ? " selected" : "") + ">"
+        + esc(map[v] || ENUM_RU[v] || v) + "</option>"; }).join("");
+    return '<label class="bf"><span>' + esc(lab) + '</span><select class="bin cf" '
+      + idp + ">" + opts + "</select></label>";
+  }
+  if (p.type === "list_enum") {
+    var cur = val || [];
+    var map2 = ENUM_RU_BY_COND[kind] || {};
+    return '<div class="bf"><span>' + esc(lab) + '</span><div class="badge-row">'
+      + p.values.map(function (v) {
+        return '<label class="chip' + (cur.indexOf(v) >= 0 ? " on" : "") + '"><input type="checkbox" class="cf" '
+          + idp + ' data-v="' + esc(v) + '"' + (cur.indexOf(v) >= 0 ? " checked" : "") + ">"
+          + esc(map2[v] || ENUM_RU[v] || v) + "</label>"; }).join("")
+      + "</div></div>";
+  }
+  if (p.type === "list_int") {
+    var cur2 = val || [];
+    var out = "";
+    for (var d = p.min; d <= p.max; d++)
+      out += '<label class="chip' + (cur2.indexOf(d) >= 0 ? " on" : "") + '"><input type="checkbox" class="cf" '
+        + idp + ' data-v="' + d + '"' + (cur2.indexOf(d) >= 0 ? " checked" : "") + ">"
+        + esc(WD[d] || d) + "</label>";
+    return '<div class="bf"><span>' + esc(lab) + '</span><div class="badge-row">' + out + "</div></div>";
+  }
+  var step = p.type === "int" ? 1 : (p.max <= 1 ? 0.05 : 0.1);
+  return '<label class="bf"><span>' + esc(lab) + '</span><input class="bin cf" type="number" '
+    + idp + ' min="' + p.min + '" max="' + p.max + '" step="' + step + '" value="' + esc(val) + '"></label>';
+}
+
+function renderConds() {
+  var box = $("conds");
+  if (!SPEC.entry.length) {
+    box.innerHTML = '<div class="ph">Пока ни одного условия. Без условий входа '
+      + 'сетапа нет — нажмите «+ условие» или загрузите пресет.</div>';
+    return;
+  }
+  box.innerHTML = SPEC.entry.map(function (c, i) {
+    var d = (SCHEMA.conditions || {})[c.kind] || { params: {} };
+    var fields = Object.keys(d.params).map(function (k) {
+      return fieldHtml(i, c.kind, k, d.params[k], c[k]); }).join("");
+    return '<div class="bld-cond"><div class="bc-h"><span class="bc-n">' + (i + 1)
+      + '</span><span class="bc-t">' + esc(condText(c))
+      + '</span><button type="button" class="bc-x" data-del="' + i + '" title="удалить условие">✕</button></div>'
+      + '<div class="bc-d">' + esc(condDoc(c.kind)) + "</div>"
+      + '<div class="bc-f">' + fields + "</div></div>";
+  }).join("");
+}
+
+/* --------------------------------------------------------- меню условий */
+function buildPop() {
+  $("addPop").innerHTML = COND_GROUPS.map(function (g) {
+    return '<div class="gt">' + esc(g.t) + "</div>"
+      + (g.w ? '<div class="gw">' + esc(g.w) + "</div>" : "")
+      + g.it.map(function (x) {
+        return '<button type="button" data-k="' + esc(x[0]) + '"><b>' + esc(x[1])
+          + "</b><span>" + esc(x[2]) + "</span></button>"; }).join("");
+  }).join("");
+}
+
+/* --------------------------------------------------------- события формы */
+function onPillClick(id, fn) {
+  $(id).addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b || b.disabled) return;
+    fn(b.dataset.v);
+  });
+}
+
+function setPath(path, v) {
+  var parts = path.split("."), o = SPEC;
+  for (var i = 0; i < parts.length - 1; i++) {
+    if (!o[parts[i]]) o[parts[i]] = {};
+    o = o[parts[i]];
+  }
+  o[parts[parts.length - 1]] = v;
+}
+
+function wire() {
+  onPillClick("pSym", function (v) {
+    SPEC.symbol = v;
+    var have = (SCHEMA.data || {})[v] || ["240"];
+    if (have.indexOf(SPEC.interval) < 0) SPEC.interval = have[0];
+    renderRoot(); loadAtr();
+  });
+  onPillClick("pIv", function (v) { SPEC.interval = v; renderRoot(); loadAtr(); });
+  onPillClick("pSide", function (v) { SPEC.side = v; renderRoot(); renderConds(); });
+  onPillClick("pLev", function (v) { SPEC.lev = Number(v); renderRoot(); });
+  onPillClick("pStop", function (v) { SPEC.exit.stop.type = v; renderRoot(); });
+  onPillClick("pTp", function (v) { SPEC.exit.tp.type = v; renderRoot(); });
+  onPillClick("pGrid", function (v) { SPEC.grid.levels = Number(v); renderRoot(); });
+
+  onPillClick("presets", function (v) {
+    if (v === "clear") { SPEC.entry = []; renderConds(); renderRoot();
+      $("presetAbout").textContent = "Условия убраны — соберите свои."; return; }
+    var p = PRESETS[Number(v)];
+    if (!p) return;
+    SPEC = deep(p.spec);
+    $("nameIn").value = p.name;
+    $("presetAbout").innerHTML = "<b>" + esc(p.name) + "</b> — " + esc(p.about);
+    renderRoot(); renderConds(); loadAtr();
+  });
+
+  $("formCard").addEventListener("change", function (e) {
+    var el = e.target;
+    if (el.dataset && el.dataset.path) {
+      var v = el.type === "number" ? num(el.value) : el.value;
+      if (v === null) return;
+      if (el.type === "number") {            /* держим в границах движка */
+        var lo = num(el.min), hi = num(el.max);
+        if (lo !== null && v < lo) v = lo;
+        if (hi !== null && v > hi) v = hi;
+      }
+      setPath(el.dataset.path, v);
+      renderRoot();
+    }
+  });
+  $("formCard").addEventListener("input", function (e) {
+    var el = e.target;
+    if (el.dataset && el.dataset.path && el.type === "number") {
+      var v = num(el.value);
+      if (v === null) return;
+      setPath(el.dataset.path, v);
+      if (el.dataset.path === "lev" || el.dataset.path.indexOf("stop") >= 0) syncLiq();
+      $("specBadge").textContent = SPEC.symbol.replace("USDT", "") + " · "
+        + IV_RU[SPEC.interval] + " · " + (SPEC.side === "long" ? "лонг" : "шорт")
+        + " · x" + SPEC.lev + " · условий " + SPEC.entry.length;
+    }
+  });
+
+  $("trailOn").addEventListener("change", function () {
+    if (this.checked) {
+      SPEC.exit.trail = { bars: num(document.querySelector('[data-path="exit.trail.bars"]').value) || 60 };
+    } else { delete SPEC.exit.trail; }
+    renderRoot();
+  });
+
+  /* поля условий */
+  $("conds").addEventListener("input", condFieldChange);
+  $("conds").addEventListener("change", condFieldChange);
+  $("conds").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-del]");
+    if (!b) return;
+    SPEC.entry.splice(Number(b.dataset.del), 1);
+    renderConds(); renderRoot();
+  });
+
+  $("addBtn").addEventListener("click", function (e) {
+    e.stopPropagation();
+    $("addPop").hidden = !$("addPop").hidden;
+  });
+  $("addPop").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-k]");
+    if (!b) return;
+    SPEC.entry.push(condDefaults(b.dataset.k));
+    $("addPop").hidden = true;
+    renderConds(); renderRoot();
+  });
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest(".bld-add")) $("addPop").hidden = true;
+  });
+
+  $("runBtn").addEventListener("click", run);
+  $("saveBtn").addEventListener("click", save);
+  $("jsonBtn").addEventListener("click", function () {
+    var b = $("specJson");
+    b.hidden = !b.hidden;
+    if (!b.hidden) $("specJsonPre").textContent = JSON.stringify(SPEC, null, 1);
+  });
+}
+
+function condFieldChange(e) {
+  var el = e.target;
+  if (!el.classList.contains("cf")) return;
+  var i = Number(el.dataset.i), k = el.dataset.k, c = SPEC.entry[i];
+  if (!c) return;
+  if (el.type === "checkbox") {
+    var raw = el.dataset.v;
+    var val = /^-?\d+$/.test(raw) ? Number(raw) : raw;
+    var arr = (c[k] || []).slice();
+    var at = arr.indexOf(val);
+    if (el.checked && at < 0) arr.push(val);
+    if (!el.checked && at >= 0) arr.splice(at, 1);
+    if (!arr.length) { el.checked = true; return; }   /* пустой список движок не примет */
+    arr.sort(function (a, b) { return a > b ? 1 : a < b ? -1 : 0; });
+    c[k] = arr;
+    if (el.parentElement) el.parentElement.classList.toggle("on", el.checked);
+  } else if (el.tagName === "SELECT") {
+    c[k] = el.value;
+  } else {
+    var v = num(el.value);
+    if (v === null) return;
+    if (e.type === "change") {               /* границы — из схемы движка */
+      var lo = num(el.min), hi = num(el.max);
+      if (lo !== null && v < lo) v = lo;
+      if (hi !== null && v > hi) v = hi;
+      el.value = v;
+    }
+    c[k] = v;
+  }
+  var card = el.closest(".bld-cond");
+  if (card) card.querySelector(".bc-t").textContent = condText(c);
+  $("specBadge").textContent = SPEC.symbol.replace("USDT", "") + " · "
+    + IV_RU[SPEC.interval] + " · " + (SPEC.side === "long" ? "лонг" : "шорт")
+    + " · x" + SPEC.lev + " · условий " + SPEC.entry.length;
+  if (!$("specJson").hidden) $("specJsonPre").textContent = JSON.stringify(SPEC, null, 1);
+}
+
+/* ------------------------------------------------- счётчик и запуск */
+function loadTried() {
+  try {
+    var raw = sessionStorage.getItem("builder_tried");
+    TRIED = raw ? JSON.parse(raw) : [];
+  } catch (e) { TRIED = []; }
+  if (!Array.isArray(TRIED)) TRIED = [];
+  syncTried();
+}
+function syncTried() {
+  var n = TRIED.length;
+  $("stTried").textContent = n;
+  $("stTried").className = "v bld-count" + (n >= 10 ? " neg" : "");
+  $("stThr").textContent = n > 1 ? ("p < " + (0.05 / n).toPrecision(2)) : "p < 0.05";
+  var manual = num($("triedIn").value);
+  if (manual === null || manual < n) $("triedIn").value = Math.max(1, n);
+  var note = $("triedNote");
+  note.className = n >= 10 ? "note danger" : (n >= 5 ? "note warn" : "note");
+  var t = note.querySelector(".t");
+  t.textContent = n >= 10
+    ? "Проверено " + n + " " + plural(n, "вариант", "варианта", "вариантов") + " — читайте вердикт скептически"
+    : (n >= 5 ? "Проверено " + n + " " + plural(n, "вариант", "варианта", "вариантов")
+        + " — поправка на множественность уже заметна"
+        : "Счётчик попыток — это не украшение");
+}
+function bumpTried(spec) {
+  var h = specHash(spec);
+  if (TRIED.indexOf(h) < 0) TRIED.push(h);
+  try { sessionStorage.setItem("builder_tried", JSON.stringify(TRIED)); } catch (e) {}
+  syncTried();
+  return Math.max(TRIED.length, num($("triedIn").value) || 1);
+}
+
+function showErr(html) {
+  $("errBox").innerHTML = html
+    ? '<div class="note danger"><span class="ico">✕</span><div class="nb">' + html + "</div></div>"
+    : "";
+}
+
+function run() {
+  if (RUNNING) return;
+  if (!ENGINE_OK) { showErr("Движок конструктора не запустился — смотрите лог сервера."); return; }
+  if (!SPEC.entry.length) {
+    showErr("<b>Нет ни одного условия входа.</b> Сетап без условия входил бы "
+      + "на каждом баре — движок такое не принимает. Нажмите «+ условие».");
+    return;
+  }
+  showErr("");
+  RUNNING = true;
+  var btn = $("runBtn");
+  btn.disabled = true;
+  var t0 = Date.now();
+  btn.innerHTML = '<span class="spin"></span>Считаю…';
+  var tick = setInterval(function () {
+    btn.innerHTML = '<span class="spin"></span>Считаю… '
+      + Math.round((Date.now() - t0) / 1000) + " с";
+  }, 500);
+  $("runHint").textContent = "Идёт прогон: обучение, экзамен на невиданных данных, "
+    + "40 случайных контролей, 30 возмущений параметров. Не закрывайте вкладку.";
+
+  var tried = bumpTried(SPEC);
+  /* запоминаем ИМЕННО отправленный вид: результат движка нормализован
+     (в нём есть умолчания), сравнивать его с формой напрямую нельзя */
+  RAN_SPEC = deep(SPEC);
+  fetch("/api/builder/run", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ spec: SPEC, tried: tried })
+  }).then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+    .then(function (x) {
+      if (!x.d || !x.d.ok) {
+        showErr("<b>Проверка не выполнена.</b> " + esc((x.d && x.d.error) || ("HTTP " + x.s)));
+        $("result").hidden = true;
+        return;
+      }
+      RESULT = x.d.result;
+      renderResult();
+    })
+    .catch(function (e) {
+      showErr("<b>Сервер не ответил.</b> " + esc(String(e))
+        + " — проверьте, что сайт запущен (python webapp/app.py).");
+    })
+    .then(function () {
+      clearInterval(tick);
+      RUNNING = false;
+      btn.disabled = false;
+      btn.textContent = "Проверить честно";
+      $("runHint").textContent = "Проверка занимает от 1 секунды (4ч) до 30 секунд (15м): "
+        + "считается прогон на обучении, экзамен на невиданных данных, 40 случайных "
+        + "контролей и 30 возмущений параметров.";
+    });
+}
+
+/* ------------------------------------------------------ отрисовка итога */
+function tile(v, lab, k) {
+  return '<div class="tile"><b' + (k ? ' class="' + k + '"' : "") + ">" + v + "</b><span>"
+    + lab + "</span></div>";
+}
+function factBox(v, lab, k) {
+  return '<div class="fact"><b' + (k ? ' class="' + k + '"' : "") + ">" + v + "</b><span>"
+    + lab + "</span></div>";
+}
+
+function renderResult() {
+  var R = RESULT, h = R.holdout, tr = R.train, v = R.verdict, d = R.data;
+  var st = v.status;
+  var kl = st === "работает" ? "v-ok" : (st === "наблюдение" ? "v-watch" : "v-no");
+  var thr = SCHEMA.thresholds || {};
+  var out = [];
+
+  /* --- вердикт --- */
+  out.push('<div class="bld-verdict ' + kl + '"><div class="bv-t">' + esc(st.toUpperCase())
+    + '</div><div class="bv-s">' + esc(R.spec.symbol.replace("USDT", "")) + " · "
+    + IV_RU[R.spec.interval] + " · " + (R.spec.side === "long" ? "лонг" : "шорт")
+    + " · x" + R.spec.lev + " · " + R.entry_conditions.length + " "
+    + plural(R.entry_conditions.length, "условие", "условия", "условий")
+    + " · экзамен " + TVK.fmtDate(d.holdout_from) + " – " + TVK.fmtDate(d.holdout_to)
+    + " (" + f(h.months, 1) + " мес) · посчитано за " + f(R.elapsed_sec, 1) + " с"
+    + '</div><ul class="bv-list">'
+    + v.checks.map(function (c) {
+      return '<li class="' + (c.ok ? "ok" : "no") + '"><i>' + (c.ok ? "✓" : "✕") + "</i><span>"
+        + esc(c.text) + "</span></li>"; }).join("")
+    + "</ul>"
+    + '<div class="bv-s" style="margin-top:12px">' + esc(
+      st === "работает"
+        ? "Все пять критериев пройдены. Это НЕ гарантия будущего — это отсутствие явных признаков подгонки. Прежде чем торговать, проверьте зеркальный сетап и другую монету."
+        : st === "наблюдение"
+        ? "Часть критериев не пройдена: идея не опровергнута, но и не подтверждена. Нужны новые данные, а не новый перебор параметров."
+        : "Идея не подтверждена. Это валидный результат: за 14 волн исследования ни один сигнальный сетап подтверждения не получил. Менять пороги под результат нельзя.")
+    + "</div></div>");
+
+  /* --- предупреждения --- */
+  var warns = (R.warnings || []).concat(R.validate_warnings || []);
+  if (warns.length) {
+    out.push('<div class="stack" style="gap:8px">' + warns.map(function (w) {
+      var bad = /издержки|разор|ликвидац|проигрывает|мало сделок|нет данных|случайн/i.test(w);
+      return '<div class="note ' + (bad ? "danger" : "warn") + '"><span class="ico">!</span>'
+        + '<div class="nb">' + esc(w) + "</div></div>"; }).join("") + "</div>");
+  }
+
+  /* --- экзамен --- */
+  /* R нормирован на ФАКТИЧЕСКИЙ риск позиции. Если стоп переехал в безубыток,
+     риск почти нулевой, и R у такой сделки взлетает до десятков — цифра
+     перестаёт что-то значить. Молчать об этом нельзя. */
+  var rBlown = Math.abs(h.best_r || 0) > 20 || Math.abs(h.worst_r || 0) > 20;
+  out.push('<div class="card"><div class="h-card">Экзамен на невиданных данных'
+    + '<span class="badge badge--info">' + f(h.months, 1) + " мес · "
+    + esc(TVK.fmtDate(d.holdout_from)) + " – " + esc(TVK.fmtDate(d.holdout_to)) + "</span></div>"
+    + (rBlown ? '<div class="note danger" style="margin-bottom:14px"><span class="ico">!</span>'
+        + '<div class="nb"><span class="t">Цифре в R здесь верить нельзя</span> '
+        + 'Лучшая сделка дала ' + sg(h.best_r, 1) + 'R. R считается от фактического '
+        + 'риска позиции, а после переноса стопа в безубыток риск почти нулевой — '
+        + 'и R раздувается до десятков. Смотрите на профит-фактор, итог счёта и '
+        + 'просадку, а не на R.</div></div>' : "")
+    /* раздутый R не красим зелёным: крупная зелёная цифра при убыточном
+       счёте — ровно тот самообман, который ловится всей этой страницей */
+    + '<div class="exam"><div><div class="exam-big ' + (rBlown ? "" : cls(h.exp_r)) + '">' + sg(h.exp_r, 3)
+    + 'R</div><div class="exam-cap"><b>ожидание на сделку</b>'
+    + "это главная цифра: сколько рисков приносит одна сделка в среднем</div></div>"
+    + '<div class="metrics"><div class="metric"><b>' + h.n + "</b><span>сделок</span></div>"
+    + '<div class="metric"><b>' + f(h.wr, 1) + "%</b><span>winrate</span></div>"
+    + '<div class="metric"><b>' + (h.pf === null ? "–" : f(h.pf, 2)) + "</b><span>профит-фактор</span></div>"
+    + '<div class="metric"><b class="' + cls(h.ret_pct) + '">' + pc(h.ret_pct, 1) + "</b><span>итог счёта</span></div>"
+    + '<div class="metric"><b class="neg">' + f(h.dd_pct, 1) + "%</b><span>просадка</span></div>"
+    + '<div class="metric"><b>' + f(h.tpm, 1) + "</b><span>сделок в месяц</span></div>"
+    + '<div class="metric"><b>' + h.months_pos + "/" + h.months_total + "</b><span>плюсовых месяцев</span></div>"
+    + "</div></div>"
+    + '<div class="train-line"><b>Обучающий период</b> (' + esc(TVK.fmtDate(d.train_from))
+    + " – " + esc(TVK.fmtDate(d.train_to)) + ", " + f(tr.months, 1) + " мес): сделок " + tr.n
+    + " · WR " + f(tr.wr, 1) + "% · " + sg(tr.exp_r, 3) + "R · PF "
+    + (tr.pf === null ? "–" : f(tr.pf, 2)) + " · итог " + pc(tr.ret_pct, 1)
+    + " · просадка " + f(tr.dd_pct, 1) + "%. Эти цифры <b>не доказательство</b>: "
+    + "на этой части истории идея и настраивалась.</div>"
+    + '<div class="h-sec">Исходы сделок на экзамене</div>'
+    + '<div class="tiles">'
+    + tile((h.outcomes.tp || 0), "по цели", "pos")
+    + tile((h.outcomes.stop || 0), "по стопу", "neg")
+    + tile((h.outcomes.liq || 0), "ликвидаций", (h.outcomes.liq ? "neg" : ""))
+    + tile((h.outcomes.timeout || 0), "по таймауту")
+    + tile(f(h.avg_hold_h, 1) + " ч", "среднее удержание")
+    + tile(f(h.avg_stop_pct, 2) + "%", "средняя ширина стопа")
+    + tile(f(h.avg_grid_fills, 2), "колен налилось")
+    + tile(h.signals + " / " + h.n, "сигналов / сделок")
+    + "</div>"
+    + '<div class="h-sec">Доход по месяцам экзамена</div><div id="moBox" class="mchart"></div>'
+    + '<div class="h-sec">Кривая капитала (экзамен)</div><div class="tv"><div class="tv-chart small" id="eqChart"></div></div>'
+    + "</div>");
+
+  /* --- сравнения --- */
+  var rc = R.random_control, bh = R.buyhold, sig = R.significance, co = R.costs, cc = R.concentration;
+  var share = rc.share_not_worse === null ? null : rc.share_not_worse * 100;
+  var sigGood = sig.p_adj !== null && sig.p_adj < 0.05 && h.exp_r > 0 && h.ret_pct > 0;
+  out.push('<div class="card"><div class="h-card">Сравнения — с чем вообще сравнивать</div>'
+    + '<div class="facts">'
+    + factBox(share === null ? "–" : Math.round(share) + "%",
+        "случайных зёрен <b>не хуже</b> вашего входа. Порог: меньше "
+        + Math.round((thr.max_ctrl_share || 0.2) * 100) + "%. Контроль — "
+        + rc.seeds + " прогонов со случайными барами того же количества, те же "
+        + "выходы и издержки", share !== null && share < (thr.max_ctrl_share || 0.2) * 100 ? "pos" : "neg")
+    + factBox(sg(rc.median_exp_r, 3) + "R", "медиана случайного входа против <b>"
+        + sg(h.exp_r, 3) + "R</b> у вас; разброс случайных "
+        + sg(rc.p10_exp_r, 3) + " … " + sg(rc.p90_exp_r, 3) + "R")
+    + factBox(pc(bh.ret_pct, 1), "«купил и держал» за тот же период (без плеча и "
+        + "издержек) против <b>" + pc(h.ret_pct, 1) + "</b> у сетапа", cls(bh.ret_pct))
+    /* p<0.05 при отрицательном ожидании — это значимый УБЫТОК, а не находка;
+       зелёным красим только когда и R, и деньги в плюсе */
+    + factBox(sig.p === null ? "–" : f(sig.p, 4), "p-значение среднего R. С поправкой "
+        + "на " + R.tried_variants + " " + plural(R.tried_variants, "проверенный вариант", "проверенных варианта", "проверенных вариантов")
+        + " — <b>p = " + (sig.p_adj === null ? "–" : f(sig.p_adj, 4)) + "</b>"
+        + (!(sig.p_adj !== null && sig.p_adj < 0.05) ? ". Значимого отличия от нуля нет"
+           : sigGood ? ". Отличие от нуля значимо"
+           : h.exp_r <= 0 ? ". Значимо, но <b>в минус</b> — сетап устойчиво теряет деньги"
+           : ". Значимо по R, но <b>счёт в минусе</b>: R раздут переносом стопа "
+             + "в безубыток, верить нужно итогу счёта"),
+        !(sig.p_adj !== null && sig.p_adj < 0.05) ? "" : (sigGood ? "pos" : "neg"))
+    + factBox(co.share_of_gross_profit_pct === null ? "–" : f(co.share_of_gross_profit_pct, 1) + "%",
+        "валовой прибыли съели издержки: комиссии, проскальзывание и фандинг "
+        + "стоили <b>" + TVK.fmtUsd(co.cost_usd, 2) + "</b>; без них итог был бы "
+        + TVK.fmtUsd(co.gross_usd, 2) + " вместо " + TVK.fmtUsd(co.net_usd, 2),
+        (co.share_of_gross_profit_pct || 0) >= 50 ? "neg" : "")
+    + factBox(cc.n_for_share === null ? "–" : cc.n_for_share + " из " + h.n,
+        "сделок дают 89% всей прибыли" + (cc.top3_share_pct === null ? ""
+          : "; три лучшие — <b>" + f(cc.top3_share_pct, 1) + "%</b>")
+          + ". Если прибыль держится на двух-трёх сделках, это удача, а не стратегия",
+        (cc.n_for_share !== null && cc.n_for_share <= 3) ? "neg" : "")
+    + "</div>"
+    + '<p class="tv-hint">Случайный вход — главный контроль проекта: если случайные '
+    + 'бары той же частоты дают то же самое, значит работают выходы и волатильность, '
+    + 'а не ваша идея входа.</p></div>');
+
+  /* --- риск --- */
+  var rk = R.risk, bt = rk.bootstrap;
+  out.push('<div class="card"><div class="h-card">Риск</div><div class="tiles">'
+    + tile(f(rk.max_dd_pct, 1) + "%", "просадка на экзамене", "neg")
+    + tile(rk.liquidations, "ликвидаций", rk.liquidations ? "neg" : "")
+    + tile(rk.ruined ? "ДА" : "нет", "счёт разорён", rk.ruined ? "neg" : "")
+    + tile(bt ? f(bt.ruin_pct, 1) + "%" : "–", "вероятность слить (бутстрап)", bt && bt.ruin_pct > 5 ? "neg" : "")
+    + tile(bt ? f(bt.half_pct, 1) + "%" : "–", "потерять половину счёта")
+    + tile(rk.capital_required_usd === null ? "–" : TVK.fmtUsd(rk.capital_required_usd, 0),
+        "нужен капитал (просадка ≤ 20%)")
+    + tile(rk.capital_required_p95_usd === null ? "–" : TVK.fmtUsd(rk.capital_required_p95_usd, 0),
+        "капитал по худшему сценарию p95")
+    + tile(sg(rk.worst_trade_r, 2) + "R", "худшая сделка", "neg")
+    + tile(rk.max_loss_streak, "убытков подряд")
+    + tile("−" + f(rk.liq_frac_pct, 2) + "%", "ликвидация при x" + R.spec.lev)
+    + tile(Math.round(rk.stop_vs_liq * 100) + "%", "стоп от пути до ликвидации",
+        rk.stop_vs_liq >= 0.8 ? "neg" : "")
+    + tile(TVK.fmtUsd(rk.avg_risk_usd, 2), "риск на сделку")
+    + "</div><p class=\"tv-hint\">Бутстрап — 400 случайных перетасовок ваших же сделок "
+    + "блоками (блок сохраняет серии убытков подряд). Считается компаунд: доля капитала "
+    + "на цикл фиксирована.</p></div>");
+
+  /* --- устойчивость --- */
+  var rb = R.robustness;
+  var okRb = rb.share_positive !== null && rb.share_positive >= (thr.min_robust_pos || 0.6);
+  out.push('<div class="card"><div class="h-card">Устойчивость параметров</div>'
+    + '<div class="exam"><div><div class="exam-big ' + (okRb ? "pos" : "neg") + '">'
+    + (rb.share_positive === null ? "–" : Math.round(rb.share_positive * 100) + "%")
+    + '</div><div class="exam-cap"><b>прибыльных при возмущении ±' + f(rb.pert_pct, 0) + "%</b>"
+    + "нужно не меньше " + Math.round((thr.min_robust_pos || 0.6) * 100) + "%</div></div>"
+    + '<div class="metrics"><div class="metric"><b>' + pc(rb.median_ret_pct, 1)
+    + "</b><span>медиана итога</span></div>"
+    + '<div class="metric"><b>' + pc(rb.p10_ret_pct, 1) + " … " + pc(rb.p90_ret_pct, 1)
+    + "</b><span>разброс p10–p90</span></div>"
+    + '<div class="metric"><b>' + pc(rb.base_ret_pct, 1) + "</b><span>ваш вариант</span></div>"
+    + '<div class="metric"><b>' + rb.n_empty + " из " + rb.n + "</b><span>прогонов без сделок</span></div>"
+    + "</div></div>"
+    + '<p class="tv-hint">Каждый числовой параметр умножается на случайное число '
+    + 'от 0.9 до 1.1, и так ' + rb.n + " раз. Закономерность — это плато: рядом с "
+    + "вашими числами результат примерно тот же. Подгонка — шпиль: шаг в сторону, "
+    + "и всё разваливается. Трясли " + rb.params_perturbed + " "
+    + plural(rb.params_perturbed, "числовой параметр", "числовых параметра", "числовых параметров")
+    + ".</p></div>");
+
+  /* --- условия: как часто срабатывают --- */
+  out.push('<div class="card"><div class="h-card">Как часто срабатывают условия'
+    + '<span class="badge">на экзамене</span></div><div class="gates">'
+    + R.entry_conditions.map(function (c, i) {
+      var barsHo = Math.max(1, d.bars - d.hold_i);
+      var pct = c.pass_bars / barsHo * 100;
+      return '<div class="gate-row"><div class="gate-n">' + (i + 1) + '</div>'
+        + '<div class="gate-b"><div class="gate-t">' + esc(c.label) + "</div>"
+        + '<div class="gate-d">' + esc(condDoc(c.kind)) + "</div>"
+        + '<div class="mkt-bar"><i style="width:' + Math.min(100, pct).toFixed(1)
+        + '%;background:' + (pct > 60 ? C.muted : C.accent) + '"></i></div></div>'
+        + '<div class="gate-v">' + c.pass_bars + " баров<br>" + f(pct, 1) + "%</div></div>";
+    }).join("")
+    + "</div><p class=\"tv-hint\">Вместе все условия дали " + d.entry_bars_holdout
+    + " сигнальных баров на экзамене и " + d.entry_bars_train + " на обучении. "
+    + "Если какое-то условие срабатывает почти всегда — оно ничего не фильтрует.</p></div>");
+
+  /* --- график --- */
+  var ivs = DISPLAY_IV[R.spec.symbol] || ["240"];
+  out.push('<div class="card card--pad0"><div class="tv">'
+    + '<div class="tv-toolbar"><span class="muted small">показать на ТФ</span>'
+    + '<span class="pills" id="dispIv">' + ivs.map(function (i) {
+        return '<button type="button" data-v="' + i + '"' + (i === R.spec.interval ? ' class="on"' : "")
+          + ">" + IV_RU[i] + "</button>"; }).join("") + "</span>"
+    + '<span class="sep"></span><span class="pills" id="bRng"></span>'
+    + '<span class="sep"></span>'
+    + '<label class="chip on"><input type="checkbox" id="tgMk" checked> сделки</label>'
+    + '<label class="chip on"><input type="checkbox" id="tgLn" checked> вход→выход</label>'
+    + '<label class="chip on"><input type="checkbox" id="tgTrain" checked> обучающие сделки</label>'
+    + '<span class="sep"></span><span class="muted small" id="chartCnt"></span></div>'
+    + '<div class="tv-chart" id="bChart"><div class="tv-legend"><div class="sym" id="legSym"></div>'
+    + '<div class="ohlc" id="legOhlc"></div></div></div></div>'
+    + '<div style="padding:12px 20px"><div class="legend-row">'
+    + '<span><i style="background:' + C.up + '"></i>прибыльная сделка</span>'
+    + '<span><i style="background:' + C.down + '"></i>убыточная</span>'
+    + '<span><i style="background:#5d6068"></i>обучающий период (не доказательство)</span>'
+    + '<span class="muted-2">пунктир — путь от входа к выходу</span></div></div></div>');
+
+  /* --- таблица сделок --- */
+  out.push('<div class="card card--pad0"><div style="padding:16px 20px 0">'
+    + '<div class="h-card">Сделки<span class="badge">' + (R.trades || []).length + "</span></div>"
+    + '<div class="seg" id="trSeg"><button type="button" class="on" data-f="holdout">Экзамен'
+    + '<span class="cnt">' + (R.trades || []).filter(function (t) { return t.part === "holdout"; }).length
+    + '</span></button><button type="button" data-f="train">Обучение<span class="cnt">'
+    + (R.trades || []).filter(function (t) { return t.part === "train"; }).length
+    + '</span></button><button type="button" data-f="all">Все<span class="cnt">'
+    + (R.trades || []).length + "</span></button></div></div>"
+    + '<div class="tbl-wrap tall" style="margin-top:12px"><table class="tbl"><thead><tr>'
+    + "<th>Вход</th><th>Выход</th><th>Ч</th><th>Цена входа</th><th>Стоп</th>"
+    + "<th>Ширина</th><th>Исход</th><th>R</th><th>PnL, $</th><th>Колен</th>"
+    + "<th>MAE</th><th>MFE</th><th>Режим</th><th>Часть</th></tr></thead>"
+    + '<tbody id="trBody"></tbody></table></div></div>');
+
+  $("result").innerHTML = out.join("");
+  $("result").hidden = false;
+
+  /* месяцы */
+  TVK.monthBars("moBox", (h.by_month || []).map(function (m) {
+    return { label: m.label, pct: m.pct, usd: m.pnl_usd, n: m.n }; }),
+    { caption: "доход за месяц экзамена" });
+  drawEquity();
+  renderTrades("holdout");
+  $("trSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    var bs = $("trSeg").querySelectorAll("button");
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle("on", bs[i] === b);
+    renderTrades(b.dataset.f);
+  });
+  DISP_IV = R.spec.interval;
+  loadCandles();
+  $("dispIv").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    DISP_IV = b.dataset.v;
+    var bs = $("dispIv").querySelectorAll("button");
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle("on", bs[i] === b);
+    loadCandles();
+  });
+  ["tgMk", "tgLn", "tgTrain"].forEach(function (id) {
+    $(id).addEventListener("change", function () {
+      if (this.parentElement) this.parentElement.classList.toggle("on", this.checked);
+      applyChartToggles();
+    });
+  });
+  $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function drawEquity() {
+  var eq = (RESULT.holdout.equity || []);
+  if (!eq.length) { $("eqChart").innerHTML = '<div class="ph">Сделок нет.</div>'; return; }
+  var ch = TVK.mini("eqChart", 190, { rightPriceScale: { minimumWidth: 62 } });
+  var base = eq[0][1] || 1;
+  var s = ch.addAreaSeries({ lineColor: C.accent, topColor: "rgba(41,98,255,.28)",
+    bottomColor: "rgba(41,98,255,.02)", lineWidth: 2, priceLineVisible: false,
+    priceFormat: { type: "price", precision: 1, minMove: 0.1 } });
+  s.setData(TVK.points(eq.map(function (p) { return [p[0], (p[1] / base - 1) * 100]; })));
+  s.createPriceLine({ price: 0, color: "#363a45", lineWidth: 1, lineStyle: 2,
+    axisLabelVisible: false, title: "" });
+  TVK.fit(ch);
+}
+
+/* знаков после запятой по величине цены: BTC 64667.5, DOGE 0.15423 */
+function pxd(v) {
+  v = Math.abs(Number(v) || 0);
+  return v >= 1000 ? 1 : v >= 100 ? 2 : v >= 1 ? 3 : v >= 0.01 ? 5 : 7;
+}
+
+function renderTrades(fl) {
+  var rows = (RESULT.trades || []).filter(function (t) { return fl === "all" || t.part === fl; });
+  var dg = pxd(rows.length ? (rows[0].avg_entry || rows[0].entry) : 1);
+  $("trBody").innerHTML = rows.length ? rows.map(function (t) {
+    return "<tr><td>" + esc(TVK.fmtDT(t.entry_ts)) + "</td><td>" + esc(TVK.fmtDT(t.exit_ts))
+      + "</td><td>" + f(t.hold_h, 1) + "</td><td>" + TVK.fmtN(t.avg_entry || t.entry, dg)
+      + "</td><td>" + TVK.fmtN(t.stop, dg) + "</td><td>" + f(t.stop_pct, 2) + "%</td><td class=\""
+      + (t.exit_kind === "liq" ? "liq" : cls(t.r)) + "\">" + esc(KIND_RU[t.exit_kind] || t.exit_kind)
+      + "</td><td class=\"" + cls(t.r) + "\">" + sg(t.r, 2) + "</td><td class=\"" + cls(t.pnl)
+      + "\">" + sg(t.pnl, 2) + "</td><td>" + t.grid_fills + "</td><td>" + f(t.mae_r, 2)
+      + "</td><td>" + f(t.mfe_r, 2) + "</td><td>" + esc(REGIME_N[t.regime] || "–")
+      + "</td><td class=\"muted\">" + (t.part === "holdout" ? "экзамен" : "обучение")
+      + "</td></tr>"; }).join("")
+    : '<tr><td colspan="14" class="muted" style="text-align:center;padding:18px">Сделок нет.</td></tr>';
+}
+
+/* --------------------------------------------------------------- график */
+function loadCandles() {
+  var sym = RESULT.spec.symbol;
+  $("chartCnt").textContent = "загружаю свечи…";
+  fetch("/api/builder/candles?symbol=" + encodeURIComponent(sym) + "&interval=" + DISP_IV)
+    .then(function (r) { return r.json(); })
+    .then(function (c) {
+      if (!Array.isArray(c) || !c.length) {
+        $("chartCnt").textContent = "нет локальной истории " + sym + " " + IV_RU[DISP_IV];
+        return;
+      }
+      CANDLES = TVK.bars(c);
+      TIMES = CANDLES.map(function (x) { return x.time; });
+      var px = CANDLES[CANDLES.length - 1].close;
+      PD = px >= 1000 ? 1 : px >= 10 ? 2 : px >= 1 ? 3 : 5;
+      drawChart();
+    })
+    .catch(function (e) { $("chartCnt").textContent = "свечи не загрузились: " + e; });
+}
+
+function snap(ts) {
+  var t = TVK.ts(ts);
+  if (t === null || !TIMES.length) return null;
+  if (t <= TIMES[0]) return TIMES[0];
+  if (t >= TIMES[TIMES.length - 1]) return TIMES[TIMES.length - 1];
+  var lo = 0, hi = TIMES.length - 1;
+  while (lo < hi) { var m = (lo + hi + 1) >> 1; if (TIMES[m] <= t) lo = m; else hi = m - 1; }
+  return TIMES[lo];
+}
+
+function drawChart() {
+  if (CHART) { try { CHART.remove(); } catch (e) {} CHART = null; }
+  CHART = TVK.create("bChart", 480);
+  CANDLE_S = CHART.addCandlestickSeries({
+    upColor: C.up, downColor: C.down, borderVisible: false,
+    wickUpColor: C.up, wickDownColor: C.down,
+    priceFormat: { type: "price", precision: PD, minMove: Math.pow(10, -PD) } });
+  CANDLE_S.setData(CANDLES);
+  TVK.candleLegend(CHART, CANDLE_S, "legOhlc", { digits: PD });
+  $("legSym").textContent = RESULT.spec.symbol + " · " + IV_RU[DISP_IV]
+    + " · сигнал считался на " + IV_RU[RESULT.spec.interval];
+
+  var bar = (DISP_IV === "D" ? 1440 : Number(DISP_IV)) * 60;
+  var tt = (RESULT.trades || []);
+  var mk = function (arr, o) {
+    return TVK.tradeLines(CHART, arr.map(function (t) {
+      return { entry_ts: t.entry_ts, exit_ts: t.exit_ts,
+               entry_px: t.avg_entry || t.entry, exit_px: t.exit_px, r: t.r }; }),
+      { bar: bar, winColor: o.w, lossColor: o.l, width: o.width || 1 });
+  };
+  LINKS_T = mk(tt.filter(function (t) { return t.part === "train"; }),
+    { w: "#5d6068", l: "#5d6068" });
+  LINKS_H = mk(tt.filter(function (t) { return t.part === "holdout"; }),
+    { w: C.up, l: C.down, width: 2 });
+
+  applyChartToggles();
+  var bounds = function () {
+    return [CANDLES.length ? CANDLES[0].time : 0,
+            CANDLES.length ? CANDLES[CANDLES.length - 1].time : 0]; };
+  TVK.ranges("bRng", [CHART], bounds, { def: 0 }).refresh();
+  $("chartCnt").textContent = CANDLES.length + " свечей · сделок " + tt.length
+    + " (экзамен " + tt.filter(function (t) { return t.part === "holdout"; }).length + ")";
+}
+
+function applyChartToggles() {
+  if (!CANDLE_S) return;
+  var showMk = $("tgMk").checked, showLn = $("tgLn").checked, showTr = $("tgTrain").checked;
+  var mks = [];
+  var hold0 = RESULT.data.holdout_from;
+  var hs = snap(hold0);
+  if (hs !== null) mks.push({ time: hs, position: "aboveBar", color: "#7aa2f7",
+    shape: "arrowDown", text: "начало экзамена" });
+  if (showMk) {
+    (RESULT.trades || []).forEach(function (t) {
+      if (t.part === "train" && !showTr) return;
+      var grey = t.part === "train";
+      var te = snap(t.entry_ts);
+      if (te !== null) mks.push({ time: te,
+        position: t.side === "L" ? "belowBar" : "aboveBar",
+        color: grey ? "#5d6068" : (t.side === "L" ? C.up : C.down),
+        shape: t.side === "L" ? "arrowUp" : "arrowDown", text: "" });
+      var tx = snap(t.exit_ts);
+      if (tx !== null) mks.push({ time: tx,
+        position: t.side === "L" ? "aboveBar" : "belowBar",
+        color: grey ? "#5d6068" : (t.r > 0 ? C.up : C.down),
+        shape: t.exit_kind === "liq" ? "square" : "circle", size: 0.8,
+        text: grey ? "" : sg(t.r, 1) + "R" });
+    });
+  }
+  mks.sort(function (a, b) { return a.time - b.time; });
+  CANDLE_S.setMarkers(mks);
+  if (LINKS_H) LINKS_H.setVisible(showLn);
+  if (LINKS_T) LINKS_T.setVisible(showLn && showTr);
+}
+
+/* ------------------------------------------------------- сохранённые */
+function renderSaved() {
+  $("stSaved").textContent = SAVED.length;
+  $("savedList").innerHTML = SAVED.length ? SAVED.map(function (it) {
+    var v = it.verdict || {};
+    var st = v.status || "не проверялся";
+    var bk = st === "работает" ? "badge--on" : st === "наблюдение" ? "badge--watch"
+      : st === "не подтверждён" ? "badge--bad" : "badge--off";
+    var s = it.summary || {};
+    var sp = it.spec || {};
+    return '<div class="bld-saved-row"><div class="avatar '
+      + (sp.side === "short" ? "avatar--short" : "avatar--long") + '">'
+      + (sp.side === "short" ? "▼" : "▲") + "</div>"
+      + '<div class="bsr-m"><b>' + esc(it.name) + "</b><span>"
+      + esc((sp.symbol || "").replace("USDT", "")) + " · " + esc(IV_RU[sp.interval] || sp.interval)
+      + " · x" + esc(sp.lev) + " · условий " + ((sp.entry || []).length)
+      + (s.n !== undefined ? " · экзамен: " + s.n + " сделок, " + sg(s.exp_r, 3)
+          + "R, итог " + pc(s.ret_pct, 1) : "")
+      + " · " + esc(TVK.fmtDT(it.updated || it.created)) + "</span></div>"
+      + '<span class="badge ' + bk + '">' + esc(st) + "</span>"
+      + '<button type="button" class="btn" data-load="' + esc(it.id) + '">загрузить</button>'
+      + '<button type="button" class="btn" data-del2="' + esc(it.id) + '">удалить</button></div>';
+  }).join("")
+    : '<div style="padding:16px 20px" class="muted small">Пока ничего не сохранено. '
+      + 'Соберите сетап, проверьте его и нажмите «Сохранить» — он ляжет в '
+      + 'webapp/data/user_signals.json вместе с вердиктом.</div>';
+}
+
+function save() {
+  var name = ($("nameIn").value || "").trim() || "без имени";
+  var body = { name: name, spec: SPEC };
+  if (RESULT && RAN_SPEC && specHash(RAN_SPEC) === specHash(SPEC)) {
+    body.verdict = { status: RESULT.verdict.status, failed: RESULT.verdict.failed };
+    body.summary = { n: RESULT.holdout.n, exp_r: RESULT.holdout.exp_r,
+                     pf: RESULT.holdout.pf, ret_pct: RESULT.holdout.ret_pct,
+                     dd_pct: RESULT.holdout.dd_pct };
+    body.tried = RESULT.tried_variants;
+  }
+  fetch("/api/builder/saved", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.ok) { showErr("<b>Не сохранено.</b> " + esc(d.error || "")); return; }
+      SAVED = d.items; renderSaved();
+      $("errBox").innerHTML = '<div class="note ok"><span class="ico">✓</span><div class="nb">'
+        + "Сохранено: <b>" + esc(name) + "</b>. "
+        + (body.verdict ? "Вердикт «" + esc(body.verdict.status) + "» записан вместе с сетапом."
+           : "Вердикт не записан: сетап ещё не проверялся или форму меняли после проверки — "
+             + "нажмите «Проверить честно» и сохраните снова.") + "</div></div>";
+    })
+    .catch(function (e) { showErr("Не сохранено: " + esc(String(e))); });
+}
+
+function wireSaved() {
+  $("savedCard").addEventListener("click", function (e) {
+    var l = e.target.closest("[data-load]");
+    if (l) {
+      var it = SAVED.filter(function (x) { return x.id === l.dataset.load; })[0];
+      if (!it) return;
+      SPEC = deep(it.spec);
+      if (!SPEC.exit.stop.buf_atr) SPEC.exit.stop.buf_atr = 0.2;
+      $("nameIn").value = it.name;
+      $("presetAbout").textContent = "Загружен сохранённый сетап «" + it.name + "».";
+      renderRoot(); renderConds(); loadAtr();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    var dl = e.target.closest("[data-del2]");
+    if (!dl) return;
+    fetch("/api/builder/saved/" + encodeURIComponent(dl.dataset.del2), { method: "DELETE" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d.items) { SAVED = d.items; renderSaved(); } })
+      .catch(function () {});
+  });
+}
+
+/* ------------------------------------------------------------- запуск */
+SPEC = defSpec();
+if (PRESETS.length) {
+  $("nameIn").value = PRESETS[0].name;
+  $("presetAbout").innerHTML = "<b>" + esc(PRESETS[0].name) + "</b> — " + esc(PRESETS[0].about);
+}
+buildPop();
+wire();
+wireSaved();
+loadTried();
+renderRoot();
+renderConds();
+renderSaved();
+loadAtr();
+</script>
+</body>
+</html>

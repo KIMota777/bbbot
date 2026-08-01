@@ -1,0 +1,17 @@
+{# Общий таб-бар в стиле iOS. Страница задаёт переменную nav:
+   bots | signals | v3 | builder | pnl | evolution | archive #}
+<div class="tabbar-wrap">
+  <div class="wrap">
+    <nav class="tabbar">
+      <a href="/" class="{{ 'active' if nav == 'bots' }}">Боты</a>
+      <a href="/signals" class="{{ 'active' if nav == 'signals' }}">Сигналы BTC</a>
+      <a href="/v3" class="{{ 'active' if nav == 'v3' }}">Сетапы v3</a>
+      <a href="/builder" class="{{ 'active' if nav == 'builder' }}">Конструктор</a>
+      <a href="/pnl" class="{{ 'active' if nav == 'pnl' }}">PnL</a>
+      <a href="/evolution" class="{{ 'active' if nav == 'evolution' }}">Хроника</a>
+      <a href="/archive" class="{{ 'active' if nav == 'archive' }}">Архив</a>
+      <span class="spacer"></span>
+      <span class="tb-note">5 монет · Bybit · локально</span>
+    </nav>
+  </div>
+</div>
