@@ -110,6 +110,8 @@
             <span class="mini-note">p10…p90 {{ '%+.1f'|format(rn.p10) }}…{{ '%+.1f'|format(rn.p90) }}%</span></div>
         </div>
 
+        <div class="exam-cols">
+        <div class="colL">
         <div class="bench" style="margin-top:12px">
           <div>из чего сложился итог экзамена (${{ '%.2f'|format(hmeta.tiny_rule.margin) }} маржи на цикл):
             копеечные <b class="flat">{{ '%+.2f'|format(t.pnl_split.tiny) }}$</b>
@@ -141,7 +143,9 @@
             <span class="muted-2">— подобрано ПО экзамену, поэтому само не
               проверено; поднимать плечо на этом основании нельзя</span></div>
         </div>
+        </div>
 
+        <div class="colR">
         <div class="crit">
           <div style="font-weight:590">Вердикт:
             <span class="{{ 'pos' if h.verdict.key == 'ok' else ('' if h.verdict.key == 'part' else 'neg') }}">{{ h.verdict.status }} — {{ h.verdict.score }}</span>
@@ -163,6 +167,8 @@
           <div class="warn-line {{ 'good' if n.kind == 'good' }}">{{ n.text }}</div>
           {% endfor %}
         </div>
+        </div>
+        </div><!-- /exam-cols -->
       </div>
     </div>
 
@@ -506,16 +512,33 @@
   .selbox { background:var(--bg-elev); border:1px solid var(--line-soft);
     border-radius:var(--r-md); padding:11px 14px; margin-top:12px;
     font-size:12.5px; display:none; }
-  /* блок «Честная проверка» — та же вёрстка, что у экзамена сигналов */
-  .exam-card { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
-  .exam-left { flex:0 0 auto; }
-  .exam-right { flex:1 1 340px; min-width:0; }
-  .bench { display:flex; gap:22px; flex-wrap:wrap; margin-top:14px;
+  /* блок «Честная проверка»: три яруса вместо двух колонок.
+     Прежняя вёрстка (герой слева, всё остальное справа) оставляла под
+     большой цифрой пустую площадь в пол-экрана, а содержимое сжимала в
+     узкий столбец. Теперь: герой-строка во всю ширину -> плитки метрик ->
+     две выровненные колонки (разбор+бенчмарки | вердикт). */
+  .exam-card { display:block; }
+  .exam-left { display:flex; gap:22px; align-items:baseline; flex-wrap:wrap; }
+  .exam-left .exam-cap { flex:1 1 320px; min-width:0; margin-top:0;
+    max-width:56ch; }
+  .exam-right { margin-top:16px; min-width:0; }
+  .exam-cols { display:grid; grid-template-columns:1.15fr .85fr; gap:0 26px;
+    margin-top:2px; align-items:start; }
+  .exam-cols > .colL { min-width:0; }
+  .exam-cols > .colR { min-width:0; border-left:1px solid var(--line-soft);
+    padding-left:22px; }
+  @media (max-width:940px) {
+    .exam-cols { grid-template-columns:1fr; }
+    .exam-cols > .colR { border-left:0; padding-left:0; }
+  }
+  .bench { display:flex; gap:8px 22px; flex-wrap:wrap; margin-top:14px;
     padding-top:12px; border-top:1px solid var(--line-soft); font-size:12px;
     color:var(--muted); font-variant-numeric:tabular-nums; }
+  .bench > div { flex:1 1 100%; }
   .bench b { color:var(--ink); font-weight:590; }
   .crit { margin-top:14px; padding-top:12px; border-top:1px solid var(--line-soft);
     font-size:12.5px; }
+  .exam-cols .crit { margin-top:0; padding-top:12px; border-top:0; }
   .crit .c { display:flex; gap:8px; align-items:baseline; margin-top:5px; }
   .crit .c i { flex:0 0 auto; font-style:normal; font-weight:700; width:14px; }
   .crit .c.ok i { color:var(--up); } .crit .c.no i { color:var(--down); }

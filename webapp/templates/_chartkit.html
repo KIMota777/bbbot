@@ -603,10 +603,20 @@ window.TVK = (function () {
         crosshairMarkerVisible: false, pointMarkersVisible: false,
       });
     };
-    var win = mk(o.winColor || P.up), loss = mk(o.lossColor || P.down),
-        flat = mk(o.flatColor || P.flat);
-    var d = { win: [], loss: [], flat: [] };
-    var counts = { win: 0, loss: 0, flat: 0 }, n = 0;
+    /* Каждая сделка — СВОЯ серия из двух точек. Прежний вариант складывал
+       все сделки класса в одну серию с точкой-разрывом между ними, но в
+       этой сборке 4.1.3 whitespace линию НЕ рвёт: библиотека соединяла
+       конец одной сделки с началом следующей, и график покрывался
+       диагоналями, которых в данных нет (страница ботов из-за этого ушла
+       на собственный канвас-слой). Для сигналов и конструктора сделок
+       десятки, так что серия-на-сделку дешева; на случай больших списков
+       стоит предохранитель MAX_LINK_SERIES — дальше линии не рисуем вовсе,
+       честно отдавая это в count.skipped. */
+    var MAX_LINK_SERIES = 250;
+    var series = [], counts = { win: 0, loss: 0, flat: 0 };
+    var n = 0, skipped = 0;
+    var colorOf = { win: o.winColor || P.up, loss: o.lossColor || P.down,
+                    flat: o.flatColor || P.flat };
     (trades || []).slice()
       .sort(function (a, b) { return ts(a.entry_ts) - ts(b.entry_ts); })
       .forEach(function (t) {
@@ -618,26 +628,28 @@ window.TVK = (function () {
         if (x < e) return;
         if (x === e) x = e + bar;                 // вход и выход в одном баре
         var k = outcome(t, thr);
-        var arr = d[k];
-        if (arr.length && e <= arr[arr.length - 1].time) {
-          e = arr[arr.length - 1].time + bar;     // не даём одинаковое время
-          if (x <= e) x = e + bar;
-        }
-        arr.push({ time: e, value: pe });
-        arr.push({ time: x, value: px });
-        arr.push({ time: x + bar });              // разрыв до следующей сделки
         counts[k]++;
         n++;
+        if (series.length >= MAX_LINK_SERIES) { skipped++; return; }
+        var s = mk(colorOf[k]);
+        s.setData([{ time: e, value: pe }, { time: x, value: px }]);
+        series.push(s);
       });
-    win.setData(d.win);
-    loss.setData(d.loss);
-    flat.setData(d.flat);
     return {
-      win: win, loss: loss, flat: flat, count: n, counts: counts,
+      count: n, counts: counts, skipped: skipped,
+      /* win/loss/flat оставлены для обратной совместимости вызовов вида
+         LINKS.win.setData([]) — отдаём безопасные заглушки */
+      win: { setData: function () {}, applyOptions: function () {} },
+      loss: { setData: function () {}, applyOptions: function () {} },
+      flat: { setData: function () {}, applyOptions: function () {} },
       setVisible: function (v) {
-        win.applyOptions({ visible: !!v });
-        loss.applyOptions({ visible: !!v });
-        flat.applyOptions({ visible: !!v });
+        for (var i = 0; i < series.length; i++)
+          series[i].applyOptions({ visible: !!v });
+      },
+      remove: function () {
+        for (var i = 0; i < series.length; i++)
+          try { chart.removeSeries(series[i]); } catch (e) {}
+        series = [];
       },
     };
   }

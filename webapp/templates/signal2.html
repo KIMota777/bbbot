@@ -11,13 +11,19 @@
   .selbox { background:var(--bg-elev); border:1px solid var(--line-soft);
     border-radius:var(--r-md); padding:11px 14px; margin-top:12px;
     font-size:12.5px; display:none; }
-  .exam-card { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
-  .exam-left { flex:0 0 auto; }
-  .exam-right { flex:1 1 320px; min-width:0; }
-  .bench { display:flex; gap:22px; flex-wrap:wrap; margin-top:14px;
+  /* та же трёхъярусная вёрстка, что у ботов: герой-строка во всю ширину,
+     ниже метрики и разбор — без пустой площади под большой цифрой */
+  .exam-card { display:block; }
+  .exam-left { display:flex; gap:22px; align-items:baseline; flex-wrap:wrap; }
+  .exam-left .exam-cap { flex:1 1 320px; min-width:0; margin-top:0;
+    max-width:56ch; }
+  .exam-right { margin-top:16px; min-width:0; }
+  .bench { display:flex; gap:8px 22px; flex-wrap:wrap; margin-top:14px;
     padding-top:12px; border-top:1px solid var(--line-soft); font-size:12px;
     color:var(--muted); font-variant-numeric:tabular-nums; }
   .bench b { color:var(--ink); font-weight:590; }
+  /* строки сделок экзамена — жёлтая метка слева, как у ботов */
+  table.tbl tbody tr.hold td:first-child { box-shadow:inset 2px 0 0 var(--warn); }
 </style>
 </head>
 <body>
@@ -495,6 +501,25 @@ const rangeHiS = chart.addLineSeries(Object.assign(lineOpts(C.range),
   { visible: LAYERS.level }));
 const ema50S = chart.addLineSeries(Object.assign(lineOpts(C.ema50), { visible: false }));
 const ema200S = chart.addLineSeries(Object.assign(lineOpts(C.ema200), { visible: false }));
+/* Обучающий период — светлой заливкой ПОД свечами, как на странице ботов:
+   серия создаётся ПЕРВОЙ, правый край заливки = граница экзамена (виден на
+   любом зуме, в отличие от маркера на оси). Граница считается как 72% баров
+   родного ТФ — та же формула, что в отборе evolution12. */
+const holdS = chart.addAreaSeries({
+  topColor: "rgba(120,123,134,.13)", bottomColor: "rgba(120,123,134,.13)",
+  lineColor: "rgba(120,123,134,.40)", lineWidth: 1, priceScaleId: "",
+  priceLineVisible: false, lastValueVisible: false,
+  crosshairMarkerVisible: false, pointMarkersVisible: false,
+});
+holdS.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+let HOLD = null;   // граница экзамена (сек), фиксируется по родному ТФ
+function drawHoldout() {
+  if (HOLD === null || !TIMES.length) return;
+  const th = snap(HOLD);
+  if (th === null || th <= TIMES[0]) return;
+  holdS.setData([{ time: TIMES[0], value: 1 }, { time: th, value: 1 },
+                 { time: Math.min(th + VIEW_BAR, TIMES[TIMES.length - 1]) }]);
+}
 const candleS = chart.addCandlestickSeries({
   upColor: C.up, downColor: C.down, wickUpColor: C.up, wickDownColor: C.down,
   borderVisible: false, priceFormat: { type: "price", precision: 1, minMove: 0.1 },
@@ -595,8 +620,9 @@ async function switchTF(tf) {
     candleS.setData(CANDLES);
     buildBarIndex();            // индекс «что было на баре» — под новую сетку
     applyMarkers();
-    if (LINKS) { LINKS.win.setData([]); LINKS.loss.setData([]); }
+    if (LINKS) { LINKS.remove(); LINKS = null; }
     drawLinks();
+    drawHoldout();
     TVK.fit(chart);
     rng.refresh();
     document.querySelectorAll("#tfPills button").forEach(b =>
@@ -635,7 +661,12 @@ async function load() {
   TIMES = CANDLES.map(c => c.time);
   DATA = (data && typeof data === "object") ? data : { available: false };
   if (CANDLES.length) {
+    // граница экзамена фиксируется ОДИН раз по родному ТФ сетапа (72% баров,
+    // формула отбора evolution12) и не пересчитывается при смене ТФ показа
+    if (HOLD === null && CANDLES.length > 50)
+      HOLD = CANDLES[Math.floor(CANDLES.length * 0.72)].time;
     candleS.setData(CANDLES);
+    drawHoldout();
     TVK.fit(chart);
     rng.refresh();
   } else {
@@ -844,6 +875,13 @@ function applyMarkers() {
     }
   }
   if (window.ACTIVE_MARK) mk.push(window.ACTIVE_MARK);
+  // граница экзамена — стрелка на баре границы, как у ботов
+  if (HOLD !== null) {
+    const th = snap(HOLD);
+    if (th !== null)
+      mk.push({ time: th, position: "aboveBar", color: C.muted,
+        shape: "arrowDown", text: "экзамен ▶" });
+  }
   mk.sort((a, b) => a.time - b.time);
   candleS.setMarkers(mk);
 }
@@ -1531,11 +1569,14 @@ const TR_COLS = [
   ["entry", "Вход $"], ["stop", "Стоп $"], ["tp", "Тейк $"], ["stop_pct", "Стоп %"],
   ["reason", "Исход"], ["r", "R"], ["pnl", "PnL $"], ["mae_r", "MAE R"],
   ["mfe_r", "MFE R"], ["would_hit_tp_later", "тесен"], ["regime", "Режим"],
-  ["rsi", "RSI"], ["hold_h", "Удерж, ч"],
+  ["rsi", "RSI"], ["hold_h", "Удерж, ч"], ["_hold", "Период"],
 ];
+// сделка относится к экзамену, если её ВХОД правее границы holdout
+const inHold = t => HOLD !== null && t.entry_ts >= HOLD;
 function cmp(a, b, k, dir) {
   let x = a[k], y = b[k];
   if (k === "side") { x = a.long ? 1 : 0; y = b.long ? 1 : 0; }
+  if (k === "_hold") { x = inHold(a) ? 1 : 0; y = inHold(b) ? 1 : 0; }
   if (k === "would_hit_tp_later") { x = x ? 1 : 0; y = y ? 1 : 0; }
   if (typeof x === "string" || typeof y === "string")
     return String(x).localeCompare(String(y)) * dir;
@@ -1550,7 +1591,8 @@ function renderTrades() {
     + (sortTr.k === c[0] ? (sortTr.dir > 0 ? " ▲" : " ▼") : "") + "</th>").join("")
     + "</tr></thead>";
   const body = rows.map(t =>
-    '<tr data-key="t' + t.idx + '" data-idx="' + t.idx + '">'
+    '<tr data-key="t' + t.idx + '" data-idx="' + t.idx + '"'
+    + (inHold(t) ? ' class="hold"' : "") + '>'
     + "<td>" + t.idx + "</td><td>" + DT(t.entry_ts) + "</td><td>" + DT(t.exit_ts)
     + '</td><td class="' + (t.long ? "pos" : "neg") + '">' + (t.long ? "LONG" : "SHORT")
     + "</td><td>" + f(t.entry, 1) + "</td><td>" + f(t.stop, 1) + "</td><td>"
@@ -1561,12 +1603,16 @@ function renderTrades() {
     + '">' + sg(t.pnl) + "</td><td>" + f(t.mae_r) + "</td><td>" + f(t.mfe_r)
     + "</td><td>" + (t.would_hit_tp_later ? "✓" : "") + "</td><td>"
     + regName(t.regime) + "</td><td>" + f(t.rsi, 1) + "</td><td>"
-    + f(t.hold_h, 1) + "</td></tr>").join("");
+    + f(t.hold_h, 1) + "</td><td>"
+    + (inHold(t) ? '<span class="pos">экзамен</span>'
+                 : '<span class="muted-2">обучение</span>') + "</td></tr>").join("");
   $("trTbl").innerHTML = head + "<tbody>"
-    + (body || '<tr><td colspan="17" class="empty">'
+    + (body || '<tr><td colspan="18" class="empty">'
       + (TRADES.length ? "под фильтр не попало ни одной сделки"
         : "сделок нет — смотри «Почему не заходили»") + "</td></tr>") + "</tbody>";
-  $("trCnt").textContent = rows.length + " из " + TRADES.length;
+  const nh = TRADES.filter(inHold).length;
+  $("trCnt").textContent = rows.length + " из " + TRADES.length
+    + (HOLD !== null ? " · на экзамене " + nh : "");
   for (const th of $("trTbl").querySelectorAll("th[data-k]"))
     th.onclick = () => {
       const k = th.getAttribute("data-k");
