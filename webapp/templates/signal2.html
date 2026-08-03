@@ -531,32 +531,14 @@ const rsiThrS = rsiChart.addLineSeries({ color: C.accent, lineWidth: 1,
   priceLineVisible: false, lastValueVisible: false,
   visible: LAYERS.rsi });
 
-// синхронизация видимого диапазона в обе стороны
-let syncing = false;
-function link(a, b) {
-  a.timeScale().subscribeVisibleLogicalRangeChange(r => {
-    if (syncing || !r) return;
-    syncing = true;
-    try { b.timeScale().setVisibleLogicalRange(r); } catch (e) {}
-    syncing = false;
-  });
-}
-link(chart, rsiChart);
-link(rsiChart, chart);
-let crossGuard = false;
-function linkCross(src, dst, dstSeries) {
-  src.subscribeCrosshairMove(p => {
-    if (crossGuard) return;
-    crossGuard = true;
-    try {
-      if (!p || !p.time) dst.clearCrosshairPosition();
-      else dst.setCrosshairPosition(0, p.time, dstSeries);
-    } catch (e) {}
-    crossGuard = false;
-  });
-}
-linkCross(chart, rsiChart, rsiS);
-linkCross(rsiChart, chart, candleS);
+/* Синхронизация панелей — ТОЛЬКО через общий TVK.sync. Здесь жила своя
+   копия с багом: защитный флаг снимался синхронно, а колбэк второй панели
+   библиотека вызывает ПОЗЖЕ (следующим циклом обновления) — эхо проходило
+   мимо защиты и возвращало главный график в старую точку. При сильном
+   зуме это выглядело как «кидает в другую часть графика». В TVK флаг
+   снимается следующим кадром, эхо гасится. */
+TVK.sync(chart, rsiChart);
+TVK.syncCross(chart, rsiChart, candleS, rsiS);
 
 function miniChart(id) {
   return LightweightCharts.createChart($(id), Object.assign(baseOpts(190), {
