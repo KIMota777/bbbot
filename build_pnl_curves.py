@@ -2,16 +2,20 @@
 """Строит кривые капитала для страницы /pnl — реальная картина С РЕИНВЕСТОМ.
 
 Модель (по условию владельца): у КАЖДОЙ стратегии свой стартовый капитал
-$50 (5 ботов + 2 рабочих сигнальных сетапа = 7 линий, суммарно $350).
+$50. Сколько всего линий и, значит, каков старт портфеля — считается по
+ФАКТИЧЕСКОМУ составу (total0 = SLEEVE0 * n), а не пишется числом: сигнальные
+сетапы включаются и выключаются приёмкой, и на сегодня не включён ни один,
+поэтому линий пять (5 ботов) и старт $250, а не $350, как было при двух
+рабочих сетапах.
 Маржа сделки = 25% текущего капитала стратегии — та же доля, что в отборе
 ($5 от $20), поэтому риск на сделку в % не меняется, а PnL масштабируется
 точно (объём/комиссии/фандинг/ликвидация линейны от маржи):
     капитал *= (1 + pnl_сделки / 20)
 
-Портфель — две линии от $350:
-  - «без ребаланса»: сумма семи независимых капиталов;
+Портфель — две линии от total0:
+  - «без ребаланса»: сумма независимых капиталов всех линий;
   - «ежемесячный ребаланс»: капитал общий, в конце месяца прибыль всех
-    распределяется на всех (r_мес = суммарный PnL / (7 x $20-база)).
+    распределяется на всех (r_мес = суммарный PnL / (n x $20-база)).
     Даёт бонус диверсификации; умножает и ошибку бэктеста — смотри обе.
 
 Результат: webapp/data/pnl_curves.json. Пересчёт после смены конфигов.
@@ -127,9 +131,19 @@ def signal_pnls(name, rec, c4, ctx, c15, ts15):
                                 ruined_ts=None, max_dd_mtm=None)
 
 
-def dd_of(points):
-    peak, dd = points[0][1], 0.0
-    for _, v in points:
+def dd_closed(values):
+    """Просадка по кривой ЗАКРЫТОГО капитала, в процентах от пика.
+
+    ЕДИНСТВЕННЫЙ источник истины для этой метрики: её же зовёт
+    build_analytics (stats.max_dd). Раньше здесь считалось по точкам кривой,
+    уже округлённым до центов (round(eq, 2)), а в аналитике — по сырому
+    капиталу, и LTC расходился между двумя файлами: 29.3% на /pnl против
+    29.4% в карточке бота. Округление до центов на капитале $50-$80 съедает
+    как раз десятую долю процента просадки, поэтому считаем по СЫРЫМ
+    значениям, а округляем один раз — здесь, в конце.
+    """
+    peak, dd = values[0], 0.0
+    for v in values:
         peak = max(peak, v)
         if peak > 0:
             dd = max(dd, (peak - v) / peak)
@@ -209,9 +223,11 @@ def main():
     for key, label, color, group, st, pnls, meta in streams:
         eq = SLEEVE0
         pts = [[t0, round(SLEEVE0, 2)]]
+        raw = [SLEEVE0]          # тот же капитал БЕЗ округления — для просадки
         for ts, pnl, _worst in pnls:
             eq *= (1 + pnl / BT_BASE)
             pts.append([ts, round(eq, 2)])
+            raw.append(eq)
         series.append(dict(
             key=key, label=label, group=group, color=color,
             final_usd=round(eq, 2),
@@ -219,7 +235,7 @@ def main():
             # dd — прежний ключ (просадка по закрытым сделкам), его читает
             # сайт; dd_float — с плавающим ДНОМ, но пиком по закрытым сделкам
             # (см. dd_float_closed_peak: это не движковая max_dd_mtm)
-            dd=dd_of(pts), dd_float=dd_float_closed_peak(pnls),
+            dd=dd_closed(raw), dd_float=dd_float_closed_peak(pnls),
             # СЛИВ: прогон оборван движком, кривая после этой точки не
             # существует. Линия без этого признака выглядит как обычный минус
             ruined=meta["ruined"], ruined_trade=meta["ruined_trade"],
@@ -236,6 +252,7 @@ def main():
     # портфель без ребаланса: сумма независимых капиталов
     sleeves = {s[0]: SLEEVE0 for s in streams}
     pts_cons = [[t0, round(total0, 2)]]
+    raw_cons = [total0]
     peak_pf, dd_pf_float = total0, 0.0
     for ts, key, pnl, worst in merged:
         # плавающая просадка портфеля: в момент худшей точки цикла остальные
@@ -247,12 +264,18 @@ def main():
         total_now = sum(sleeves.values())
         peak_pf = max(peak_pf, total_now)
         pts_cons.append([ts, round(total_now, 2)])
+        raw_cons.append(total_now)
+    # Подпись портфеля считается из ФАКТИЧЕСКОГО состава. Была зашита строкой
+    # «ПОРТФЕЛЬ $350» с тех пор, как линий было семь; сигнальные сетапы
+    # выключены приёмкой, старт стал $250 — и таблица на /pnl спорила с
+    # соседней строкой отчёта («Портфель с ребалансом: $250 -> $296»).
+    pf_name = f"ПОРТФЕЛЬ ${total0:.0f}"
     series.append(dict(
-        key="pf_cons", label="ПОРТФЕЛЬ $350 — без ребаланса",
+        key="pf_cons", label=f"{pf_name} — без ребаланса",
         group="portfolio", color="#e8e6df",
         final_usd=pts_cons[-1][1],
         final_pct=round((pts_cons[-1][1] / total0 - 1) * 100, 1),
-        dd=dd_of(pts_cons), dd_float=round(dd_pf_float * 100, 1),
+        dd=dd_closed(raw_cons), dd_float=round(dd_pf_float * 100, 1),
         # у портфеля своего слива нет: слитый рукав просто перестаёт давать
         # сделки, признак показывается на ЕГО линии
         ruined=False, ruined_trade=None, ruined_ts=None,
@@ -264,18 +287,20 @@ def main():
         monthly[ts // MONTH] += pnl
     eq = total0
     pts_reb = [[t0, round(eq, 2)]]
+    raw_reb = [total0]
     for m in sorted(monthly):
         eq *= (1 + monthly[m] / (n * BT_BASE))
         pts_reb.append([(m + 1) * MONTH, round(eq, 2)])
+        raw_reb.append(eq)
     series.append(dict(
-        key="pf_reb", label="ПОРТФЕЛЬ $350 — ежемесячный ребаланс",
+        key="pf_reb", label=f"{pf_name} — ежемесячный ребаланс",
         group="portfolio", color="#E3A83E",
         final_usd=pts_reb[-1][1],
         final_pct=round((pts_reb[-1][1] / total0 - 1) * 100, 1),
         # dd_float тут честно None: линия построена по МЕСЯЧНЫМ суммам, и
         # внутримесячную переоценку отдельных циклов к ней не привязать —
         # выдумывать число вместо признания «не считаем» нельзя
-        dd=dd_of(pts_reb), dd_float=None,
+        dd=dd_closed(raw_reb), dd_float=None,
         ruined=False, ruined_trade=None, ruined_ts=None,
         points=downsample(pts_reb)))
 
@@ -293,13 +318,14 @@ def main():
                 continue
             base = rows[0][1]
             pts = [[ts, round(SLEEVE0 * c / base, 2)] for ts, c in rows]
+            raw_b = [SLEEVE0 * c / base for _ts, c in rows]
             series.append(dict(
                 key=key, label=label, group="bench", color=color,
                 final_usd=pts[-1][1],
                 final_pct=round((pts[-1][1] / SLEEVE0 - 1) * 100, 1),
                 # холд считается по дневным закрытиям — это уже переоценка
                 # рынком, отдельной «плавающей» просадки у него нет
-                dd=dd_of(pts), dd_float=dd_of(pts),
+                dd=dd_closed(raw_b), dd_float=dd_closed(raw_b),
                 ruined=False, ruined_trade=None, ruined_ts=None,
                 points=downsample(pts)))
     except Exception as e:

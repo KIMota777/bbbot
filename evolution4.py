@@ -14,6 +14,20 @@ OOS-окнах, включая те, что лежат внутри его со�
 части, ПЛАВАЮЩАЯ просадка, choose_leverage), на нём считаются фитнес,
 валидация, экзамен и ворота, и ровно оно уходит дальше.
 
+Третий круг, три доводки протокола:
+  * ВЫБОР ПОБЕДИТЕЛЯ теперь пересчитывается на плече, которое уходит в конфиг.
+    Плечо отбора бралось по БАЗОВОМУ геному, а победитель мог иметь своё —
+    и гонка тогда шла на одной шкале, а торговля на другой. Ищется неподвижная
+    точка «выбор -> плечо -> выбор» (LEV_PASSES). Что осталось на старом плече
+    и почему это допустимо — сказано прямо в теле _run_version_body: фитнес GA
+    определяет, КОГО предложили, а не ЧЕМ его меряют;
+  * ВЫРОЖДЕННЫЕ КАНДИДАТЫ выбывают ДО argmax, а не только на приёмке: балл
+    неторгующего генома равен ровно 0.00 и при убыточной базе выигрывает
+    гонку, выбрасывая из неё всех, кто честно торговал (choose_winner);
+  * АРТЕФАКТЫ прошлых прогонов больше не переписываются (save_artifact):
+    *_winners.json — единственное доказательство того, как отбирались нынешние
+    боевые конфиги.
+
 Правки действуют ТОЛЬКО НА БУДУЩИЕ прогоны: конфиги, которые сейчас стоят в
 config.py, отобраны по старой схеме, и никакая правка протокола их задним
 числом не оправдывает — чтобы получить честные конфиги, нужен полный переотбор
@@ -32,6 +46,7 @@ config.py, отобраны по старой схеме, и никакая пр
 """
 
 import json
+import os
 import random
 import time
 
@@ -81,6 +96,38 @@ CURRENT = {
                     step=0.010, levels=3, mult=1.5, tp=0.020, sweep=0.020,
                     max_bars=192, cooldown=0, knife=0.0, be_move=0),
 }
+
+
+def save_artifact(name, data, log=print):
+    """Запись результатов волны БЕЗ затирания артефакта прошлого прогона.
+
+    Зачем. Файлы *_winners.json / *_final.json — единственное, что осталось от
+    волн 08.2026: конфиги в config.py отбирались протекавшей схемой, и доказать
+    это можно только их собственными записями (например, отзыв вердикта по SOL
+    в evolution11.py прямо ссылается на записанный там adopt:true). Прогон,
+    который открывает тот же файл на запись, уничтожает доказательство, на
+    которое ссылается текст. Защита была половинчатой: evolution11.py берёг
+    evolution11_final.json, а evolution11_winners.json переписывался этим же
+    прогоном из e4._run_version_body.
+
+    Правило простое: существующий файл не трогаем, новый пишем рядом с меткой
+    времени и ГРОМКО говорим об этом. Молчать нельзя ещё и потому, что
+    следующие волны читают короткое имя (v6 читает evolution5_winners.json и
+    evolution4_winners.json, v7 — evolution6_winners.json): пока файл не
+    переименован руками, они возьмут СТАРЫЙ результат.
+    """
+    if not os.path.exists(name):
+        with open(name, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2, default=float)
+        return name
+    stem, ext = os.path.splitext(name)
+    out = f"{stem}_{time.strftime('%Y%m%d-%H%M%S')}{ext}"
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2, default=float)
+    log(f"ВНИМАНИЕ: {name} уже существует — это артефакт прошлого прогона, он "
+        f"НЕ переписан. Результаты этого прогона в {out}. Волны, которые читают "
+        f"{name}, возьмут СТАРЫЙ файл, пока имя не заменено вручную")
+    return out
 
 
 def make_filter4(g, aux):
@@ -268,6 +315,12 @@ def train_slice(candles):
 #     прошедшая проверку. Теперь такой случай помечается ok=False и словами.
 LEVS = [5, 8, 10, 12, 15]   # та же лестница, что в v7/v10/v11/v12
 DD_CAP = 0.20               # порог просадки (решение владельца, не подгонять)
+LEV_PASSES = 3              # сколько раз перевыбирать победителя, если его
+                            # собственная лестница даёт не то плечо, на котором
+                            # шёл выбор. Плечо победителя зависит от выбора, а
+                            # выбор — от плеча, поэтому ищется неподвижная
+                            # точка. Три прохода — потолок: если за них плечо
+                            # скачет, это говорится вслух (см. _run_version_body)
 
 
 def ladder_rows(candles, pre, g, filt, levs=None):
@@ -326,13 +379,37 @@ def choose_leverage(rows, dd_cap=DD_CAP):
     return dict(lev=best, ok=ok, warns=warns, rows=rows)
 
 
-def choose_winner(cands, base_sc, score_on, leaky=None, log=print):
+MIN_VAL_TRADES = 10   # сделок на окне валидации, ниже которых кандидат не
+                      # участвует в гонке. Это НЕ новый порог: honest_eval
+                      # требует MIN_TRADES=20 на экзаменационном окне (~10.8
+                      # мес), а окна валидации вдвое короче (6 мес), то есть
+                      # та же плотность сделок в месяц. Почему фильтр нужен
+                      # именно на ВЫБОРЕ, а не только на приёмке, — см.
+                      # choose_winner.
+
+
+def choose_winner(cands, base_sc, score_on, leaky=None, log=print,
+                  trades_on=None, min_trades=MIN_VAL_TRADES):
     """Победитель по честному walk-forward.
 
     cands    — [(fi, g)]: номер фолда, на котором геном обучался, и сам геном;
     base_sc  — баллы базового генома по всем OOS-окнам (нужны для нормировки:
                сравниваем не баллы разных окон, а отрывы от базы на своём);
-    score_on — score_on(g, wi) -> балл генома g на OOS-окне wi.
+    score_on — score_on(g, wi) -> балл генома g на OOS-окне wi;
+    trades_on — trades_on(g, wi) -> сколько сделок геном сделал на окне wi.
+               Если не передан, вырожденных кандидатов отсеять нечем, и об
+               этом говорится вслух.
+
+    ПОЧЕМУ ВЫРОЖДЕННЫХ ОТСЕИВАЕМ ЗДЕСЬ, А НЕ ТОЛЬКО НА ПРИЁМКЕ. Балл
+    e2.oos_score конфига, который не сделал ни одной сделки, равен РОВНО 0.00
+    (evolution2.py: p25 и медиана пустого набора месяцев — нули). Победитель
+    берётся по argmax отрыва от базы, поэтому при УБЫТОЧНОЙ базе неторгующий
+    геном имеет отрыв |base| > 0 и обыгрывает любого, кто реально торговал и
+    потерял меньше базы, но всё же потерял. Ворота honest_eval такого
+    победителя потом завернут — но гонку он уже выиграл, и все остальные
+    кандидаты выброшены: волна заканчивается отказом там, где торгующий
+    кандидат мог быть принят. Ровно так выродился первый прогон v12 (см. его
+    докстроку). Поэтому вырожденные выбывают ДО argmax.
 
     Возвращает dict: победитель, окно валидации, окно экзамена и оба балла.
     Балл валидации и балл экзамена — РАЗНЫЕ числа с разных окон; принимающая
@@ -342,10 +419,30 @@ def choose_winner(cands, base_sc, score_on, leaky=None, log=print):
         leaky = LEAKY_WALKFORWARD
     n = len(base_sc)
     exam = exam_window_index(n)
+
+    def alive(pool, windows_of):
+        """Отсев вырожденных: кандидат обязан торговать на тех окнах, по
+        которым его и оценивают. Возвращает (пул, сколько отсеяно)."""
+        if trades_on is None:
+            log("  ВНИМАНИЕ: волна не передала счётчик сделок — вырожденные "
+                "кандидаты (0 сделок, балл ровно 0.00) остаются в гонке и "
+                "могут выиграть у убыточной базы простым отказом от торговли")
+            return pool, 0
+        live = [(fi, g) for fi, g in pool
+                if all(trades_on(g, wi) >= min_trades for wi in windows_of(fi))]
+        return live, len(pool) - len(live)
+
     if leaky:
         # историческая схема: все окна всем кандидатам, argmax по среднему
+        pool, degen = alive(list(cands), lambda fi: range(n))
+        all_degen = not pool
+        if all_degen:
+            log(f"  ВНИМАНИЕ: ВСЕ {len(cands)} кандидатов вырождены (меньше "
+                f"{min_trades} сделок на окнах оценки) — гонка идёт между "
+                f"неторгующими геномами, её победитель не значит ничего")
+            pool = list(cands)
         best = None
-        for fi, g in cands:
+        for fi, g in pool:
             sc = [score_on(g, wi) for wi in range(n)]
             m = sum(sc) / n
             if best is None or m > best[0]:
@@ -355,17 +452,33 @@ def choose_winner(cands, base_sc, score_on, leaky=None, log=print):
             "кандидат оценивается в том числе на окнах внутри собственного "
             "обучения. Это не проверка стратегии. И это НЕ полное "
             "воспроизведение прошлых волн: ворота honest_eval, выбор плеча по "
-            "обучающей части и отсев базы из кандидатов работают и здесь, "
-            "поэтому числа со старыми *_winners.json не совпадут")
+            "обучающей части, отсев базы и отсев вырожденных кандидатов "
+            "работают и здесь, поэтому числа со старыми *_winners.json не "
+            "совпадут")
+        # metric='mean-all-windows': балл приёмки в этой ветке — СРЕДНЕЕ по
+        # трём окнам, а не балл экзаменационного окна. Кто пересчитывает баллы
+        # на другом плече, обязан пересчитать ту же метрику (exam_scores ниже),
+        # иначе в одном отчёте окажутся два разных числа под одним именем.
         return dict(genome=g, train_fold=fi, leaky=True, val_window=None,
                     exam_window=exam, folds=sc, val_score=m, val_edge=None,
                     exam_score=m, base_exam=sum(base_sc) / n, skipped=0,
-                    considered=len(cands))
+                    degenerate=degen, all_degenerate=all_degen,
+                    metric="mean-all-windows", considered=len(cands))
     pool = [(fi, g) for fi, g in cands if fi < exam]
     skipped = len(cands) - len(pool)
     if not pool:
         raise ValueError("нет кандидатов, у которых экзаменационное окно лежит "
                          "за пределами обучения — отбирать не из чего")
+    # оценка идёт по окну валидации, значит и торговать кандидат обязан на нём
+    live, degen = alive(pool, lambda fi: (fi,))
+    all_degen = not live
+    if all_degen:
+        log(f"  ВНИМАНИЕ: ВСЕ {len(pool)} кандидатов вырождены (меньше "
+            f"{min_trades} сделок на своём окне валидации). Победитель ниже "
+            f"выбран из них только чтобы волна досчиталась и напечатала "
+            f"причины отказа: его «преимущество» — это отказ от торговли")
+    else:
+        pool = live
     best = None
     for fi, g in pool:
         edge = score_on(g, fi) - base_sc[fi]
@@ -375,12 +488,32 @@ def choose_winner(cands, base_sc, score_on, leaky=None, log=print):
     exam_score = score_on(g, exam)
     log(f"  выбор по валидации: окно {fi+1} (обучение фолда {fi+1}), "
         f"отрыв от базы {edge:+.3f}; кандидатов в гонке {len(pool)}, "
-        f"отброшено как неэкзаменуемых {skipped}")
+        f"отброшено как неэкзаменуемых {skipped}, как вырожденных {degen}")
     return dict(genome=g, train_fold=fi, leaky=False, val_window=fi,
                 exam_window=exam, val_edge=edge,
                 val_score=edge + base_sc[fi], exam_score=exam_score,
                 base_exam=base_sc[exam], skipped=skipped,
-                considered=len(cands))
+                degenerate=degen, all_degenerate=all_degen,
+                metric="exam-window", considered=len(cands))
+
+
+def exam_scores(pick, g, base_g, score_on, lev, n_windows):
+    """Баллы приёмки кандидата и базы на ЗАДАННОМ плече — по той же метрике,
+    по которой выбирался победитель.
+
+    Зачем отдельная функция. В ветке LEAKY_WALKFORWARD выбор идёт по СРЕДНЕМУ
+    трёх окон, и exam_score оттуда — тоже среднее. Волны же, уточнив плечо,
+    пересчитывали ровно ОДНО экзаменационное окно и клали его под тем же
+    именем: в одном отчёте оказывались две разные величины, а «пересчёт»
+    показывал скачок, которого на деле нет. Теперь метрика одна на оба случая.
+    """
+    if pick.get("metric") == "mean-all-windows":
+        m = sum(score_on(g, wi, lev) for wi in range(n_windows)) / n_windows
+        b = sum(score_on(base_g, wi, lev)
+                for wi in range(n_windows)) / n_windows
+        return m, b
+    wi = pick["exam_window"]
+    return score_on(g, wi, lev), score_on(base_g, wi, lev)
 
 
 def honesty_report(g, genes, clamp, rand_g, evaluate, cand_score, log=print,
@@ -400,7 +533,9 @@ def honesty_report(g, genes, clamp, rand_g, evaluate, cand_score, log=print,
     bf = he.bonferroni(EVALS[0])
     log(f"  соседи (k={nb['k']}): медиана {nb['median']:+.3f}, худший "
         f"{nb['worst']:+.3f} при балле кандидата {cand_score:+.3f} — "
-        f"провал соседей означает узкий пик, то есть подгонку")
+        f"провал соседей означает узкий пик, то есть подгонку; дискретных "
+        f"генов сдвинуто {nb.get('int_changed', 0)} "
+        f"(попыток {nb.get('int_moves', 0)})")
     log(f"  случайные геномы (k={rc['k']}): медиана {rc['median']:+.3f}, "
         f"лучший {rc['best']:+.3f}; кандидата повторили или побили "
         f"{rc['beat']} из {rc['k']} ({rc['share']:.0f}%)"
@@ -515,19 +650,39 @@ def _run_version_body(genes, off, make_f, aux_builder, tag, base_src,
         lev_ch = lev_pick_for(base, "база")
         lev_sel = lev_ch["lev"]
 
+        _win_cache = {}
+
+        def _run_win(g, wi, lev):
+            """Прогон генома на одном OOS-окне и одном плече, с памятью.
+
+            Память нужна не для скорости, а для однозначности: выбор
+            победителя пересчитывается на нескольких плечах (см. ниже), и один
+            и тот же геном на одном и том же окне обязан давать один и тот же
+            балл, а не зависеть от порядка вызовов.
+            """
+            key = (tuple(g[k] for k in genes), wi, lev)
+            if key not in _win_cache:
+                seg, pre_seg, aux_seg = oos[wi]
+                old, e2.LEV = e2.LEV, lev
+                try:
+                    r = e2.run5(seg, pre_seg, g, entry_filter=make_f(g, aux_seg))
+                finally:
+                    e2.LEV = old
+                _win_cache[key] = (e2.oos_score(r), r["trades"])
+            return _win_cache[key]
+
         def score_on(g, wi, lev=None):
             """Балл генома на ОДНОМ OOS-окне и на ЗАДАННОМ плече.
 
             Раньше здесь была agg() по всем трём окнам сразу — она смешивала
             обучение с экзаменом; и плечо было чужое (x5 вместо боевого).
             """
-            seg, pre_seg, aux_seg = oos[wi]
-            old, e2.LEV = e2.LEV, (lev or lev_sel)
-            try:
-                r = e2.run5(seg, pre_seg, g, entry_filter=make_f(g, aux_seg))
-            finally:
-                e2.LEV = old
-            return e2.oos_score(r)
+            return _run_win(g, wi, lev or lev_sel)[0]
+
+        def trades_on(g, wi, lev=None):
+            """Сколько сделок геном сделал на окне — вход для отсева
+            вырожденных кандидатов (choose_winner)."""
+            return _run_win(g, wi, lev or lev_sel)[1]
 
         base_sc = [score_on(base, wi) for wi in range(len(oos))]
         base_mean = sum(base_sc) / len(base_sc)
@@ -560,24 +715,63 @@ def _run_version_body(genes, off, make_f, aux_builder, tag, base_src,
                 if len(seen) == 3:
                     break
 
-        pick = choose_winner(cand, base_sc, score_on)
+        # --- выбор победителя на том плече, которое уйдёт в конфиг ----------
+        # Раньше победитель выбирался РАЗ И НАВСЕГДА на плече отбора lev_sel
+        # (взятом по базовому геному), а потом его собственная лестница могла
+        # дать другое плечо — и пересчитывался только экзамен. То есть конфиг
+        # выбирался оптимальным для одного плеча, а торговал другим, и
+        # валидационный отрыв, по которому шла гонка, описывал не ту стратегию,
+        # что ушла в конфиг.
+        #
+        # Здесь ищется неподвижная точка: выбрали победителя на плече L ->
+        # посчитали его лестницу -> если она даёт другое плечо, ПЕРЕВЫБИРАЕМ
+        # победителя на нём (баллы базы тоже пересчитываются: отрывы считаются
+        # на одной шкале). Обычно хватает двух проходов; если за LEV_PASSES
+        # плечо не устоялось, это печатается словами, а не заминается.
+        #
+        # ЧЕГО ЭТА ПРАВКА НЕ ДЕЛАЕТ. Фитнес GA, который ВЫВЕЛ кандидатов,
+        # по-прежнему считался на lev_sel: перезапускать генетику на каждом
+        # новом плече — это часы счёта и вдобавок вечная петля (новый пул ->
+        # новый победитель -> новое плечо). Разница принципиальная: фитнес
+        # определяет, КОГО предложили, а не ЧЕМ его меряют. Пул может быть
+        # смещён в сторону конфигов, удобных для lev_sel (то есть лучший
+        # конфиг для lev_final мы могли не вывести), но числа валидации,
+        # экзамена и ворот считаются на боевом плече и ничего не завышают.
+        lev_cur, base_cur, pick, lev_win = lev_sel, base_sc, None, None
+        for attempt in range(LEV_PASSES):
+            pick = choose_winner(
+                cand, base_cur,
+                lambda g, wi, _l=lev_cur: score_on(g, wi, _l),
+                trades_on=lambda g, wi, _l=lev_cur: trades_on(g, wi, _l))
+            lev_win = lev_pick_for(pick["genome"],
+                                   f"победитель, проход {attempt+1}")
+            if lev_win["lev"] == lev_cur:
+                break
+            print(f"  плечо победителя x{lev_win['lev']} != плеча выбора "
+                  f"x{lev_cur} — ПЕРЕВЫБОР победителя на x{lev_win['lev']}")
+            lev_cur = lev_win["lev"]
+            base_cur = [score_on(base, wi, lev_cur) for wi in range(len(oos))]
         g_win = pick["genome"]
-
-        # Плечо победителя: его собственная лестница по обучающей части. Если
-        # оно отличается от плеча отбора, экзамен и база на экзамене
-        # ПЕРЕСЧИТЫВАЮТСЯ — приёмка обязана стоять на той же шкале, что уходит
-        # в конфиг, иначе сравниваем одну стратегию, а торгуем другой.
-        lev_win = lev_pick_for(g_win, "победитель")
         lev_final = lev_win["lev"]
+        lev_settled = lev_final == lev_cur
+        if not lev_settled:
+            print(f"  ВНИМАНИЕ: за {LEV_PASSES} проходов плечо не устоялось "
+                  f"(выбор шёл на x{lev_cur}, лестница победителя даёт "
+                  f"x{lev_final}). Экзамен и ворота считаются на x{lev_final} — "
+                  f"на том, что уходит в конфиг, — но ВЫБИРАЛСЯ этот кандидат "
+                  f"на другом плече")
         m_sel, base_sel = pick["exam_score"], pick["base_exam"]
-        if lev_final != lev_sel:
-            m = score_on(g_win, pick["exam_window"], lev_final)
-            base_exam = score_on(base, pick["exam_window"], lev_final)
-            print(f"  плечо уточнено x{lev_sel} -> x{lev_final}: экзамен "
+        if lev_final != lev_cur:
+            m, base_exam = exam_scores(pick, g_win, base, score_on, lev_final,
+                                       len(oos))
+            print(f"  плечо уточнено x{lev_cur} -> x{lev_final}: экзамен "
                   f"пересчитан {m_sel:+.2f} -> {m:+.2f}, база "
                   f"{base_sel:+.2f} -> {base_exam:+.2f}")
         else:
             m, base_exam = m_sel, base_sel
+        base_sc_final = (base_cur if lev_final == lev_cur
+                         else [score_on(base, wi, lev_final)
+                               for wi in range(len(oos))])
         edge_ok = m > base_exam + MIN_EDGE
 
         # Ворота honest_eval на экзаменационном окне: балл p25+0.5*медиана слеп
@@ -605,23 +799,14 @@ def _run_version_body(genes, off, make_f, aux_builder, tag, base_src,
         gate_report(mm, reasons, warns)
 
         # соседи и случайный контроль — на том же окне и том же плече
-        _ex_cache = {}
+        # (_run_win уже держит память по (геном, окно, плечо), отдельный кэш
+        # здесь только развёл бы два источника одного и того же числа)
+        ex_wi = pick["exam_window"]
 
-        def _exam_run(gg):
-            key = tuple(gg[k] for k in genes)
-            if key not in _ex_cache:
-                old, e2.LEV = e2.LEV, lev_final
-                try:
-                    r = e2.run5(ex_seg, ex_pre, gg,
-                                entry_filter=make_f(gg, ex_aux))
-                finally:
-                    e2.LEV = old
-                _ex_cache[key] = (e2.oos_score(r), r["trades"])
-            return _ex_cache[key]
-
-        honesty = honesty_report(g_win, genes, clamp, rand_g,
-                                 lambda gg: _exam_run(gg)[0], m,
-                                 trades_of=lambda gg: _exam_run(gg)[1])
+        honesty = honesty_report(
+            g_win, genes, clamp, rand_g,
+            lambda gg: _run_win(gg, ex_wi, lev_final)[0], m,
+            trades_of=lambda gg: _run_win(gg, ex_wi, lev_final)[1])
         print(f"  внешние гены: {ext_used}")
         results[sym] = dict(base_oos=base_exam, cand_oos=m, adopt=adopt,
                             genome=g_win, base_genome=base,
@@ -631,27 +816,41 @@ def _run_version_body(genes, off, make_f, aux_builder, tag, base_src,
                             # другим при чтении старых и новых json рядом.
                             protocol=("leaky-3window-mean" if pick["leaky"]
                                       else "honest-val-then-exam"),
-                            base_folds=base_sc, base_mean_all=base_mean,
+                            # metric: чем именно является cand_oos — баллом
+                            # экзаменационного окна или средним по трём окнам
+                            # (в ветке с утечкой). Без этого поля два разных
+                            # числа лежали бы под одним именем
+                            metric=pick["metric"],
+                            base_folds=base_sc_final,
+                            base_mean_all=(sum(base_sc_final)
+                                           / len(base_sc_final)),
+                            base_folds_at_lev_sel=base_sc,
+                            base_mean_at_lev_sel=base_mean,
                             val_window=pick["val_window"],
                             val_score=pick["val_score"],
                             val_edge=pick["val_edge"],
                             exam_window=pick["exam_window"],
                             train_fold=pick["train_fold"],
                             skipped_candidates=pick["skipped"],
-                            # плечо: на нём считались фитнес, валидация,
-                            # экзамен и ворота — и ровно оно уходит в конфиг
-                            lev=lev_final, lev_sel=lev_sel,
+                            degenerate_candidates=pick["degenerate"],
+                            all_candidates_degenerate=pick["all_degenerate"],
+                            # плечо: на нём считались валидация, экзамен и
+                            # ворота — и ровно оно уходит в конфиг. Фитнес GA,
+                            # выведший кандидатов, считался на lev_sel: он
+                            # решал, кого предложить, а не чем мерить
+                            lev=lev_final, lev_sel=lev_sel, lev_val=lev_cur,
+                            lev_settled=lev_settled,
+                            lev_fitness_on=lev_sel,
                             lev_confirmed=lev_win["ok"],
                             lev_picked_on="train",
                             ladder_train=lev_win["rows"],
-                            exam_score_at_lev_sel=m_sel,
+                            exam_score_at_lev_val=m_sel,
                             reject_reasons=reasons, warnings=warns,
                             honesty=honesty,
                             exam_measure={k: v for k, v in mm.items()
                                           if k != "rs"})
-    with open(f"{tag}_winners.json", "w", encoding="utf-8") as fh:
-        json.dump(results, fh, ensure_ascii=False, indent=2, default=float)
-    print(f"\nИтоги в {tag}_winners.json")
+    out = save_artifact(f"{tag}_winners.json", results)
+    print(f"\nИтоги в {out}")
     return results
 
 

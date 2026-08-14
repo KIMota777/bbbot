@@ -31,6 +31,10 @@
   .b.wait { background:var(--line); color:var(--muted); }
   .b.live { background:#14301f; color:var(--up); }
   .b.caution { background:#3a2e15; color:var(--accent); }
+  .b.ruin-b { background:#5a1616; color:#ff8f8f; }
+  .banner.bad { background:#3a1414; border:1px solid #8a2b2b; color:#ffb3b3; }
+  .banner.bad b { color:#ff6b6b; }
+  .src { color:#6f727a; font-size:11.5px; }
   .stats { color:var(--muted); font-size:12.5px; line-height:1.6; }
   .plan { background:#0e1013; border-radius:8px; padding:10px 12px;
     font:13px Consolas, monospace; line-height:1.7; }
@@ -58,6 +62,13 @@
   {% else %}
   <div class="banner off">○ Помощник не запущен. Запусти <code>python advisor.py</code> в папке бота, чтобы получать сигналы.</div>
   {% endif %}
+  {% if none_passed %}
+  {# главное про помощника сейчас: работать нечему. Это состояние портфеля,
+     а не мелкая пометка в углу карточки #}
+  <div class="banner bad">⛔ <b>Приёмку не прошёл ни один из {{ setups|length }} сетапов.</b>
+    После честного пересчёта помощник не даёт сигналов вообще: карточки ниже —
+    историческая картина отбора, а не рабочие стратегии.</div>
+  {% endif %}
 
   <div class="grid">
     {% for name, rec in setups.items() %}
@@ -70,13 +81,20 @@
         {% else %}
         <span class="b {{ 'live' if act else 'wait' }}">{{ 'СИГНАЛ АКТИВЕН' if act else 'ожидание' }}</span>
         {% endif %}
+        {# слив счёта раньше было видно только на странице сетапа: в списке
+           слитый сетап выглядел точно так же, как рабочий #}
+        {% if ruined.get(name) %}<span class="b ruin-b">💀 счёт слит</span>{% endif %}
       </div>
       <div class="name">{{ ru.get(name, name) }}</div>
-      {% set st = rec.get('stats', {}) %}
+      {# числа берём из того же setup_numbers, что и страница сетапа, —
+         иначе список и страница показывают разную просадку #}
+      {% set st = stats.get(name, {}) %}
       <div class="stats">
-        Бэктест 3.2г (x{{ rec.get('rec_lev', 15) }}): {{ st.get('ret', '?') }}% |
-        {{ st.get('n', '?') }} сделок | WR {{ st.get('wr', '?') }}% |
-        DD {{ st.get('dd', '?') }}% | ср. удержание {{ st.get('avg_hold_h', '?') }}ч
+        Бэктест 3.2г (x{{ st.lev or rec.get('rec_lev', 15) }}): {{ st.ret if st.ret is not none else '?' }}% |
+        {{ st.n if st.n is not none else '?' }} сделок | WR {{ st.wr if st.wr is not none else '?' }}% |
+        просадка закрытая {{ st.dd if st.dd is not none else '?' }}%{% if st.dd_float is not none %}, плавающая {{ st.dd_float }}%{% endif %} |
+        ср. удержание {{ st.hold if st.hold is not none else '?' }}ч
+        <br><span class="src">{{ st.src }}</span>
         {% if rec.get('enabled', True) %}
         <br>💰 Капитал сетапа: <b style="color:var(--accent)">${{ '%.2f'|format(capitals.get(name, 50.0)) }}</b>
         (реинвест от $50; след. маржа ≈ ${{ '%.2f'|format(capitals.get(name, 50.0) * 0.25) }})
@@ -92,9 +110,9 @@
         Плечо: x{{ act.lev }} | до {{ fmt_ts(act.hold_until) }}
       </div>
       {% endif %}
-      {% if rec.get('enabled', True) %}
-      <a href="/signal/{{ name }}" style="color:var(--accent);font-size:13px;text-decoration:none;font-weight:600">📈 График входов и выходов →</a>
-      {% endif %}
+      {# ссылку показываем и у отбракованных: приёмку не прошёл ни один сетап,
+         и без неё страницы разбора стали бы недостижимы из интерфейса #}
+      <a href="/signal/{{ name }}" style="color:var(--accent);font-size:13px;text-decoration:none;font-weight:600">📈 График входов и выходов{{ ' (разбор отбракованного)' if not rec.get('enabled', True) }} →</a>
     </div>
     {% endfor %}
   </div>

@@ -49,11 +49,13 @@ def analyze(t0, pnls, extra=None):
     """
     eq, peak = SLEEVE0, SLEEVE0
     equity = [[t0, round(SLEEVE0, 2)]]
+    raw_equity = [SLEEVE0]       # тот же капитал без округления — для просадки
     drawdown = [[t0, 0.0]]
     drawdown_float = [[t0, 0.0]]
     max_dd_float = 0.0
     monthly = defaultdict(float)
     wins, losses = [], []
+    flat = 0
     streak, max_win_streak, max_loss_streak = 0, 0, 0
 
     for ts, pnl, worst in pnls:
@@ -64,9 +66,16 @@ def analyze(t0, pnls, extra=None):
         peak = max(peak, eq)
         max_dd_float = max(max_dd_float, dd_low)
         equity.append([ts, round(eq, 2)])
+        raw_equity.append(eq)
         drawdown.append([ts, round(-(peak - eq) / peak * 100, 2)])
         drawdown_float.append([ts, round(-max(dd_low, (peak - eq) / peak) * 100, 2)])
         monthly[(ts - t0) // MONTH] += pnl
+        # Разбор ИСЧЕРПЫВАЮЩИЙ: wins + losses + flat == trades всегда.
+        # Раньше третьей корзины не было, и сделка ровно в ноль не попадала
+        # никуда: у SOL выходило 911 + 46 = 957 при 958 сделках. Ноль тут
+        # берётся не с потолка — движок округляет pnl события до 4 знаков
+        # (сотая доля цента), и цикл, вынесенный стопом в безубыток, может
+        # дать |pnl| < 0.00005. Такие циклы есть и у SOL, и у DOGE — по одному.
         if pnl > 0:
             wins.append(pnl)
             streak = streak + 1 if streak >= 0 else 1
@@ -75,6 +84,10 @@ def analyze(t0, pnls, extra=None):
             losses.append(pnl)
             streak = streak - 1 if streak <= 0 else -1
             max_loss_streak = max(max_loss_streak, -streak)
+        else:
+            # Ни в прибыльные, ни в убыточные: серию не рвём и не продолжаем —
+            # у сделки нет знака, а выдумывать его нельзя.
+            flat += 1
 
     n_months = max(monthly) + 1 if monthly else 1
     monthly_pts = []

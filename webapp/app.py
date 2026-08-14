@@ -315,15 +315,8 @@ def load_analytics(key):
     Сайт ничего не считает сам: числа обязаны совпадать со страницей /pnl.
     Битый или недописанный файл (идёт пересборка) — не повод ронять страницу.
     """
-    path = safe_path(FINAL_DATA_DIR, f"analytics_{key}.json")
-    if not path or not os.path.exists(path):
-        return {}
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    data = read_json(safe_path(FINAL_DATA_DIR, f"analytics_{key}.json"), {})
+    return data if isinstance(data, dict) else {}
 
 
 def ruined_flag(data):
@@ -445,27 +438,67 @@ RU_SETUPS = {
 }
 
 
+def setup_numbers(rec, data):
+    """Числа сетапа из ОДНОГО источника.
+
+    Источников два, и они не совпадают: signal_setups.json хранит результат
+    отбора (фиксированная маржа $5), webapp/data/analytics_sig_*.json —
+    пересчёт честным движком с реинвестом. На pump_short это давало «DD 21.4%»
+    в одной строке и «просадка закрытая 44.6%» строкой выше: два разных числа
+    про одно и то же, и владелец не мог понять, какому верить. Главным берём
+    предпосчёт — он новее и считается ровно тем же кодом, что карточка
+    аналитики ниже на странице. Строка отбора остаётся только там, где
+    предпосчёта ещё нет, и тогда подписана явно.
+    """
+    st = rec.get("stats") or {}
+    a = (data or {}).get("stats") or {}
+    if a.get("final_pct") is not None:
+        return dict(src="реинвест от $50, маржа 25% капитала (предпосчёт)",
+                    ret=a.get("final_pct"), n=a.get("trades"), wr=a.get("wr"),
+                    dd=a.get("max_dd"), dd_float=a.get("max_dd_float"),
+                    hold=a.get("avg_hold_h"), lev=a.get("lev"))
+    return dict(src="числа отбора, фиксированная маржа $5 — предпосчёт "
+                    "по этому сетапу ещё не собран",
+                ret=st.get("ret"), n=st.get("n"), wr=st.get("wr"),
+                dd=st.get("dd"), dd_float=None,
+                hold=st.get("avg_hold_h"), lev=rec.get("rec_lev"))
+
+
 @app.route("/signals")
 def signals_page():
-    setups = {}
-    p = os.path.join(BOT_DIR, "signal_setups.json")
-    if os.path.exists(p):
-        with open(p, encoding="utf-8") as fh:
-            setups = json.load(fh)
-    state = dict(active={}, history=[])
-    p2 = os.path.join(FINAL_DATA_DIR, "signals.json")
-    if os.path.exists(p2):
-        with open(p2, encoding="utf-8") as fh:
-            state = json.load(fh)
-    hist = sorted(state.get("history", []),
-                  key=lambda h: h.get("exit_ts", 0), reverse=True)[:40]
+    # оба файла читаем через read_json: страница со списком сетапов не должна
+    # падать в 500, пока advisor.py дописывает signals.json
+    setups = load_signal_setups()
+    state = read_json(os.path.join(FINAL_DATA_DIR, "signals.json"), {})
+    if not isinstance(state, dict):     # обрывок записи мог дать список/число
+        state = {}
+    # признак слива и числа — те же, что на странице сетапа. Раньше ruined
+    # уходил в шаблон только из signal_page(), и в списке слитый сетап
+    # выглядел ровно как рабочий.
+    stats, ruined = {}, {}
+    for nm, rec in setups.items():
+        data = load_analytics(f"sig_{nm}")
+        stats[nm] = setup_numbers(rec, data)
+        ruined[nm] = ruined_flag(data)
+    # каждую половину файла проверяем отдельно: недописанный signals.json
+    # может отдать не то, что мы ждём, а шаблон на этом молча споткнётся
+    act = state.get("active")
+    act = act if isinstance(act, dict) else {}
+    hist_all = state.get("history")
+    hist = sorted((h for h in hist_all if isinstance(h, dict)),
+                  key=lambda h: h.get("exit_ts", 0),
+                  reverse=True)[:40] if isinstance(hist_all, list) else []
     adv_log = os.path.join(BOT_DIR, "advisor.log")
     running = (os.path.exists(adv_log) and
                time.time() - os.path.getmtime(adv_log) < 180)
     return render_template("signals.html", setups=setups, ru=RU_SETUPS,
-                           active=state.get("active", {}), history=hist,
-                           capitals=state.get("capital", {}),
-                           running=running,
+                           active=act, history=hist,
+                           capitals=state.get("capital") or {},
+                           running=running, stats=stats, ruined=ruined,
+                           # ни один сетап не прошёл приёмку — это состояние
+                           # портфеля, а не мелочь в карточке: говорим вверху
+                           none_passed=bool(setups) and not any(
+                               r.get("enabled", True) for r in setups.values()),
                            fmt_ts=lambda ms: time.strftime(
                                "%d.%m %H:%M", time.localtime(ms / 1000)))
 
@@ -510,11 +543,10 @@ def _btc_signal_data(wait=FETCH_BUDGET):
 
 
 def load_signal_setups():
-    p = os.path.join(BOT_DIR, "signal_setups.json")
-    if not os.path.exists(p):
-        return {}
-    with open(p, encoding="utf-8") as fh:
-        return json.load(fh)
+    """Параметры сетапов или {}. Обрывок записи может оказаться не словарём —
+    тогда страница просто скажет «параметры ещё не готовы»."""
+    data = read_json(os.path.join(BOT_DIR, "signal_setups.json"), {})
+    return data if isinstance(data, dict) else {}
 
 
 @app.route("/signal/<name>")
@@ -523,15 +555,16 @@ def signal_page(name):
     rec = setups.get(name)
     if not rec:
         return "Нет такого сетапа", 404
-    # то же, что у ботов: слив счёта и плавающая просадка — из предпосчёта,
-    # прямо в разметку, не полагаясь на JS
+    # то же, что у ботов: слив счёта и просадки — из предпосчёта, прямо в
+    # разметку, не полагаясь на JS. Все числа шапки идут одним набором из
+    # setup_numbers, чтобы просадка в плашке и в строке бэктеста совпадали.
     data = load_analytics(f"sig_{name}")
-    an = data.get("stats") or {}
     return render_template("signal.html", name=name,
                            title=RU_SETUPS.get(name, name), rec=rec,
-                           ruined=ruined_flag(data), dd=an.get("max_dd"),
-                           dd_float=an.get("max_dd_float"),
-                           st=rec.get("stats", {}))
+                           ruined=ruined_flag(data),
+                           st=setup_numbers(rec, data),
+                           enabled=rec.get("enabled", True),
+                           note=rec.get("note", ""))
 
 
 @app.route("/api/signal_chart/<name>")
@@ -558,11 +591,11 @@ def api_signal_chart(name):
                    side=t["side"], entry=t["entry"], stop=t["stop"],
                    tp=t["tp"], pnl=t["pnl"], r=t["r"], reason=t["reason"],
                    hold_h=t["hold_h"]) for t in r["trades"]]
-    active = None
-    p2 = os.path.join(FINAL_DATA_DIR, "signals.json")
-    if os.path.exists(p2):
-        with open(p2, encoding="utf-8") as fh:
-            active = json.load(fh).get("active", {}).get(name)
+    # signals.json переписывает живой advisor.py: в момент записи файл бывает
+    # оборванным, и график сетапа не должен из-за этого отдавать 500
+    state = read_json(os.path.join(FINAL_DATA_DIR, "signals.json"), {})
+    act_all = state.get("active") if isinstance(state, dict) else None
+    active = act_all.get(name) if isinstance(act_all, dict) else None
     data = dict(candles=candles, trades=trades, active=active)
     _sig_chart_cache[name] = (time.time(), data)
     return jsonify(data)

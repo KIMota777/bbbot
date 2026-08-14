@@ -24,6 +24,7 @@ import sys
 import tempfile
 import time
 import urllib.parse
+import uuid
 import urllib.request
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 
@@ -42,6 +43,12 @@ TAKER = 0.00055     # тейкерская комиссия Bybit
 MAKER = 0.0002      # мейкерская (лимитные колена сетки и тейк-профит)
 SLIP = 0.0003       # проскальзывание рыночного исполнения
 FUND_8H = 0.0001    # фандинг за 8 часов удержания
+# Ликвидация — те же величины, что в движке (evolution2.MMR / LIQ_LOSS).
+# MMR: биржа закрывает позицию не когда убыток съел всю маржу, а когда
+# свободных средств осталось меньше maintenance margin. LIQ_LOSS=1.0: остаток
+# после ликвидации съедает ликвидационная комиссия — теряется вся маржа цикла.
+MMR = 0.005
+LIQ_LOSS = 1.0
 
 # Консоль Windows по умолчанию живёт не в UTF-8 (cp866/cp1251): русский лог в
 # ней либо превращается в кракозябры, либо роняет процесс UnicodeEncodeError'ом
@@ -114,6 +121,12 @@ class _EntryGate:
     def __init__(self, bot):
         self.bot = bot
         self.held = False
+        # Метка ВЛАДЕЛЬЦА замка. Снимать файл «по пути» нельзя: бот A мог
+        # держать замок дольше LOCK_STALE_SEC (зависший запрос к бирже), бот B
+        # снял его как протухший и взял свой, — и тогда A на выходе удалял бы
+        # ЧУЖОЙ замок, оставляя счёт без защиты ровно в момент входа B.
+        # uuid, а не только pid: pid операционная система переиспользует.
+        self.token = f"{os.getpid()} {bot.symbol} {bot.mode} {uuid.uuid4().hex}"
 
     def __enter__(self):
         if config.DRY_RUN:
@@ -125,7 +138,7 @@ class _EntryGate:
                 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
                 # O_EXCL — атомарное «создать, если нет» и на Windows, и на Linux
                 fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(fd, f"{os.getpid()} {self.bot.symbol}".encode())
+                os.write(fd, self.token.encode())
                 os.close(fd)
                 self.held = True
                 return self
@@ -155,10 +168,25 @@ class _EntryGate:
 
     def __exit__(self, *exc):
         if self.held:
+            path = self.bot._lock_path()
             try:
-                os.remove(self.bot._lock_path())
+                with open(path, "rb") as fh:
+                    owner = fh.read().decode("utf-8", "replace")
             except OSError:
-                pass
+                owner = None        # замка уже нет — снимать нечего
+            if owner == self.token:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+            elif owner is not None:
+                # замок успел смениться, пока мы держались: файл уже НЕ наш.
+                # Проверка «прочитать и сравнить» не атомарна — между чтением и
+                # remove владелец теоретически может смениться ещё раз, — но
+                # окно сузилось с «всё время удержания» до одного системного
+                # вызова, а протухание всё равно снимет чужой брошенный замок.
+                self.bot.log.warning("Замок входа принадлежит уже другому "
+                                     "процессу (%s) — не снимаю", owner)
             self.held = False
         return False
 
@@ -547,6 +575,25 @@ class RsiGridBot:
         if self.turbo:
             return avg * (1 + sgn * self.p["tp_k"] * self.pos["atr0"])
         return avg * (1 + sgn * self.pos.get("tp_eff", self.p["tp"]))
+
+    def liq_price(self):
+        """Цена ликвидации текущей позиции — формула движка (evolution2.liq_price).
+
+        Условие одно: свободных средств осталось ровно на maintenance margin.
+        Базу для самого maintenance margin берём БОЛЬШУЮ из двух (по цене входа
+        для лонга, по текущей для шорта) — так порог наступает не позже
+        биржевого в обе стороны; вывод формул см. в evolution2.liq_price.
+
+        Занятая маржа считается не из весов колен, а из номинала: биржа держит
+        под позицией ровно notional/lev, поэтому mused/q == avg/lev тождественно
+        и округление объёмов к шагу лота на цену ликвидации не влияет.
+        """
+        avg, _ = self.avg_entry()
+        sgn = 1 if self.pos["side"] == "L" else -1
+        d = avg / self.p["lev"]
+        if sgn == 1:
+            return avg - d + MMR * avg
+        return (avg + d) / (1.0 + MMR)
 
     def stop_price(self):
         if self.turbo:  # короткий стоп от средней
@@ -1273,6 +1320,19 @@ class RsiGridBot:
         pnl = sgn * (px - avg) * qty - fee - p.get("fees", 0.0)
         self.finish_cycle(pnl, reason, kind)
 
+    def paper_liquidate(self):
+        """Ликвидация в бумажном режиме — модель движка (evolution2.close_pos,
+        ветка liq=True): теряется ВСЯ маржа цикла плюс уже начисленные за цикл
+        издержки. Выходить «по цене ликвидации» нельзя: остаток маржи на этом
+        уровне забирает ликвидационная комиссия биржи.
+
+        kind="stop": в движке кулдаун ставится и после ликвидации тоже
+        (evolution2.py, ветка killed), а не только после стопа."""
+        avg, qty = self.avg_entry()
+        mused = avg * qty / self.p["lev"]
+        pnl = -mused * LIQ_LOSS - self.pos.get("fees", 0.0)
+        self.finish_cycle(pnl, "[DRY_RUN] ЛИКВИДАЦИЯ", "stop")
+
     def close_market(self, reason, price):
         qty = self.avg_entry()[1]
         if not config.DRY_RUN:
@@ -1315,13 +1375,20 @@ class RsiGridBot:
         tp_pre = self.tp_price()
         hit_tp = (h >= tp_pre) if sgn == 1 else (l <= tp_pre)
         legs_filled = False
-        # Колено, которое лежит БЛИЖЕ стопа, цена проходит раньше: оно
-        # успевает исполниться и изменить среднюю. Колено ЗА стопом уже не
-        # исполнится — позиция к этому моменту закрыта.
+        # Цена идёт по неблагоприятной стороне и встречает уровни ПО ПОРЯДКУ —
+        # ровно как в движке (evolution2.run5). Опасных уровней два: свой стоп
+        # и цена ликвидации. При высоком плече ликвидация оказывается БЛИЖЕ
+        # стопа, и свеча может достать её, не коснувшись стопа: бумажный цикл
+        # без этой проверки переживал бы свечу, на которой биржа закрыла бы
+        # позицию с потерей всей маржи. Колено, лежащее ДО обоих уровней,
+        # успевает исполниться и отодвигает ликвидацию (доливка добавляет
+        # маржи) — поэтому p_liq пересчитывается на каждом витке.
         while True:
+            p_liq = self.liq_price()
+            danger = max(p_liq, stop) if sgn == 1 else min(p_liq, stop)
             nxt = p["adds"][0][0] if p["adds"] else None
-            leg_first = nxt is not None and ((nxt > stop) if sgn == 1
-                                             else (nxt < stop))
+            leg_first = nxt is not None and ((nxt > danger) if sgn == 1
+                                             else (nxt < danger))
             leg_reached = nxt is not None and ((l <= nxt) if sgn == 1
                                                else (h >= nxt))
             if leg_first and leg_reached:
@@ -1332,8 +1399,14 @@ class RsiGridBot:
                 self.log.info("[DRY_RUN] сетка исполнилась: %s по %s",
                               aq, self.rp(ap))
                 continue
-            if (l <= stop) if sgn == 1 else (h >= stop):
-                self.paper_close(stop, "[DRY_RUN] СТОП", "stop")
+            if (l <= danger) if sgn == 1 else (h >= danger):
+                if (p_liq >= stop) if sgn == 1 else (p_liq <= stop):
+                    self.log.error("[DRY_RUN] ЛИКВИДАЦИЯ по %s (стоп %s "
+                                   "стоял дальше)", self.rp(p_liq),
+                                   self.rp(stop))
+                    self.paper_liquidate()
+                else:
+                    self.paper_close(stop, "[DRY_RUN] СТОП", "stop")
                 return
             break
         if legs_filled:
@@ -1381,6 +1454,9 @@ class RsiGridBot:
         # видит её каждый цикл — и без этой проверки пауза продлевалась бы на
         # 24 часа каждые POLL_SECONDS, то есть ручная позиция владельца
         # останавливала бы бота навсегда.
+        # ВАЖНО: метка ставится только после УДАВШЕГОСЯ разбора (см. ниже).
+        # Если закрытие сорвалось, ключ остаётся пустым, и следующий цикл
+        # попробует снова: чужая позиция без стопа опаснее лишней записи в лог.
         key = [pos_side, size, str(pp.get("createdTime") or "")]
         if self.orphan_key == key:
             if self.pos is not None:
@@ -1390,11 +1466,11 @@ class RsiGridBot:
                 self.pos = None
                 self.save_state()
             return
-        self.orphan_key = key
         self.log.error("РАСХОЖДЕНИЕ С БИРЖЕЙ: %s — %s %s по %s",
                        why, pos_side, size, pp.get("avgPrice"))
         self.notifier.send(f"расхождение с биржей: {why} ({pos_side} {size})",
                            key="orphan")
+        resolved = True     # разобрались ли мы с расхождением ОКОНЧАТЕЛЬНО
         if config.CLOSE_UNEXPECTED_POSITION and not config.DRY_RUN:
             try:
                 self.session.cancel_all_orders(category="linear",
@@ -1408,9 +1484,17 @@ class RsiGridBot:
                 self.notifier.send("неожиданная позиция закрыта по рынку",
                                    key="orphan_closed")
             except Exception as e:      # noqa: BLE001
-                self.log.exception("Не удалось закрыть неожиданную позицию")
+                # Закрыть не вышло (биржа не ответила, отклонила заявку...).
+                # Позиция ЖИВА и по-прежнему без стопа — считать расхождение
+                # разобранным нельзя: метку не ставим, и следующая сверка
+                # повторит попытку. Повторы шумят в логе, зато голая позиция не
+                # остаётся висеть до тех пор, пока её не заметит человек.
+                resolved = False
+                self.log.exception("Не удалось закрыть неожиданную позицию — "
+                                   "повторю на следующей сверке")
                 self.notifier.send(f"НЕ УДАЛОСЬ закрыть позицию: {e}",
                                    key="orphan_fail")
+        self.orphan_key = key if resolved else None
         self.pos = None
         # пауза, а не остановка: причина может быть безобидной (ручная сделка),
         # но торговать вслепую до разбора нельзя
@@ -1685,7 +1769,13 @@ class RsiGridBot:
                 # стоп в безубыток, когда прошли полпути к тейку
                 avg, _ = self.avg_entry()
                 sgn = 1 if self.pos["side"] == "L" else -1
-                trig = avg * (1 + sgn * self.p["tp"] * 0.5)
+                # полпути к ФАКТИЧЕСКОМУ тейку цикла (tp_eff), а не к базовому
+                # p["tp"]: при tp_atr_k>0 тейк умножен на множитель
+                # волатильности, зафиксированный на входе, и порог безубытка в
+                # движке (evolution2.run5) считается именно от него. Пока такого
+                # конфига в бою нет, но расхождение бот/движок — мина, которая
+                # ждёт первого же генома с be_move=1 и tp_atr_k>0.
+                trig = avg * (1 + sgn * self.pos.get("tp_eff", self.p["tp"]) * 0.5)
                 hi, lo = cs[-1][2], cs[-1][3]
                 if (hi >= trig if sgn == 1 else lo <= trig):
                     # gridlib.breakeven_stop — та же формула, что в движке,
@@ -1733,7 +1823,22 @@ class RsiGridBot:
                 # позиция изменилась (доливка, перенос стопа) — состояние
                 # должно пережить перезапуск в том же виде
                 self.save_state()
-            return
+                return
+            if not config.DRY_RUN:
+                # Цикл закрылся прямо здесь (таймаут -> close_market): рыночный
+                # reduceOnly только что ушёл на биржу и ещё не подтверждён.
+                # Входить тем же опросом нельзя — новый ордер столкнулся бы с
+                # неисполненным закрытием. Ждём следующего опроса: sync_exchange
+                # сверит факт, и вход пойдёт уже с подтверждённым «мы вне рынка».
+                return
+            # DRY_RUN: бумажный цикл закрылся НА ЭТОЙ свече, и дальше идёт
+            # обычная проверка входа — так же, как в движке (evolution2.run5:
+            # `if pos: continue`, то есть бар пропускается ТОЛЬКО пока позиция
+            # жива). Раньше здесь стоял безусловный return, и бумага не могла
+            # войти на баре закрытия предыдущего цикла — движок мог. Это давало
+            # бумаге меньше сделок, чем проверял отбор. Кулдаун после стопа,
+            # kill switch и стоп по просадке ниже никуда не делись: их только
+            # что выставил finish_cycle, и проверки стоят прямо под этой строкой.
 
         now = int(time.time() * 1000)
         if self.halted:

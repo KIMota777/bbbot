@@ -313,13 +313,34 @@ def neighbour_median(g, genes, clamp, evaluate, k=NEIGH_K, scale=NEIGH_SCALE,
     диапазоном после округления даёт РОВНО НОЛЬ: у levels (2..4), be_move
     (0..1), direction (0..2), regime_gate, pattern_gate, oi_gate, adx_gate,
     grid_mode sigma <= 0.16, и «соседи» отличались только непрерывными генами —
-    то есть переключатели стратегии не проверялись вообще. Теперь целый ген,
+    то есть переключатели стратегии не проверялись вообще. Поэтому целый ген,
     чей округлённый сдвиг обнулился, всё равно шагает на +-1 с вероятностью
-    sigma (для узкого диапазона это и есть честная доля возмущений: у
-    двухзначного гена sigma=0.08 -> 8% соседей его переключают).
+    sigma. И шаг, выводящий ген ЗА диапазон, разворачивается внутрь: без
+    разворота его срезал clamp, и «сосед» по этому гену совпадал с самим
+    кандидатом — а гены-переключатели сплошь стоят на границе (0 или 1), то
+    есть именно они и не проверялись.
+
+    ЗАМЕР (боевой геном BTC, пространство GENES12, seed=SEED, k=8; целых генов
+    26, слотов 8*26=208):
+      * без форс-шага        — 47 сдвигов из 208, 19 генов из 26 не двигались
+                               ни разу (все узкие);
+      * форс-шаг без разворота — 77 попыток, но 9 из них срезал clamp, не
+                               двигались 8 генов;
+      * форс-шаг с разворотом — все 77 доходят до генома, не двигались 4.
+    Для двухзначного гена НА ГРАНИЦЕ (be_move, adx_gate, grid_mode,
+    regime_gate) доля соседей, которые его переключают, при sigma=0.08 была
+    3.2-4.2% вместо обещанных 8% (замер по 1000 соседей) — ровно вдвое меньше,
+    потому что половина шагов уходила наружу. С разворотом стало 7.0-8.1%.
+    Возражение «дискретные гены почти не двигаются» относится к первой строке
+    замера, то есть к состоянию ДО форс-шага; воспроизвести его на нынешнем
+    коде не удалось.
+
+    int_moves — сколько шагов сделано, int_changed — сколько из них дошло до
+    генома после clamp. Числа разные, и печатать первое вместо второго значит
+    завышать глубину проверки.
     """
     rng = random.Random(seed)
-    out, moved = [], 0
+    out, moved, changed_total = [], 0, 0
     for _ in range(k):
         nb, changed = dict(g), 0
         for key, (lo, hi, is_int) in genes.items():
@@ -329,13 +350,20 @@ def neighbour_median(g, genes, clamp, evaluate, k=NEIGH_K, scale=NEIGH_SCALE,
                 d = int(round(d))
                 if d == 0 and hi > lo and rng.random() < min(1.0, sigma):
                     d = rng.choice((-1, 1))
+                # разворот шага внутрь диапазона: наружу его всё равно срежет
+                # clamp, и возмущение просто исчезнет (см. замер в докстроке)
+                if d and not (lo <= nb[key] + d <= hi):
+                    d = -d
                 if d:
                     changed += 1
             nb[key] = nb[key] + d
         moved += changed
-        out.append(evaluate(clamp(nb)))
+        nb = clamp(nb)
+        changed_total += sum(1 for key, (_, _, is_int) in genes.items()
+                             if is_int and nb[key] != g[key])
+        out.append(evaluate(nb))
     return dict(median=statistics.median(out), worst=min(out), best=max(out),
-                k=k, vals=out, int_moves=moved)
+                k=k, vals=out, int_moves=moved, int_changed=changed_total)
 
 
 def random_control(rand_g, evaluate, cand_score, k=RANDOM_K, seed=SEED,

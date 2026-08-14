@@ -42,11 +42,27 @@
 границей отрыва победителя, val_edge никогда не уходил в минус, и пункт 2 не
 мог сработать ни при каких данных.
 
+Правки третьего круга:
+  * в cand_folds теперь лежат ЧЕСТНЫЕ окна кандидата (валидационное и все
+    последующие) — как в v6/v9/v12. Раньше там был список из одного элемента,
+    дублирующий балл экзамена, и одноимённые поля в json разных волн значили
+    разное;
+  * вырожденные кандидаты (меньше e4.MIN_VAL_TRADES сделок на своём окне
+    валидации) в гонку не допускаются: балл неторгующего конфига равен ровно
+    0.00 и при убыточной базе обыгрывает всех, кто торговал;
+  * результат пишется через e4.save_artifact — json прошлого прогона не
+    затирается.
+
+Плечо в этой волне не выбирается отбором: волна меняет только гены сетки, а
+плечо берётся боевое (config), и на нём же считаются фитнес, экзамены, ворота
+и итог. Поэтому расхождения «отбирали на одном плече, торгуем другим» здесь
+нет; если лестница по обучающей части рекомендует иное плечо, это печатается
+как непроверенная рекомендация.
+
 Запуск: python evolution10.py            (все монеты)
         python evolution10.py BTCUSDT    (одна монета)
 """
 
-import json
 import random
 import statistics
 import sys
@@ -245,8 +261,10 @@ def run_symbol(sym, aux_builder):
         seg = candles[b:e]
         oos.append((seg, e2.prep(seg), slice_aux(aux, b, e)))
 
-    def score_on(sub, wi):
-        """Балл одного OOS-окна — НА БОЕВОМ ПЛЕЧЕ монеты.
+    _win_cache = {}
+
+    def _run_win(sub, wi):
+        """Прогон одного окна на БОЕВОМ ПЛЕЧЕ монеты -> (балл, сделки).
 
         Прежние волны считали экзамены на плече по умолчанию (x5), а итог —
         на боевом. Для BTC (x15) из-за этого шкала экзамена оказывалась втрое
@@ -257,14 +275,27 @@ def run_symbol(sym, aux_builder):
         Окна больше не усредняются скопом: кандидату дозволены только те, что
         лежат строго после его обучения (см. e4.choose_winner).
         """
-        g = with_genes(base, sub)
-        seg, pre_s, aux_s = oos[wi]
-        old, e2.LEV = e2.LEV, lev
-        try:
-            r = e2.run5(seg, pre_s, g, entry_filter=e8.make_filter8(g, aux_s))
-        finally:
-            e2.LEV = old
-        return e2.oos_score(r)
+        key = (tuple(sub[k] for k in GENES10), wi)
+        if key not in _win_cache:
+            g = with_genes(base, sub)
+            seg, pre_s, aux_s = oos[wi]
+            old, e2.LEV = e2.LEV, lev
+            try:
+                r = e2.run5(seg, pre_s, g,
+                            entry_filter=e8.make_filter8(g, aux_s))
+            finally:
+                e2.LEV = old
+            _win_cache[key] = (e2.oos_score(r), r["trades"])
+        return _win_cache[key]
+
+    def score_on(sub, wi):
+        return _run_win(sub, wi)[0]
+
+    def trades_on(sub, wi):
+        """Сделки кандидата на окне — вход для отсева вырожденных геномов:
+        балл конфига без сделок равен ровно 0.00 и при убыточной базе
+        выигрывает гонку, не приняв никакого риска."""
+        return _run_win(sub, wi)[1]
 
     off = clamp10(dict(gridlib.OFF10))
     base_sc = [score_on(off, wi) for wi in range(len(oos))]
@@ -299,9 +330,15 @@ def run_symbol(sym, aux_builder):
             if len(seen) == 3:
                 break
 
-    pick = e4.choose_winner(cands, base_sc, score_on)
+    pick = e4.choose_winner(cands, base_sc, score_on, trades_on=trades_on)
     sub = pick["genome"]
-    mean, sc = pick["exam_score"], [pick["exam_score"]]
+    mean = pick["exam_score"]
+    # ЧЕСТНЫЕ ОКНА КАНДИДАТА: валидационное и все последующие, включая
+    # экзаменационное. Раньше здесь стоял список из ОДНОГО элемента — самого
+    # балла экзамена, — и поле cand_folds в json означало не то же, что
+    # одноимённое поле в v6/v9/v12: там честные окна, здесь дубль одного
+    # числа. Читать такие файлы рядом было нельзя.
+    sc = [score_on(sub, wi) for wi in range(pick["train_fold"], len(oos))]
     cand_full = full_run(base, sub, candles, pre_full, aux, lev)
 
     # ворота honest_eval на экзаменационном окне и боевом плече монеты
@@ -368,13 +405,20 @@ def run_symbol(sym, aux_builder):
                 exam_measure={k: v for k, v in mm.items() if k != "rs"},
                 protocol=("leaky-3window-mean" if pick["leaky"]
                           else "honest-val-then-exam"),
+                metric=pick["metric"],
                 base_oos=round(base_sc[exam_i], 4), cand_oos=round(mean, 4),
                 base_mean_all=round(base_mean, 4),
                 base_folds=[round(x, 4) for x in base_sc],
+                # cand_folds — честные окна кандидата (валидационное и все
+                # последующие), как в v6/v9/v12; cand_folds_from = номер
+                # первого из них, чтобы не считать окна от начала истории
                 cand_folds=[round(x, 4) for x in sc],
+                cand_folds_from=pick["train_fold"],
                 exam_window=pick["exam_window"], val_window=pick["val_window"],
                 val_edge=pick["val_edge"], train_fold=pick["train_fold"],
                 skipped_candidates=pick["skipped"],
+                degenerate_candidates=pick["degenerate"],
+                all_candidates_degenerate=pick["all_degenerate"],
                 base_full=base_full, cand_full=cand_full,
                 lev=lev, ladder=lad, ladder_train=lad_train,
                 rec_lev=rec_lev, lev_picked_on="train",
@@ -390,8 +434,8 @@ def main():
     out = {}
     for sym in syms:
         out[sym] = run_symbol(sym, aux_builder)
-    with open("evolution10_winners.json", "w", encoding="utf-8") as fh:
-        json.dump(out, fh, ensure_ascii=False, indent=2, default=float)
+    # артефакт прошлого прогона не переписывается (e4.save_artifact)
+    out_name = e4.save_artifact("evolution10_winners.json", out)
 
     print(f"\n\n=== ИТОГ v10 (за {time.time()-t0:.0f}с) ===")
     for sym, r in out.items():
@@ -401,7 +445,7 @@ def main():
               f"DD {r['base_full']['dd']:.1f}% -> {r['cand_full']['dd']:.1f}%")
         if not r["adopt"]:
             print(f"          причина: {'; '.join(r['reject_reasons'])}")
-    print("\nИтоги в evolution10_winners.json")
+    print(f"\nИтоги в {out_name}")
 
 
 if __name__ == "__main__":

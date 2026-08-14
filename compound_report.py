@@ -137,8 +137,12 @@ def main():
             all_pnls += pnls
             trades = str(len(pnls))
             lin = f"{sum(pnls) / BT_BASE * 100:+.1f}%"
-        mark = "СЛИТ " if s["label"] in ruined else ""
-        print(f"{mark + s['label']:44} {trades:>7} {lin:>10} "
+        # Пометку ставим ПОСЛЕ названия, внутри того же поля шириной 44.
+        # Раньше она клеилась спереди — и название слитой стратегии уезжало
+        # вправо на шесть знаков, колонка «Стратегия» переставала читаться
+        # сверху вниз ровно на самой важной строке отчёта.
+        mark = " [СЛИТ]" if s["label"] in ruined else ""
+        print(f"{s['label'] + mark:44} {trades:>7} {lin:>10} "
               f"{s['final_pct']:>+12.1f}% {s['dd']:>8.1f}% {ddf(s):>9}")
 
     print("-" * len(head))

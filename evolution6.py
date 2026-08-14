@@ -20,6 +20,13 @@
 
 Лестница плечей x5..x15 на 3.2 годах осталась, но это ОТЧЁТ: плечо здесь не
 рекомендуется, потому что полная история включает экзаменационное окно.
+Своего плеча волна не выбирает и в конфиг не отдаёт: фитнес, экзамен и ворота
+считаются на e2.LEV, и это же значение пишется в json (lev_exam).
+
+Правки третьего круга: в гонку не допускаются вырожденные кандидаты (меньше
+e4.MIN_VAL_TRADES сделок на окне валидации — иначе выигрывает тот, кто не
+торгует: bear_score без сделок = ровно 0.00 при убыточной базе), а результат
+пишется через e4.save_artifact, то есть json прошлого прогона не затирается.
 """
 
 import json
@@ -214,11 +221,31 @@ def main():
         # здесь. Теперь роли окон те же, что в e4.choose_winner: валидация —
         # первое окно после обучения кандидата, экзамен — последнее окно, в
         # выборе не участвует.
+        _win_cache = {}
+
+        def _run_win(g, wi):
+            key = (tuple(g[k] for k in e5.GENES5), wi)
+            if key not in _win_cache:
+                seg, pre_s, aux_s, reg_s, mreg_s = segs[wi]
+                filt = make_gate(reg_s, e5.make_filter5(g, aux_s))
+                r = e2.run5(seg, pre_s, g, entry_filter=filt)
+                _win_cache[key] = (bear_score(r, mreg_s), r["trades"])
+            return _win_cache[key]
+
         def score_on(g, wi):
-            seg, pre_s, aux_s, reg_s, mreg_s = segs[wi]
-            filt = make_gate(reg_s, e5.make_filter5(g, aux_s))
-            r = e2.run5(seg, pre_s, g, entry_filter=filt)
-            return bear_score(r, mreg_s)
+            return _run_win(g, wi)[0]
+
+        def trades_on(g, wi):
+            """Сделки кандидата на окне — вход для отсева вырожденных.
+
+            Без этого счётчика гонку выигрывает геном, который НЕ ТОРГУЕТ:
+            bear_score пустого прогона равен ровно 0.00 (p25 и медиана по
+            месяцам без сделок — нули), а база на медвежьих окнах почти всегда
+            в минусе, то есть «ноль больше минуса». Ворота honest_eval ниже
+            завернули бы такого победителя, но остальные кандидаты к тому
+            моменту уже выброшены из гонки.
+            """
+            return _run_win(g, wi)[1]
 
         base_sc = [score_on(base, wi) for wi in range(len(segs))]
         base_mean = sum(base_sc) / len(base_sc)
@@ -249,7 +276,7 @@ def main():
                 if len(seen) == 3:
                     break
 
-        pick = e4.choose_winner(cand, base_sc, score_on)
+        pick = e4.choose_winner(cand, base_sc, score_on, trades_on=trades_on)
         g_win = pick["genome"]
         m, base_exam = pick["exam_score"], pick["base_exam"]
         sc = [score_on(g_win, wi) for wi in range(pick["train_fold"],
@@ -317,11 +344,14 @@ def main():
                             exam_window=pick["exam_window"],
                             train_fold=pick["train_fold"],
                             skipped_candidates=pick["skipped"],
+                            degenerate_candidates=pick["degenerate"],
+                            all_candidates_degenerate=pick["all_degenerate"],
+                            metric=pick["metric"],
                             lev_picked_on=None,   # v6 плечо не рекомендует
+                            lev_exam=e2.LEV,      # ворота считались на нём
                             regime_share=share)
-    with open("evolution6_winners.json", "w", encoding="utf-8") as fh:
-        json.dump(results, fh, ensure_ascii=False, indent=2, default=float)
-    print("\nИтоги в evolution6_winners.json")
+    out = e4.save_artifact("evolution6_winners.json", results)
+    print(f"\nИтоги в {out}")
 
 
 if __name__ == "__main__":

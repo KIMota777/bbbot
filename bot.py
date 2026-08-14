@@ -12,7 +12,10 @@
 Остановка: Ctrl+C (открытая позиция при этом НЕ закрывается).
 """
 
+import json
 import logging
+import os
+import tempfile
 import time
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -39,7 +42,48 @@ class SmaBot:
             api_secret=config.API_SECRET,
         )
         self.qty_step, self.min_qty = self._instrument_filters()
-        self.last_candle_ts = 0  # ts последней обработанной закрытой свечи
+        # Отработанная свеча — это состояние, а не переменная процесса. Без
+        # файла перезапуск обнулял счётчик, и бот заново отрабатывал последнюю
+        # закрытую свечу: если на ней был кроссовер, он второй раз закрывал
+        # позицию и открывал новую (тот же класс дефекта, что у bot_rsi).
+        self.state_file = os.path.join(
+            config.STATE_DIR,
+            f"botstate_sma_{config.SYMBOL}_{config.INTERVAL}.json")
+        self.last_candle_ts = self._load_last_ts()
+
+    # ---------- Состояние между запусками ----------
+
+    def _load_last_ts(self):
+        """ts последней обработанной закрытой свечи из файла (0, если файла
+        нет или он испорчен). Испорченный файл не повод не торговать: худшее,
+        что он стоит, — одна повторно обработанная свеча, и об этом пишется в
+        лог."""
+        try:
+            with open(self.state_file, encoding="utf-8") as fh:
+                return int(json.load(fh).get("last_candle_ts") or 0)
+        except FileNotFoundError:
+            return 0
+        except (OSError, ValueError, TypeError) as e:
+            log.warning("Файл состояния нечитаем (%s) — начинаю с нуля", e)
+            return 0
+
+    def _save_last_ts(self):
+        """Запись атомарная (временный файл + os.replace): оборванный на
+        полуслове JSON не должен превращаться в «состояния нет»."""
+        try:
+            d = os.path.dirname(self.state_file) or "."
+            os.makedirs(d, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=d, prefix=".botstate-", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump({"last_candle_ts": self.last_candle_ts}, fh)
+                os.replace(tmp, self.state_file)
+            except Exception:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                raise
+        except OSError as e:
+            log.warning("не удалось сохранить состояние: %s", e)
 
     # ---------- Биржевые хелперы ----------
 
@@ -173,9 +217,13 @@ class SmaBot:
     def check_signal(self):
         candles = self.get_closed_candles()
         ts, _ = candles[-1]
-        if ts == self.last_candle_ts:
+        # строго НОВЕЕ обработанной, а не "!=": last_candle_ts переживает
+        # перезапуск, и при расхождении с биржей (состояние впереди — например,
+        # биржа отдала неполную страницу) "!=" прогнал бы старую свечу заново
+        if ts <= self.last_candle_ts:
             return  # новая свеча ещё не закрылась
         self.last_candle_ts = ts
+        self._save_last_ts()
 
         closes = [c for _, c in candles]
         if len(closes) < config.SMA_SLOW + 1:

@@ -55,6 +55,17 @@
   9) добавлены ворота honest_eval — хвост (худший месяц, худшая сделка,
      ликвидации, плавающая просадка, риск руина) и вырожденность (минимум
      сделок, сделок в месяц, экспозиции). Пункты 1-6 их не ловили.
+Третий круг:
+ 10) ВЫБОР победителя пересчитывается на плече, которое уходит в конфиг:
+     плечо отбора бралось по базовому геному, а у победителя своё, и раньше
+     пересчитывался только экзамен — отбирался конфиг, оптимальный для одного
+     плеча, а торговал он другим. Фитнес GA остаётся на плече отбора
+     сознательно: он решает, кого предложить, а не чем мерить (см. run_symbol);
+ 11) вырожденные кандидаты выбывают ДО argmax (e4.choose_winner): штрафы
+     fitness12/oos_score12 действовали внутри GA и на баллах окон, а сам выбор
+     их не спрашивал;
+ 12) evolution12_final.json прошлого прогона больше не затирается
+     (e4.save_artifact).
 Всё это действует на БУДУЩИЕ прогоны: конфиги в config.py отобраны старой,
 протекавшей схемой, и переотбор — отдельная работа на часы счёта.
 
@@ -62,7 +73,6 @@
         python evolution12.py SOLUSDT    (одна)
 """
 
-import json
 import sys
 import time
 
@@ -355,18 +365,41 @@ def run_symbol(sym, aux_builder):
     lev_ch = lev_for(base, "база")
     lev_sel = lev_ch["lev"]
 
+    _win_cache = {}
+
+    def _run_win(g, wi, lev):
+        """Прогон одного окна на одном плече -> (балл, сделки), с памятью.
+
+        Память нужна для однозначности: выбор победителя пересчитывается на
+        нескольких плечах (см. ниже), и один геном на одном окне обязан давать
+        один и тот же балл независимо от порядка вызовов.
+        """
+        key = (tuple(g[k] for k in GENES12), wi, lev)
+        if key not in _win_cache:
+            seg, pre_s, aux_s = oos[wi]
+            old, e2.LEV = e2.LEV, lev
+            try:
+                r = e2.run5(seg, pre_s, g, entry_filter=make_filter12(g, aux_s))
+            finally:
+                e2.LEV = old
+            _win_cache[key] = (oos_score12(r), r["trades"])
+        return _win_cache[key]
+
     def score_on(g, wi, lev=None):
         """Балл одного окна на ЗАДАННОМ плече. Раньше здесь была agg() по всем
         трём окнам сразу — та же утечка, что в общем харнессе e4 (для кандидата
         позднего фолда первые окна лежат внутри его обучающей выборки), и вдобавок
         плечо было чужое: x5 против боевого."""
-        seg, pre_s, aux_s = oos[wi]
-        old, e2.LEV = e2.LEV, (lev or lev_sel)
-        try:
-            r = e2.run5(seg, pre_s, g, entry_filter=make_filter12(g, aux_s))
-        finally:
-            e2.LEV = old
-        return oos_score12(r)
+        return _run_win(g, wi, lev or lev_sel)[0]
+
+    def trades_on(g, wi, lev=None):
+        """Сделки кандидата на окне — вход для отсева вырожденных геномов.
+
+        В этой волне вырожденность уже ловили дважды (fitness12 и oos_score12
+        штрафуют отказ от торговли), но оба штрафа действуют внутри GA и на
+        баллах окон, а сам ВЫБОР победителя argmax'ом их не спрашивал.
+        """
+        return _run_win(g, wi, lev or lev_sel)[1]
 
     base_sc = [score_on(base, wi) for wi in range(len(oos))]
     base_mean = sum(base_sc) / len(base_sc)
@@ -392,20 +425,49 @@ def run_symbol(sym, aux_builder):
             if len(seen) == 3:          # для этого кандидата уже «просмотрены»
                 break
 
-    pick = e4.choose_winner(cands, base_sc, score_on)
+    # --- выбор победителя на плече, которое уйдёт в конфиг -------------------
+    # Плечо отбора lev_sel взято по БАЗОВОМУ геному, а у победителя своё. Пока
+    # выбор делался один раз на lev_sel, отбирался конфиг, оптимальный для
+    # одного плеча, а торговал он другим. Ищем неподвижную точку: выбор ->
+    # плечо победителя -> при расхождении перевыбор на нём (баллы базы тоже
+    # пересчитываются, иначе отрывы считаются на разных шкалах).
+    # Фитнес GA остаётся на lev_sel: он решает, КОГО предложили, а не ЧЕМ его
+    # меряют; перезапуск генетики на каждом плече — часы счёта и петля без
+    # конца (новый пул -> новый победитель -> новое плечо).
+    lev_cur, base_cur, pick, lev_win = lev_sel, base_sc, None, None
+    for attempt in range(e4.LEV_PASSES):
+        pick = e4.choose_winner(
+            cands, base_cur,
+            lambda g, wi, _l=lev_cur: score_on(g, wi, _l),
+            trades_on=lambda g, wi, _l=lev_cur: trades_on(g, wi, _l))
+        lev_win = lev_for(pick["genome"], f"победитель, проход {attempt+1}")
+        if lev_win["lev"] == lev_cur:
+            break
+        print(f"  плечо победителя x{lev_win['lev']} != плеча выбора "
+              f"x{lev_cur} — ПЕРЕВЫБОР победителя на x{lev_win['lev']}",
+              flush=True)
+        lev_cur = lev_win["lev"]
+        base_cur = [score_on(base, wi, lev_cur) for wi in range(len(oos))]
     g_win = pick["genome"]
-
-    # плечо победителя и пересчёт баллов на нём
-    lev_win = lev_for(g_win, "победитель")
     lev = lev_win["lev"]
-    if lev != lev_sel:
-        exam = score_on(g_win, pick["exam_window"], lev)
-        base_exam = score_on(base, pick["exam_window"], lev)
-        print(f"  плечо уточнено x{lev_sel} -> x{lev}: экзамен "
+    lev_settled = lev == lev_cur
+    if not lev_settled:
+        print(f"  ВНИМАНИЕ: за {e4.LEV_PASSES} проходов плечо не устоялось "
+              f"(выбор шёл на x{lev_cur}, лестница победителя даёт x{lev}); "
+              f"экзамен, ворота и конфиг считаются на x{lev}, но ВЫБИРАЛСЯ "
+              f"кандидат на другом плече", flush=True)
+    if lev != lev_cur:
+        # пересчёт по ТОЙ ЖЕ метрике, которой выбирался победитель: в ветке с
+        # утечкой это среднее по трём окнам, а не балл одного экзаменационного
+        exam, base_exam = e4.exam_scores(pick, g_win, base, score_on, lev,
+                                         len(oos))
+        print(f"  плечо уточнено x{lev_cur} -> x{lev}: экзамен "
               f"{pick['exam_score']:+.3f} -> {exam:+.3f}, база "
               f"{pick['base_exam']:+.3f} -> {base_exam:+.3f}", flush=True)
     else:
         exam, base_exam = pick["exam_score"], pick["base_exam"]
+    base_sc_final = (base_cur if lev == lev_cur
+                     else [score_on(base, wi, lev) for wi in range(len(oos))])
 
     # Окна, честные для победителя: его валидационное и все последующие, включая
     # экзаменационное. Раньше сюда клался ОДИН элемент (сам балл экзамена), из-за
@@ -421,11 +483,18 @@ def run_symbol(sym, aux_builder):
           f"{['%+.2f' % s for s in cand_folds]}", flush=True)
     return dict(base_oos=base_exam, cand_oos=exam,
                 cand_folds=cand_folds,
-                base_folds=base_sc, base_mean_all=base_mean,
+                base_folds=base_sc_final,
+                base_mean_all=sum(base_sc_final) / len(base_sc_final),
+                base_folds_at_lev_sel=base_sc, base_mean_at_lev_sel=base_mean,
                 exam_window=pick["exam_window"], val_window=pick["val_window"],
                 val_score=pick["val_score"], val_edge=pick["val_edge"],
                 train_fold=pick["train_fold"],
                 skipped_candidates=pick["skipped"],
+                degenerate_candidates=pick["degenerate"],
+                all_candidates_degenerate=pick["all_degenerate"],
+                metric=pick["metric"],
+                lev_val=lev_cur, lev_settled=lev_settled,
+                lev_fitness_on=lev_sel,
                 lev=lev, lev_sel=lev_sel, lev_confirmed=lev_win["ok"],
                 lev_warnings=lev_win["warns"], ladder_train=lev_win["rows"],
                 base_ladder_train=lev_ch["rows"],
@@ -533,9 +602,9 @@ def main():
                           base_oos=rec["base_oos"], cand_oos=rec["cand_oos"],
                           cfg=genome_to_cfg(g, pick["lev"]) if accept else None)
 
-    with open("evolution12_final.json", "w", encoding="utf-8") as fh:
-        json.dump(final, fh, ensure_ascii=False, indent=2, default=float)
-    print(f"\n=== ИТОГ v12 за {time.time()-t0:.0f}с — evolution12_final.json ===")
+    # артефакт прошлого прогона не переписывается (e4.save_artifact)
+    out_name = e4.save_artifact("evolution12_final.json", final)
+    print(f"\n=== ИТОГ v12 за {time.time()-t0:.0f}с — {out_name} ===")
     for sym, r in final.items():
         p = r["pick"]
         print(f"{sym:<9} {'ПРИНЯТ' if r['accept'] else 'отклонён':<9} "
