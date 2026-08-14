@@ -291,6 +291,24 @@ META = {
 }
 
 
+def read_json(path, default=None):
+    """Прочитать JSON, не роняя страницу на битом или недописанном файле.
+
+    Данные сайта пересобираются скриптами build_*.py: пока идёт запись, файл
+    может быть валидным JSON с неполным содержимым или обрывком. Пользователь
+    в этот момент видит устаревшие или пустые данные — это неприятно, но
+    несравнимо лучше, чем 500 на всех страницах во время пересчёта.
+    """
+    if not path or not os.path.exists(path):
+        return default
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as e:      # noqa: BLE001
+        print(f"битый файл данных {os.path.basename(str(path))}: {e}")
+        return default
+
+
 def load_analytics(key):
     """Предпосчёт build_analytics.py (webapp/data/analytics_<key>.json) или {}.
 
@@ -347,10 +365,15 @@ def list_bots(modes):
                 data = load_analytics(f"bot_{sym}")
                 ruined = ruined_flag(data)
                 a = data.get("stats") or {}
+                # Ключей может не быть: пересборка данных идёт в несколько
+                # проходов, и между ними файл — валидный JSON с неполным stats.
+                # Раньше здесь стоял прямой доступ a["final_pct"], и главная
+                # страница падала в 500 ровно в момент пересчёта.
+                pct, usd = a.get("final_pct"), a.get("final_usd")
+                if pct is not None and usd is not None:
+                    sign = "+" if pct >= 0 else ""
+                    reinvest = f"💰 с реинвестом: $50 → ${usd} ({sign}{pct}%)"
                 if a:
-                    sign = "+" if a["final_pct"] >= 0 else ""
-                    reinvest = (f"💰 с реинвестом: $50 → ${a['final_usd']} "
-                                f"({sign}{a['final_pct']}%)")
                     # обе просадки: закрытая (по завершённым сделкам) занижена,
                     # именно по ней когда-то выбиралось плечо
                     dd, dd_float = a.get("max_dd"), a.get("max_dd_float")
@@ -568,8 +591,9 @@ def api_analytics(key):
         return jsonify(cached[1])
     if mtime is None:
         return jsonify(dict(available=False))
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
+    data = read_json(path)
+    if not isinstance(data, dict):
+        return jsonify(dict(available=False, error="файл данных повреждён"))
     data["available"] = True
     _analytics_cache[key] = (mtime, data)
     return jsonify(data)
@@ -578,19 +602,13 @@ def api_analytics(key):
 @app.route("/api/pnl_curves")
 def api_pnl_curves():
     p = os.path.join(FINAL_DATA_DIR, "pnl_curves.json")
-    if not os.path.exists(p):
-        return jsonify(dict(series=[]))
-    with open(p, encoding="utf-8") as fh:
-        return jsonify(json.load(fh))
+    return jsonify(read_json(p, dict(series=[])) or dict(series=[]))
 
 
 @app.route("/evolution")
 def evolution_page():
     path = os.path.join(FINAL_DATA_DIR, "evolution_timeline.json")
-    timeline = {}
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as fh:
-            timeline = json.load(fh)
+    timeline = read_json(path, {}) or {}
     coins = {sym: sym.replace("USDT", "") for sym in config.SYMBOL_PARAMS}
     return render_template("evolution.html", timeline=timeline, coins=coins)
 
@@ -787,8 +805,9 @@ def api_finalstats(symbol):
         return jsonify(cached[1])
     if mtime is None:
         return jsonify(dict(available=False))
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
+    data = read_json(path)
+    if not isinstance(data, dict):
+        return jsonify(dict(available=False, error="файл данных повреждён"))
     data["available"] = True
     _finalstats_cache[symbol] = (mtime, data)
     return jsonify(data)
