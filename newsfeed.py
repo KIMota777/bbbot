@@ -20,6 +20,7 @@ import email.utils
 import hashlib
 import re
 import time
+import urllib.parse
 import xml.etree.ElementTree as ET
 
 import requests
@@ -49,6 +50,39 @@ SOURCES = {
 # списка = запись отклоняется сервером. Так текст новости не может подсунуть
 # боту произвольный источник.
 ALLOWED_DOMAINS = frozenset(s["domain"] for s in SOURCES.values())
+
+
+def match_allowed_domain(url):
+    """Домен белого списка, которому ПРИНАДЛЕЖИТ ссылка, иначе None.
+
+    Сверяется разобранный hostname, а не подстрока. Проверка подстрокой
+    (`d in url`) пропускала что угодно, где домен встречается хоть где-то:
+
+        https://evil.io/?ref=coindesk.com      подстрока в параметре
+        https://theblock.com.attacker.io/      подстрока в чужом домене
+        https://coindesk.com@evil.io/x         подстрока в userinfo
+        https://evil.io/coindesk.co/статья     подстрока в пути
+
+    Все четыре ведут на посторонний сервер, и запись с такой ссылкой
+    попадала в фон как «из доверенного издания». Здесь совпадением
+    считается только точный домен или его поддомен, и только по http(s):
+    схемы вроде javascript: и data: отбрасываются вместе с ними.
+    """
+    try:
+        parts = urllib.parse.urlsplit(str(url).strip())
+        if parts.scheme.lower() not in ("http", "https"):
+            return None
+        host = parts.hostname          # уже без userinfo, порта и регистра
+    except ValueError:                 # битые скобки IPv6, нечисловой порт
+        return None
+    if not host:
+        return None
+    host = host.strip(".")             # "coindesk.com." — тот же хост
+    for d in sorted(ALLOWED_DOMAINS):
+        if host == d or host.endswith("." + d):
+            return d
+    return None
+
 
 # Прямое упоминание монеты в заголовке. Регистронезависимо, по границам слов.
 SYMBOL_PATTERNS = {

@@ -31,11 +31,32 @@
 Правило принятия в конфиг (задано ДО прогона, менять под результат нельзя):
   1) итог 3.2г на выбранном плече ПОЛОЖИТЕЛЬНЫЙ;
   2) просадка <= 20%, слива нет;
-  3) средний OOS > 0 и > базового + 0.5;
-  4) худший из трёх экзаменов > -0.5;
+  3) балл экзаменационного окна > 0 и > базового + 0.5 (было «средний OOS»:
+     среднее трёх окон и было той самой утечкой, см. пункт 7 ниже);
+  4) худшее из ЧЕСТНЫХ окон кандидата > -0.5. Честные — это окно валидации и
+     все последующие, включая экзаменационное; окна, лежащие внутри обучения
+     кандидата, сюда не входят. Формулировка «худший из трёх экзаменов»
+     относилась к протекавшей схеме, а в починенной успела выродиться в список
+     из одного элемента — того самого балла, который уже проверен правилом 3,
+     то есть правило не могло сработать вовсе;
   5) доля убыточных сделок >= 1% (урок v8/v10: почти нулевые убытки — дыра);
   6) сделок >= 60 (иначе статистика — шум).
 Не прошёл — монета честно остаётся убыточной, без натяжек.
+
+Правки протокола (08.2026), после аудита:
+  7) walk-forward больше не течёт: кандидат оценивается только на окнах СТРОГО
+     после своего обучения, победитель выбирается по окну валидации, а приёмка
+     смотрит на другое, экзаменационное окно (e4.choose_winner);
+  8) плечо выбирается лестницей по ОБУЧАЮЩЕЙ части истории (а не по всей) и по
+     ПЛАВАЮЩЕЙ просадке; выбирается ДО оценки, и на нём считаются фитнес,
+     валидация, экзамен и ворота. Раньше баллы считались на x5, а лестница и
+     ворота — на выбранном плече (у SOL это x10): проверялась одна стратегия,
+     а запускалась другая;
+  9) добавлены ворота honest_eval — хвост (худший месяц, худшая сделка,
+     ликвидации, плавающая просадка, риск руина) и вырожденность (минимум
+     сделок, сделок в месяц, экспозиции). Пункты 1-6 их не ловили.
+Всё это действует на БУДУЩИЕ прогоны: конфиги в config.py отобраны старой,
+протекавшей схемой, и переотбор — отдельная работа на часы счёта.
 
 Запуск: python evolution12.py            (все три монеты)
         python evolution12.py SOLUSDT    (одна)
@@ -53,6 +74,7 @@ import evolution7 as e7
 import evolution8 as e8
 import ext_data as xd
 import gridlib
+import honest_eval as he
 import indicators
 
 SYMS = ["DOGEUSDT", "LTCUSDT", "SOLUSDT"]
@@ -163,11 +185,49 @@ def full_run(g, candles, pre, aux, lev, events=None):
     finally:
         e2.LEV = old
     n, w = r["trades"], r["wins"]
+    ddf = r.get("max_dd_float")
     return dict(ret=round((r["balance"] / e2.START - 1) * 100, 2),
-                dd=round(r["max_dd"] * 100, 2), trades=n,
+                dd=round(r["max_dd"] * 100, 2),
+                # плавающая просадка: именно по ней выбирается плечо —
+                # закрытая не видит переоценки открытой сетки и занижена
+                dd_float=(round(ddf * 100, 2) if ddf is not None else None),
+                trades=n,
                 wr=round(w / n * 100, 1) if n else 0.0,
                 loss_share=round((n - w) / n * 100, 2) if n else 0.0,
                 ruined=r["ruined"])
+
+
+def pick_lev12(rows, dd_cap=DD_CAP):
+    """Плечо волны v12: из ступеней, укладывающихся в просадку и прибыльных, —
+    самая доходная. Возвращает (lev, ok, warns).
+
+    Два места, где раньше было молчание:
+      * просадка бралась закрытая (r["max_dd"]) — теперь плавающая;
+      * если НИ ОДНА ступень не проходила порог, молча бралась самая доходная
+        из непрошедших, и «рекомендация» выглядела как проверенная. Теперь
+        ok=False и предупреждение словами.
+    """
+    warns = []
+    if any(r.get("dd_float") is None for r in rows):
+        warns.append("плавающая просадка НЕ ИЗМЕРЕНА (движок не отдал "
+                     "max_dd_float): плечо выбрано по просадке ЗАКРЫТЫХ "
+                     "сделок, она заведомо занижена")
+
+    def dd_of(r):
+        return r["dd_float"] if r.get("dd_float") is not None else r["dd"]
+
+    ok_rows = [r for r in rows
+               if dd_of(r) <= dd_cap and not r["ruined"] and r["ret"] > 0]
+    if ok_rows:
+        return dict(lev=max(ok_rows, key=lambda r: r["ret"])["lev"], ok=True,
+                    warns=warns, rows=rows)
+    worst = "/".join(f"x{r['lev']}:{dd_of(r):.1f}%/{r['ret']:+.1f}%"
+                     for r in rows)
+    warns.append(f"ни одна ступень не проходит порог (просадка <= {dd_cap:.0f}%"
+                 f" и итог > 0): {worst} — выдана самая доходная из "
+                 f"непрошедших, это НЕ подтверждённая рекомендация")
+    return dict(lev=max(rows, key=lambda r: r["ret"])["lev"], ok=False,
+                warns=warns, rows=rows)
 
 
 POP, GENS, ELITE = 48, 24, 6
@@ -205,7 +265,10 @@ def slice_aux(aux, b, e):
     return {k: cut(v) for k, v in aux.items()}
 
 
-def evolve(base, candles, pre, aux, prefix):
+def evolve(base, candles, pre, aux, prefix, lev=None):
+    """lev — плечо, на котором считается фитнес. Оно же идёт в экзамен, ворота
+    и конфиг: считать отбор на x5, а торговать на x10 — значит проверять не ту
+    стратегию, которую запускаешь."""
     import random
     rand_g, clamp, mutate, cross = e4.ga_tools(GENES12)
     cache = {}
@@ -214,7 +277,11 @@ def evolve(base, candles, pre, aux, prefix):
         key = tuple(round(g[k], 4) if not GENES12[k][2] else g[k]
                     for k in GENES12)
         if key not in cache:
-            r = e2.run5(candles, pre, g, entry_filter=make_filter12(g, aux))
+            old, e2.LEV = e2.LEV, (lev or e2.LEV)
+            try:
+                r = e2.run5(candles, pre, g, entry_filter=make_filter12(g, aux))
+            finally:
+                e2.LEV = old
             cache[key] = fitness12(r)
         return cache[key]
 
@@ -259,40 +326,113 @@ def run_symbol(sym, aux_builder):
     oos = [(candles[b:e], e2.prep(candles[b:e]), slice_aux(aux, b, e))
            for (a, b, e) in folds]
 
-    def agg(g):
-        sc = [oos_score12(e2.run5(seg, pre_s, g,
-                                  entry_filter=make_filter12(g, aux_s)))
-              for seg, pre_s, aux_s in oos]
-        return sum(sc) / len(sc), sc
+    # --- плечо, на котором идёт ВСЁ: фитнес, валидация, экзамен, ворота ------
+    # Раньше отбор и экзамен считались на e2.LEV (x5), а лестница приёмки и
+    # ворота — на выбранном плече (у SOL это x10). Сравнивали одну стратегию, а
+    # запускали другую. Теперь плечо выбирается ДО оценки — по базовому геному
+    # на обучающей части, — а после выбора победителя уточняется по его
+    # собственной лестнице, и все баллы пересчитываются на нём.
+    cut = e4.train_end_bar(len(candles))
+    train_all, pre_train = candles[:cut], e2.prep(candles[:cut])
+    aux_train = slice_aux(aux, 0, cut)
 
-    base_mean, base_sc = agg(base)
-    print(f"БАЗА: OOS {base_mean:+.3f} {['%+.2f' % s for s in base_sc]}",
-          flush=True)
+    def lev_for(g, why):
+        rows = []
+        for lev in LEVS:
+            row = full_run(g, train_all, pre_train, aux_train, lev)
+            row["lev"] = lev
+            rows.append(row)
+        ch = pick_lev12(rows)
+        print(f"  плечо по обучающей части ({why}): x{ch['lev']} | "
+              + "/".join(f"x{r['lev']}:"
+                         + ("н/д" if r["dd_float"] is None
+                            else f"{r['dd_float']:.1f}%")
+                         + f"/{r['ret']:+.1f}%" for r in rows), flush=True)
+        for w in ch["warns"]:
+            print(f"    ВНИМАНИЕ: {w}", flush=True)
+        return ch
 
+    lev_ch = lev_for(base, "база")
+    lev_sel = lev_ch["lev"]
+
+    def score_on(g, wi, lev=None):
+        """Балл одного окна на ЗАДАННОМ плече. Раньше здесь была agg() по всем
+        трём окнам сразу — та же утечка, что в общем харнессе e4 (для кандидата
+        позднего фолда первые окна лежат внутри его обучающей выборки), и вдобавок
+        плечо было чужое: x5 против боевого."""
+        seg, pre_s, aux_s = oos[wi]
+        old, e2.LEV = e2.LEV, (lev or lev_sel)
+        try:
+            r = e2.run5(seg, pre_s, g, entry_filter=make_filter12(g, aux_s))
+        finally:
+            e2.LEV = old
+        return oos_score12(r)
+
+    base_sc = [score_on(base, wi) for wi in range(len(oos))]
+    base_mean = sum(base_sc) / len(base_sc)
+    print(f"БАЗА (x{lev_sel}): OOS по окнам {['%+.2f' % s for s in base_sc]} "
+          f"(среднее {base_mean:+.3f}, экзамен {base_sc[-1]:+.3f})", flush=True)
+
+    base_key = tuple(base[k] for k in GENES12)
     cands = []
     for fi, (a, b, e) in enumerate(folds):
         train = candles[a:b]
         scored = evolve(base, train, e2.prep(train), slice_aux(aux, a, b),
-                        f"{sym[:3]}-f{fi+1}")
+                        f"{sym[:3]}-f{fi+1}", lev=lev_sel)
         seen = set()
         for _, g in scored:
             key = tuple(g[k] for k in GENES12)
-            if key not in seen:
-                seen.add(key)
-                cands.append(g)
-            if len(seen) == 3:
+            # база — точка отсчёта, а не соперник: она отобрана старой схемой
+            # по всей истории, включая экзамен, и «победа базы над базой»
+            # ничего не доказывает
+            if key == base_key or key in seen:
+                continue
+            seen.add(key)
+            cands.append((fi, g))       # фолд нужен, чтобы знать, какие окна
+            if len(seen) == 3:          # для этого кандидата уже «просмотрены»
                 break
 
-    best = None
-    for g in cands:
-        m, sc = agg(g)
-        if best is None or m > best[0]:
-            best = (m, sc, g)
-    mean, sc, g_win = best
-    print(f"ЛУЧШИЙ: OOS {mean:+.3f} {['%+.2f' % s for s in sc]}", flush=True)
-    return dict(base_oos=base_mean, cand_oos=mean, cand_folds=sc,
+    pick = e4.choose_winner(cands, base_sc, score_on)
+    g_win = pick["genome"]
+
+    # плечо победителя и пересчёт баллов на нём
+    lev_win = lev_for(g_win, "победитель")
+    lev = lev_win["lev"]
+    if lev != lev_sel:
+        exam = score_on(g_win, pick["exam_window"], lev)
+        base_exam = score_on(base, pick["exam_window"], lev)
+        print(f"  плечо уточнено x{lev_sel} -> x{lev}: экзамен "
+              f"{pick['exam_score']:+.3f} -> {exam:+.3f}, база "
+              f"{pick['base_exam']:+.3f} -> {base_exam:+.3f}", flush=True)
+    else:
+        exam, base_exam = pick["exam_score"], pick["base_exam"]
+
+    # Окна, честные для победителя: его валидационное и все последующие, включая
+    # экзаменационное. Раньше сюда клался ОДИН элемент (сам балл экзамена), из-за
+    # чего правило приёмки 4 («худший из экзаменов > -0.5») дублировало правило 3
+    # и не могло добавить ни одной причины отказа.
+    fi_win = pick["train_fold"]
+    cand_folds = [score_on(g_win, wi, lev)
+                  for wi in range(fi_win, len(oos))]
+    print(f"ЛУЧШИЙ (x{lev}): экзамен {exam:+.3f} против базы {base_exam:+.3f} "
+          f"(валидация окно "
+          f"{'-' if pick['val_window'] is None else pick['val_window'] + 1}: "
+          f"{pick['val_score']:+.3f}); честные окна кандидата "
+          f"{['%+.2f' % s for s in cand_folds]}", flush=True)
+    return dict(base_oos=base_exam, cand_oos=exam,
+                cand_folds=cand_folds,
+                base_folds=base_sc, base_mean_all=base_mean,
+                exam_window=pick["exam_window"], val_window=pick["val_window"],
+                val_score=pick["val_score"], val_edge=pick["val_edge"],
+                train_fold=pick["train_fold"],
+                skipped_candidates=pick["skipped"],
+                lev=lev, lev_sel=lev_sel, lev_confirmed=lev_win["ok"],
+                lev_warnings=lev_win["warns"], ladder_train=lev_win["rows"],
+                base_ladder_train=lev_ch["rows"],
+                protocol=("leaky-3window-mean" if pick["leaky"]
+                          else "honest-val-then-exam"),
                 genome=g_win, base_genome=base,
-                adopt=mean > base_mean + MIN_EDGE)
+                adopt=exam > base_exam + MIN_EDGE)
 
 
 def main():
@@ -310,17 +450,40 @@ def main():
         aux = aux_builder(sym, candles)
         g = rec["genome"] if rec["adopt"] else rec["base_genome"]
 
+        # Плечо. Для принятого кандидата оно выбрано ВНУТРИ run_symbol — на нём
+        # считались фитнес, валидация и экзамен, и ровно оно уходит в конфиг.
+        # Для отклонённого в дело идёт база, и берётся её лестница (тоже по
+        # обучающей части). Полная история — только отчёт.
+        train = e4.train_slice(candles)
+        ladder_train = (rec["ladder_train"] if rec["adopt"]
+                        else rec["base_ladder_train"])
+        lev_sel12 = (dict(lev=rec["lev"], ok=rec["lev_confirmed"],
+                          warns=rec["lev_warnings"])
+                     if rec["adopt"] else pick_lev12(ladder_train))
+        lev_pick = lev_sel12["lev"]
+        for w in lev_sel12["warns"]:
+            print(f"  ВНИМАНИЕ: {w}")
+        # полная лестница — только отчёт, уже ПОСЛЕ выбора плеча
         ladder = []
         for lev in LEVS:
             row = full_run(g, candles, pre, aux, lev)
             row["lev"] = lev
             ladder.append(row)
-        ok_rows = [r for r in ladder
-                   if r["dd"] <= DD_CAP and not r["ruined"] and r["ret"] > 0]
-        pick = max(ok_rows, key=lambda r: r["ret"]) if ok_rows else \
-            max(ladder, key=lambda r: r["ret"])
+        pick = next(r for r in ladder if r["lev"] == lev_pick)
 
-        reasons = []
+        # Ворота honest_eval на экзаменационном окне, на ВЫБРАННОМ плече:
+        # правила 1-6 ниже говорят про итог и просадку по закрытым сделкам и
+        # слепы к хвосту (худший месяц, худшая сделка, ликвидации, риск руина)
+        # и к вырожденности (конфиг, который не торгует).
+        folds = e4.fold_bounds_3y(len(candles))
+        eb, ee = folds[e4.exam_window_index(len(folds))][1:]
+        ex = candles[eb:ee]
+        mm = he.measure(ex, e2.prep(ex), g,
+                        make_filter12(g, slice_aux(aux, eb, ee)), lev_pick,
+                        tag=f"{sym}/v12")
+        gates_ok, gate_reasons, warns = he.verdict(mm)
+
+        reasons = list(gate_reasons)
         if pick["ret"] <= 0:
             reasons.append(f"итог {pick['ret']:+.2f}% <= 0")
         if pick["dd"] > DD_CAP or pick["ruined"]:
@@ -329,23 +492,44 @@ def main():
         if rec["cand_oos"] <= 0 or rec["cand_oos"] <= rec["base_oos"] + MIN_EDGE:
             reasons.append(f"OOS {rec['cand_oos']:+.2f} не даёт отрыва от базы "
                            f"{rec['base_oos']:+.2f}")
-        if min(rec.get("cand_folds", [0])) < FOLD_FLOOR:
-            reasons.append(f"худший экзамен {min(rec['cand_folds']):+.2f} < "
-                           f"{FOLD_FLOOR}")
+        # правило 4 смотрит на ВСЕ честные окна кандидата (валидационное и все
+        # последующие), а не на одно экзаменационное: одно число уже проверено
+        # правилом 3, и дублировать его — значит иметь мёртвое правило
+        cand_folds = rec.get("cand_folds") or [0.0]
+        if min(cand_folds) < FOLD_FLOOR:
+            reasons.append(f"худшее из честных окон {min(cand_folds):+.2f} < "
+                           f"{FOLD_FLOOR} (окна {['%+.2f' % s for s in cand_folds]})")
         if pick["loss_share"] < MIN_LOSS_SHARE:
             reasons.append("подозрительно мало убыточных сделок")
         if pick["trades"] < MIN_TRADES:
             reasons.append(f"сделок {pick['trades']} < {MIN_TRADES}")
+        if not lev_sel12["ok"]:
+            reasons.append(f"плечо x{lev_pick} не подтверждено: ни одна "
+                           f"ступень лестницы не проходит порог просадки")
+        warns = list(warns) + lev_sel12["warns"]
         accept = not reasons
 
         print(f"\n{sym}: x{pick['lev']} {pick['ret']:+.2f}% | DD {pick['dd']:.1f}% "
               f"| WR {pick['wr']:.1f}% | сделок {pick['trades']} | "
               f"ПРИНЯТ: {'ДА' if accept else 'нет — ' + '; '.join(reasons)}")
+        print(f"  плечо x{lev_pick} выбрано по обучающей части "
+              f"({len(train)} баров из {len(candles)})"
+              f"{'' if lev_sel12['ok'] else ' — НЕ ПОДТВЕРЖДЕНО просадкой'}; "
+              f"на нём же считались фитнес, валидация, экзамен и ворота")
+        e4.gate_report(mm, gate_reasons, warns)
         adx_used = g.get("adx_gate", 0)
         print(f"  ADX-гейт: {'ВКЛЮЧЁН, n=' + str(ADX_SET[int(g.get('adx_idx',1))]) + ', порог %.1f' % g.get('adx_max',30) if adx_used else 'эволюция не взяла'}"
               f" | грид-гены: { {k: round(g.get(k,v),3) if isinstance(g.get(k,v),float) else g.get(k,v) for k,v in gridlib.OFF10.items() if g.get(k,v)!=v} or 'все OFF'}")
         final[sym] = dict(genome=g, accept=accept, reject_reasons=reasons,
-                          pick=pick, ladder=ladder,
+                          warnings=warns, exam_measure={k: v for k, v in
+                                                        mm.items() if k != "rs"},
+                          pick=pick, ladder=ladder, ladder_train=ladder_train,
+                          lev_picked_on="train", lev=lev_pick,
+                          lev_confirmed=lev_sel12["ok"],
+                          # экзамен и ворота считались на этом же плече
+                          exam_lev=lev_pick,
+                          cand_folds=rec.get("cand_folds"),
+                          protocol=rec.get("protocol"),
                           base_oos=rec["base_oos"], cand_oos=rec["cand_oos"],
                           cfg=genome_to_cfg(g, pick["lev"]) if accept else None)
 

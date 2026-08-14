@@ -14,6 +14,7 @@
 
 import logging
 import time
+from decimal import Decimal, ROUND_HALF_UP
 
 from pybit.unified_trading import HTTP
 
@@ -58,9 +59,17 @@ class SmaBot:
         return float(f"{qty:.10f}".rstrip("0").rstrip("."))
 
     def _fmt_price(self, price: float) -> str:
-        """Округляет цену до шага тика инструмента."""
-        decimals = len(self.tick_size.split(".")[1]) if "." in self.tick_size else 0
-        return f"{price:.{decimals}f}"
+        """Цена, ПРИТЯНУТАЯ к сетке тика инструмента.
+
+        Считать одни знаки после точки мало: у BTC tickSize "0.10", у SOL
+        "0.010" — по числу знаков вышло бы 2 и 3 знака, и цена 60123.45 прошла
+        бы форматирование, но кратной шагу не была бы. Биржа такой ордер
+        отклоняет (10001 Invalid price), то есть стоп и тейк просто не встают.
+        """
+        tick = Decimal(self.tick_size)
+        q = (Decimal(str(price)) / tick).quantize(
+            Decimal(1), rounding=ROUND_HALF_UP) * tick
+        return f"{q:.{max(0, -tick.as_tuple().exponent)}f}"
 
     def get_closed_candles(self, limit: int = 200):
         """Список закрытых свечей от старой к новой: [(ts, close), ...]."""
@@ -86,6 +95,10 @@ class SmaBot:
         return None, 0.0
 
     def set_leverage(self):
+        if config.DRY_RUN:
+            # плечо меняет настройку СЧЁТА: в бумажном режиме к бирже не лезем
+            log.info("[DRY_RUN] плечо не меняется")
+            return
         try:
             self.session.set_leverage(
                 category="linear",

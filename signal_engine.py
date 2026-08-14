@@ -40,6 +40,8 @@ MM = e2.MM
 START, MARGIN = 20.0, 5.0
 RR = 3.0                 # тейк = RR x стоп (1 к 3)
 MIN_STOP = 0.006         # стоп уже 0.6% не берём — шумовые сигналы
+OOS_MIN_TRADES = 5       # меньше сделок в окне — окно не экзамен, а прогул
+OOS_THIN_PENALTY = -3.0  # цена прогула: пустой фолд не должен быть "ничьей"
 RSI_SET = e2.RSI_SET     # [7, 10, 14, 21]
 
 SETUPS = ["range_long", "range_short", "sweep_long", "sweep_short",
@@ -158,34 +160,82 @@ def detect(setup, i, c4, ctx, g, ext):
     return None
 
 
+# ------------------------------------------------- модель исполнения и издержек
+#
+# Одна формула на два места. Публичный учёт сетапов (advisor.py) обязан считать
+# исход теми же издержками, которыми сетапы отбирались, иначе история на сайте
+# систематически лучше бэктеста: номинальный тейк 3R после комиссий и
+# проскальзывания даёт ~2.9R, а номинальный стоп -1R стоит ~-1.15R — то есть
+# порог безубыточного винрейта выше объявленного. Дублировать формулу нельзя:
+# разъедется молча.
+
+def entry_fill(ref_px, sgn):
+    """Вход маркет-ордером по open 15м-свечи: проскальзывание против нас."""
+    return ref_px * (1 + sgn * SLIP)
+
+
+def exit_fill(ref_px, sgn, taker=True):
+    """Выход: стоп и таймаут — маркет со слиппеджем, тейк — лимит по своей цене."""
+    return ref_px * (1 - sgn * SLIP) if taker else ref_px
+
+
+def liq_price(entry_px, sgn, lev):
+    """Цена ликвидации: неблагоприятный ход MM/lev от входа."""
+    return entry_px * (1 - sgn * MM / lev)
+
+
+def funding_step(qty, px):
+    """Плата за удержание за одну 15м-свечу (фандинг раз в 8ч = 32 свечи)."""
+    return qty * px * FUND_8H / 32
+
+
+def trade_pnl(sgn, entry_px, exit_px, qty, taker_exit, funding=0.0):
+    """Итог сделки в долларах: ход цены минус комиссии входа/выхода и фандинг.
+    Проскальзывание уже сидит в ценах (entry_fill/exit_fill)."""
+    fee_in = qty * entry_px * TAKER
+    fee_out = qty * exit_px * (TAKER if taker_exit else MAKER)
+    return sgn * (exit_px - entry_px) * qty - fee_in - fee_out - funding
+
+
+def liq_pnl(margin, qty, entry_px, funding=0.0):
+    """Ликвидация: теряем почти всю маржу плюс уже уплаченные издержки."""
+    return -margin * MM - qty * entry_px * TAKER - funding
+
+
+def r_multiple(pnl, margin, lev, dist):
+    """Итог в R, где 1R — НОМИНАЛЬНЫЙ риск на стопе (margin x lev x ширина стопа).
+    Именно поэтому честный стоп выходит хуже -1R: издержки сверх номинала."""
+    return pnl / (margin * lev * dist) if dist else 0.0
+
+
 def simulate_trade(side, entry_i15, stop_px, tp_px, c15, ts15, lev,
-                   hold_bars15):
+                   hold_bars15, margin=MARGIN):
     """Ведёт сделку по 15m-свечам. Возвращает (pnl, exit_i15, reason).
     Консервативно: стоп и тейк в одной свече -> стоп; ликвидация при
     неблагоприятном ходе >= MM/lev от входа."""
     sgn = 1 if side == "L" else -1
-    entry_px = c15[entry_i15][1] * (1 + sgn * SLIP)  # open + слиппедж
-    qty = MARGIN * lev / entry_px
-    fees = qty * entry_px * TAKER
-    liq_px = entry_px * (1 - sgn * MM / lev)
+    entry_px = entry_fill(c15[entry_i15][1], sgn)
+    qty = margin * lev / entry_px
+    fund = 0.0
+    liq_px = liq_price(entry_px, sgn, lev)
     end_i = min(entry_i15 + hold_bars15, len(c15) - 1)
 
     for k in range(entry_i15, end_i + 1):
         _, o, h, l, c = c15[k]
-        fees += qty * c * FUND_8H / 32  # фандинг за 15m-бар
+        fund += funding_step(qty, c)
         hit_liq = (l <= liq_px) if sgn == 1 else (h >= liq_px)
         hit_stop = (l <= stop_px) if sgn == 1 else (h >= stop_px)
         hit_tp = (h >= tp_px) if sgn == 1 else (l <= tp_px)
         if hit_liq and (not hit_stop or (sgn == 1 and liq_px >= stop_px)
                         or (sgn == -1 and liq_px <= stop_px)):
-            return -MARGIN * MM - fees, k, "liq"
+            return liq_pnl(margin, qty, entry_px, fund), k, "liq"
         if hit_stop:
-            px = stop_px * (1 - sgn * SLIP)
-            return sgn * (px - entry_px) * qty - qty * px * TAKER - fees, k, "stop"
+            px = exit_fill(stop_px, sgn)
+            return trade_pnl(sgn, entry_px, px, qty, True, fund), k, "stop"
         if hit_tp:
-            return sgn * (tp_px - entry_px) * qty - qty * tp_px * MAKER - fees, k, "tp"
-    px = c15[end_i][4] * (1 - sgn * SLIP)
-    return sgn * (px - entry_px) * qty - qty * px * TAKER - fees, end_i, "timeout"
+            return trade_pnl(sgn, entry_px, tp_px, qty, False, fund), k, "tp"
+    px = exit_fill(c15[end_i][4], sgn)
+    return trade_pnl(sgn, entry_px, px, qty, True, fund), end_i, "timeout"
 
 
 def run_setup(setup, g, c4, ctx, c15, ts15, lev, signal_range=None):
@@ -236,7 +286,7 @@ def run_setup(setup, g, c4, ctx, c15, ts15, lev, signal_range=None):
             entry_ts=close_ts, exit_ts=exit_ts, side=side,
             entry=round(ref_px, 2), stop=round(stop_px, 2),
             tp=round(tp_px, 2), pnl=round(pnl, 4), reason=reason,
-            r=round(pnl / (MARGIN * lev * dist), 2) if dist else 0,
+            r=round(r_multiple(pnl, MARGIN, lev, dist), 2),
             hold_h=round((exit_ts - close_ts) / 3600000, 1)))
         busy_until_ts = exit_ts
         cooldown_ts = exit_ts + g["cooldown"] * 4 * 3600 * 1000
@@ -279,7 +329,16 @@ def fitness(r):
 
 
 def oos_score(r):
+    """Балл экзаменационного окна.
+
+    Раньше окно с n<3 давало 0.0 — «ничью», и это ломало весь экзамен: сетап,
+    который за полгода не дал ни одной сделки, не сдавал экзамен, а прогуливал,
+    но средний балл от этого не страдал. Так range_long прошёл отбор со
+    средним 1.89 на фолдах [0.0, 5.68, 0.0] — то есть по одному
+    информативному окну из трёх. Теперь неинформативное окно — незачёт: балл
+    отрицательный, и средний по фолдам такой сетап не вытягивает.
+    """
     st = stats(r)
-    if st["n"] < 3:
-        return 0.0
+    if st["n"] < OOS_MIN_TRADES:
+        return OOS_THIN_PENALTY
     return st["p25"] + 0.5 * st["med"] - (100 if r["ruined"] else 0)

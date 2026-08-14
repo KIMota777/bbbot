@@ -34,6 +34,12 @@
   .b.off { background:var(--line); color:var(--muted); }
   .stats { color:var(--muted); font-size:13px; }
   .muted-note { font-size:11px; opacity:.7; }
+  /* слитый счёт виден ещё в списке: у такой карточки красная рамка и плашка,
+     чтобы её нельзя было спутать с рабочим ботом */
+  a.card.ruined { border-color:#8a2b2b; background:#241618; }
+  a.card.ruined:hover { border-color:#ff4d4d; }
+  .b.ruin-b { background:#5a1616; color:#ff8f8f; }
+  .ruin-line { color:#ff8f8f; font-size:13px; font-weight:700; }
   nav { display:flex; gap:16px; margin-bottom:20px; }
   nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
   nav a.active { color:var(--accent); }
@@ -106,7 +112,7 @@
   {% endif %}
   <div class="grid">
     {% for b in bots %}
-    <a class="card" href="/bot/{{ b.symbol }}/{{ b.mode }}">
+    <a class="card{% if b.ruined %} ruined{% endif %}" href="/bot/{{ b.symbol }}/{{ b.mode }}">
       <div class="top">
         <span class="name">{{ b.title }}</span>
         <span class="badges">
@@ -114,11 +120,17 @@
           <span class="b mode-{{ b.mode }}">{{ b.mode_name }}</span>
           <span class="b lev">x{{ b.lev }}</span>
           <span class="b lev">{{ b.tf_label }}</span>
+          {% if b.ruined %}<span class="b ruin-b">💀 СЧЁТ СЛИТ</span>{% endif %}
           <span class="b {{ 'on' if b.active else 'off' }}">{{ '● работает' if b.active else '○ выключен' }}</span>
         </span>
       </div>
+      {% if b.ruined %}<div class="ruin-line">⛔ Счёт слит: бэктест оборвался, капитала не хватило на убыток. Цифры ниже — только до этого момента.</div>{% endif %}
       <div class="stats">{{ b.stats }}<br><span class="muted-note">без реинвеста (фикс-маржа отбора)</span></div>
       {% if b.reinvest %}<div class="stats" style="color:var(--accent)">{{ b.reinvest }}</div>{% endif %}
+      {% if b.dd is not none %}
+      <div class="stats">просадка: закрытая {{ b.dd }}%{% if b.dd_float is not none %} · <b>плавающая {{ b.dd_float }}%</b>{% endif %}
+        <br><span class="muted-note">плавающая учитывает открытые циклы; плечо выбиралось по закрытой — заниженной</span></div>
+      {% endif %}
     </a>
     {% endfor %}
   </div>

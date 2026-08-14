@@ -14,6 +14,13 @@ webapp/srv*.log
 news_state.json
 webapp/data/signals.json
 
+# боевое состояние ботов (капитал, пауза kill switch, открытый цикл).
+# Это снимок ЖИВЫХ денег конкретной машины — в общий репозиторий не место,
+# иначе чужое состояние затрёт своё при обновлении.
+state/
+botstate_*.json
+*.tmp
+
 # временные выводы смоук-тестов
 o_*.txt
 e_*.txt
@@ -33,11 +40,28 @@ err2.txt
 # python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
 
 # ключи никогда не хранятся в файлах (только переменные окружения),
 # но на всякий случай:
 .env
+.env.*
 *.key
+*.pem
+secrets*.json
+api_key*.json
 
-# локальное python-окружение (macOS)
+# локальные окружения и мусор редакторов/ОС
 .venv/
+venv/
+env/
+.idea/
+.vscode/
+.claude/
+Thumbs.db
+desktop.ini
+.DS_Store
+*.bak
+*.orig
+*.rej

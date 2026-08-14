@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PnL-график</title>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<!-- библиотека графиков лежит рядом: сайт рисует графики и без интернета -->
+<script src="{{ url_for('static', filename='lightweight-charts.js') }}"></script>
 <style>
   :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
     --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
@@ -32,6 +33,10 @@
   .chip.pf { border-color:#5a4a1a; }
   .chip .sw { width:14px; height:4px; border-radius:2px; }
   .chip b { min-width:76px; text-align:right; }
+  .chip .dd { color:var(--muted); font-size:11.5px; }
+  .chip .dd i { color:#E3A83E; font-style:normal; }
+  .chip.ruined { border-color:#8a2b2b; background:#241618; }
+  .chip .skull { color:#ff6b6b; font-weight:700; }
   .pos { color:var(--up); } .neg { color:var(--down); }
   .hint { color:var(--muted); font-size:12px; }
   .hover-ts { color:var(--accent); font-size:12.5px; font-weight:600; min-height:16px; }
@@ -64,7 +69,7 @@
 
   <div class="card">
     <div class="legend" id="legend"></div>
-    <p class="hint" style="margin:10px 0 0">Пересчёт: <code>python build_pnl_curves.py</code></p>
+    <p class="hint" style="margin:10px 0 0">DD — просадка: первое число по закрытым сделкам, <i style="color:#E3A83E;font-style:normal">второе</i> — плавающая, с переоценкой ещё открытых циклов (она глубже, и именно она — настоящий риск; плечо ботов выбиралось по первой). «💀 СЧЁТ СЛИТ» — прогон оборвался: капитала не хватило на очередной убыток. Пересчёт: <code>python build_pnl_curves.py</code></p>
   </div>
 
   <div class="note">
@@ -89,6 +94,10 @@ const fmtUsd = v => "$" + v.toFixed(v >= 1000 ? 0 : 2);
 const fmtPct = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
 const fmtVal = v => mode === "usd" ? fmtUsd(v) : fmtPct(v);
 
+// счёт слит: либо признак от движка, либо капитал в нуле — это слив по
+// определению, каким бы ключом его ни называли
+const isRuined = s => !!s.ruined || s.final_usd <= 0;
+
 async function load() {
   const d = await (await fetch("/api/pnl_curves")).json();
   const legend = document.getElementById("legend");
@@ -112,9 +121,15 @@ async function load() {
     line.setData(s._usd);
 
     const chip = document.createElement("div");
-    chip.className = "chip" + (isPf ? " pf" : "");
+    chip.className = "chip" + (isPf ? " pf" : "") + (isRuined(s) ? " ruined" : "");
+    // просадка тут же, обе: закрытая (по завершённым сделкам) и плавающая,
+    // с переоценкой открытых циклов. Плечо выбиралось по закрытой — она ниже,
+    // поэтому прятать вторую нельзя. dd_float === null — честное «н/д»
+    // (у линии с ежемесячным ребалансом внутримесячной переоценки нет).
     chip.innerHTML = `<span class="sw" style="background:${s.color}"></span>
-      <span>${s.label}</span><b class="${s.final_pct >= 0 ? "pos" : "neg"}"></b>`;
+      <span>${s.label}</span>${isRuined(s) ? '<span class="skull">💀 СЧЁТ СЛИТ</span>' : ""}
+      <span class="dd">DD ${s.dd}% / <i>${s.dd_float == null ? "н/д" : s.dd_float + "%"}</i></span>
+      <b class="${s.final_pct >= 0 ? "pos" : "neg"}"></b>`;
     const valEl = chip.querySelector("b");
     valEl.textContent = fmtUsd(s.final_usd);
     legend.appendChild(chip);
@@ -129,7 +144,8 @@ async function load() {
     if (isPf) {
       tiles.insertAdjacentHTML("beforeend", `<div class="tile">
         <div class="v ${s.final_pct >= 0 ? "pos" : "neg"}">${fmtUsd(s.final_usd)}</div>
-        <div class="l">${s.label} (${s.final_pct >= 0 ? "+" : ""}${s.final_pct}%, DD ${s.dd}%)</div>
+        <div class="l">${s.label} (${s.final_pct >= 0 ? "+" : ""}${s.final_pct}%,
+          DD закр. ${s.dd}% / плав. ${s.dd_float == null ? "н/д" : s.dd_float + "%"})</div>
       </div>`);
     }
   }

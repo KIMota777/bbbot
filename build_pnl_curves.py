@@ -64,7 +64,19 @@ def downsample(points):
 
 
 def bot_pnls(sym, p, pct5):
-    """[(ts_сек, pnl_в_$5-масштабе), ...] по закрытым сделкам бота."""
+    """(t0, [(ts_сек, pnl_в_$5-масштабе, худшая_плавающая_точка_цикла)], meta).
+
+    Третье поле — то, сколько цикл показывал в минусе на экране в худший
+    момент удержания (движок пишет его в событие close как `worst`, всегда
+    <= min(0, pnl)). Без него просадка считалась только по ЗАКРЫТЫМ сделкам,
+    и цикл, неделю просидевший на -90% маржи и вышедший в плюс по тейку, в
+    неё не попадал вообще — а именно по просадке выбиралось плечо.
+
+    meta несёт признак СЛИВА: движок обрывает прогон, как только капитала не
+    хватает на очередной цикл (balance < MARGIN), и дальше сделок просто нет.
+    Без этого признака страница показывала «-60.1%» по оборванному прогону —
+    то есть самый важный для владельца факт терялся по дороге к сайту.
+    """
     interval = str(p.get("interval", "15"))
     bars_per_day = max(4, 1440 // int(interval))
     g = e7.cfg_to_genome(p, "final")
@@ -79,19 +91,40 @@ def bot_pnls(sym, p, pct5):
     e2.BARS_PER_DAY = bars_per_day
     try:
         events = []
-        e2.run5(candles, pre, g, entry_filter=filt, events=events)
+        r = e2.run5(candles, pre, g, entry_filter=filt, events=events)
     finally:
         e2.LEV, e2.BARS_PER_DAY = old_lev, old_bpd
     start_ts = candles[0][0] // 1000
-    return start_ts, [(e_["t"] // 1000, e_["pnl"]) for e_ in events
-                      if e_["type"] == "close"]
+    pnls = [(e_["t"] // 1000, e_["pnl"], e_.get("worst", 0.0))
+            for e_ in events if e_["type"] == "close"]
+    # Рядом с признаком слива — итог САМОГО движка, на фиксированной базе $20
+    # и без реинвеста. Он не равен тому, что показывает сайт (там реинвест от
+    # $50), и расходятся они сильнее всего как раз на оборванных прогонах,
+    # поэтому оба числа печатаются рядом и ни одно не выдаётся за другое.
+    meta = dict(ruined=bool(r["ruined"]),
+                ruined_trade=r.get("ruined_trade"),
+                ruined_ts=(r["ruined_ts"] // 1000
+                           if r.get("ruined_ts") else None),
+                max_dd_mtm=round(r["max_dd_mtm"] * 100, 1),
+                ret_flat=round((r["balance"] / e2.START - 1) * 100, 1),
+                dd_closed_flat=round(r["max_dd"] * 100, 1),
+                trades=r["trades"], wins=r["wins"])
+    return start_ts, pnls, meta
 
 
 def signal_pnls(name, rec, c4, ctx, c15, ts15):
+    # signal_engine не отдаёт внутрицикловую переоценку, поэтому «худшая
+    # точка» у сигналов равна результату сделки: их плавающая просадка не
+    # занижена только для убыточных сделок, а для прибыльных неизвестна.
+    # Врать нулём в другую сторону нельзя — поэтому берём min(pnl, 0).
     r = se.run_setup(name, rec["genome"], c4, ctx, c15, ts15,
                      rec.get("rec_lev", 15))
     start_ts = c4[0][0] // 1000
-    return start_ts, [(t["exit_ts"] // 1000, t["pnl"]) for t in r["trades"]]
+    pnls = [(t["exit_ts"] // 1000, t["pnl"], min(t["pnl"], 0.0))
+            for t in r["trades"]]
+    # у сигнального движка своего признака слива нет — не выдумываем
+    return start_ts, pnls, dict(ruined=False, ruined_trade=None,
+                                ruined_ts=None, max_dd_mtm=None)
 
 
 def dd_of(points):
@@ -103,20 +136,55 @@ def dd_of(points):
     return round(dd * 100, 1)
 
 
+def dd_float_closed_peak(pnls):
+    """Просадка стратегии: пик по ЗАКРЫТОМУ капиталу, дно — плавающее.
+
+    От dd_of отличается ровно одним: перед тем как записать результат сделки,
+    капитал проседает до eq*(1+worst/BT_BASE) — эту точку кривая по закрытым
+    сделкам не видит никогда. Так как worst <= min(0, pnl), результат всегда
+    >= dd_of по той же линии.
+
+    ИМЯ ВАЖНО. Это НЕ evolution2.run5.max_dd_mtm, и различий сразу два:
+      * там пик тоже плавающий — его поднимает нереализованная прибыль
+        открытого цикла. Здесь так нельзя: из событий сделок известна только
+        ХУДШАЯ точка цикла (`worst`), лучшая не известна, поднимать пик нечем;
+      * здесь РЕИНВЕСТ (капитал растёт от $50), а в движке фиксированная база
+        $20 и маржа $5.
+    Поэтому числа расходятся в обе стороны (LTC 30.8% здесь против 25.3% в
+    движке, DOGE 60.4% против 73.9%) и сравнивать их между собой — например
+    «на сайте просадка меньше, чем в отборе» — бессмысленно.
+    """
+    eq = peak = SLEEVE0
+    dd = 0.0
+    for _, pnl, worst in pnls:
+        if peak > 0:
+            dd = max(dd, (peak - eq * (1 + worst / BT_BASE)) / peak)
+        eq *= (1 + pnl / BT_BASE)
+        peak = max(peak, eq)
+    return round(dd * 100, 1)
+
+
 def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     pct5 = xd.fetch_daily_pct5()
 
-    streams = []  # (key, label, color, group, start_ts, [(ts, pnl)])
+    streams = []  # (key, label, color, group, start_ts, [(ts, pnl, worst)], meta)
     for sym, modes in config.SYMBOL_PARAMS.items():
         p = modes.get("final")
         if not p:
             continue
         print(f"{sym}: сделки бота (x{p.get('lev', 5)})...")
-        st, pnls = bot_pnls(sym, p, pct5)
+        st, pnls, meta = bot_pnls(sym, p, pct5)
+        print(f"  движок (база $20, без реинвеста): {meta['ret_flat']:+.1f}% | "
+              f"DD закр. {meta['dd_closed_flat']}% / mtm {meta['max_dd_mtm']}% | "
+              f"сделок {meta['trades']} | WR "
+              f"{meta['wins'] / meta['trades'] * 100 if meta['trades'] else 0:.1f}%")
+        if meta["ruined"]:
+            print(f"  ВНИМАНИЕ: счёт слит на {meta['ruined_trade']}-й сделке — "
+                  f"прогон оборван, дальше сделок нет")
         streams.append((f"bot_{sym}",
                         f"{sym.replace('USDT','')} — бот x{p.get('lev', 5)}",
-                        COLORS.get(sym, "#aaaaaa"), "bot", st, pnls))
+                        COLORS.get(sym, "#aaaaaa"), "bot", st, pnls, meta))
 
     with open("signal_setups.json", encoding="utf-8") as fh:
         setups = json.load(fh)
@@ -128,51 +196,71 @@ def main():
         if not rec.get("enabled"):
             continue
         print(f"{name}: сделки сигналов (x{rec.get('rec_lev', 15)})...")
-        st, pnls = signal_pnls(name, rec, c4, ctx, c15, ts15)
+        st, pnls, meta = signal_pnls(name, rec, c4, ctx, c15, ts15)
         streams.append((f"sig_{name}",
                         f"{RU_SETUPS.get(name, name)} x{rec.get('rec_lev', 15)}",
-                        COLORS.get(name, "#dddddd"), "signal", st, pnls))
+                        COLORS.get(name, "#dddddd"), "signal", st, pnls, meta))
 
     n = len(streams)
     t0 = min(s[4] for s in streams)
     total0 = SLEEVE0 * n
 
     series = []
-    for key, label, color, group, st, pnls in streams:
+    for key, label, color, group, st, pnls, meta in streams:
         eq = SLEEVE0
         pts = [[t0, round(SLEEVE0, 2)]]
-        for ts, pnl in pnls:
+        for ts, pnl, _worst in pnls:
             eq *= (1 + pnl / BT_BASE)
             pts.append([ts, round(eq, 2)])
         series.append(dict(
             key=key, label=label, group=group, color=color,
             final_usd=round(eq, 2),
             final_pct=round((eq / SLEEVE0 - 1) * 100, 1),
-            dd=dd_of(pts), points=downsample(pts)))
+            # dd — прежний ключ (просадка по закрытым сделкам), его читает
+            # сайт; dd_float — с плавающим ДНОМ, но пиком по закрытым сделкам
+            # (см. dd_float_closed_peak: это не движковая max_dd_mtm)
+            dd=dd_of(pts), dd_float=dd_float_closed_peak(pnls),
+            # СЛИВ: прогон оборван движком, кривая после этой точки не
+            # существует. Линия без этого признака выглядит как обычный минус
+            ruined=meta["ruined"], ruined_trade=meta["ruined_trade"],
+            ruined_ts=meta["ruined_ts"],
+            points=downsample(pts)))
 
     # события всех стратегий по времени — для портфельных линий
     merged = []
-    for key, label, color, group, st, pnls in streams:
-        for ts, pnl in pnls:
-            merged.append((ts, key, pnl))
+    for key, label, color, group, st, pnls, meta in streams:
+        for ts, pnl, worst in pnls:
+            merged.append((ts, key, pnl, worst))
     merged.sort()
 
     # портфель без ребаланса: сумма независимых капиталов
     sleeves = {s[0]: SLEEVE0 for s in streams}
     pts_cons = [[t0, round(total0, 2)]]
-    for ts, key, pnl in merged:
+    peak_pf, dd_pf_float = total0, 0.0
+    for ts, key, pnl, worst in merged:
+        # плавающая просадка портфеля: в момент худшей точки цикла остальные
+        # рукава стоят столько же, поэтому достаточно подменить один
+        low = sum(sleeves.values()) - sleeves[key] \
+            + sleeves[key] * (1 + worst / BT_BASE)
+        dd_pf_float = max(dd_pf_float, (peak_pf - low) / peak_pf)
         sleeves[key] *= (1 + pnl / BT_BASE)
-        pts_cons.append([ts, round(sum(sleeves.values()), 2)])
+        total_now = sum(sleeves.values())
+        peak_pf = max(peak_pf, total_now)
+        pts_cons.append([ts, round(total_now, 2)])
     series.append(dict(
         key="pf_cons", label="ПОРТФЕЛЬ $350 — без ребаланса",
         group="portfolio", color="#e8e6df",
         final_usd=pts_cons[-1][1],
         final_pct=round((pts_cons[-1][1] / total0 - 1) * 100, 1),
-        dd=dd_of(pts_cons), points=downsample(pts_cons)))
+        dd=dd_of(pts_cons), dd_float=round(dd_pf_float * 100, 1),
+        # у портфеля своего слива нет: слитый рукав просто перестаёт давать
+        # сделки, признак показывается на ЕГО линии
+        ruined=False, ruined_trade=None, ruined_ts=None,
+        points=downsample(pts_cons)))
 
     # портфель с ежемесячным ребалансом: r_мес = сумм. PnL / (n x $20-база)
     monthly = defaultdict(float)
-    for ts, key, pnl in merged:
+    for ts, key, pnl, _worst in merged:
         monthly[ts // MONTH] += pnl
     eq = total0
     pts_reb = [[t0, round(eq, 2)]]
@@ -184,7 +272,12 @@ def main():
         group="portfolio", color="#E3A83E",
         final_usd=pts_reb[-1][1],
         final_pct=round((pts_reb[-1][1] / total0 - 1) * 100, 1),
-        dd=dd_of(pts_reb), points=downsample(pts_reb)))
+        # dd_float тут честно None: линия построена по МЕСЯЧНЫМ суммам, и
+        # внутримесячную переоценку отдельных циклов к ней не привязать —
+        # выдумывать число вместо признания «не считаем» нельзя
+        dd=dd_of(pts_reb), dd_float=None,
+        ruined=False, ruined_trade=None, ruined_ts=None,
+        points=downsample(pts_reb)))
 
     # бенчмарки: золото / серебро / S&P 500 как холд от $50 с той же даты
     try:
@@ -204,7 +297,11 @@ def main():
                 key=key, label=label, group="bench", color=color,
                 final_usd=pts[-1][1],
                 final_pct=round((pts[-1][1] / SLEEVE0 - 1) * 100, 1),
-                dd=dd_of(pts), points=downsample(pts)))
+                # холд считается по дневным закрытиям — это уже переоценка
+                # рынком, отдельной «плавающей» просадки у него нет
+                dd=dd_of(pts), dd_float=dd_of(pts),
+                ruined=False, ruined_trade=None, ruined_ts=None,
+                points=downsample(pts)))
     except Exception as e:
         print(f"  бенчмарки пропущены: {e}")
 
@@ -212,8 +309,12 @@ def main():
         json.dump(dict(sleeve=SLEEVE0, total=total0, series=series),
                   fh, ensure_ascii=False)
     for s in series:
+        ddf = "н/д" if s.get("dd_float") is None else f"{s['dd_float']}%"
+        ruin = (f"  СЛИВ на {s['ruined_trade']}-й сделке"
+                if s.get("ruined") else "")
         print(f"  {s['label']:44} ${s['final_usd']:>9.2f} "
-              f"({s['final_pct']:+8.1f}%) DD {s['dd']}%")
+              f"({s['final_pct']:+8.1f}%) DD закр. {s['dd']}% / плав. {ddf}"
+              f"{ruin}")
     print(f"-> {OUT}")
 
 

@@ -39,9 +39,33 @@ FUND_8H = 0.0001       # funding 0.01% за 8ч (плата за удержан�
 BARS_8H = 32           # 8ч в 15m-свечах
 START, MARGIN = 20.0, 5.0
 LEV = 5
-MM = 0.95
+MM = 0.95              # НЕ используется движком сетки (см. MMR/LIQ_LOSS ниже).
+                       # Оставлено потому, что на него смотрит signal_engine.py
+                       # — у сигнальных сетапов свой упрощённый расчёт выхода,
+                       # и менять его из этого файла нельзя.
 MONTH_MS = 30 * 86400 * 1000
 RSI_SET = [7, 10, 14, 21]
+
+# Тейк уходит на биржу через set_trading_stop(takeProfit=...) — bot_rsi.py,
+# push_sl_tp/enter. На Bybit это УСЛОВНЫЙ МАРКЕТ по триггеру, а не лимитка:
+# комиссия тейкера плюс проскальзывание. Движок же исполнял тейк мейкерской
+# лимиткой с нулевым слиппеджем и дарил каждой прибыльной сделке ~0.065%
+# оборота (0.035% разницы комиссий + 0.03% слиппеджа), которых в жизни нет.
+# Ставить False можно ТОЛЬКО если бот переедет на лимитный тейк (reduce-only
+# post-only ордер вместо set_trading_stop) — тогда вернётся модель мейкера.
+TP_MARKET_EXIT = True
+
+# Ликвидация. MMR — maintenance margin rate биржи: позицию закрывают не тогда,
+# когда убыток съел всю маржу, а когда свободных средств осталось меньше MMR
+# от стоимости позиции (от КАКОЙ именно стоимости — см. liq_price, там это
+# решает, наступает наш порог раньше биржевого или позже). 0.005 — базовая
+# ступень Bybit по USDT-перпетуалам мейджоров; на больших объёмах ставка
+# выше, то есть ликвидация ещё ближе.
+# Прежняя модель (p_liq = avg*(1 - 0.95/LEV) и убыток 95% маржи) была добрее
+# биржи дважды: и порог ставила дальше, чем настоящий, и возвращала 5% маржи.
+# На деле остаток съедает ликвидационная комиссия — теряется вся маржа цикла.
+MMR = 0.005
+LIQ_LOSS = 1.0         # доля маржи цикла, теряемая при ликвидации
 
 POP, GENS, ELITE = 48, 24, 6
 DAYS = 730
@@ -85,6 +109,39 @@ def prep(candles):
 ATR_REF_BARS = gridlib.ATR_REF_BARS   # общая с ботом (см. gridlib)
 
 
+def liq_price(avg, mused, q, sgn):
+    """Цена ликвидации позиции со средней avg, объёмом q и маржой mused.
+
+    Условие одно: свободных средств осталось ровно на maintenance margin.
+    Вопрос в том, от какой СТОИМОСТИ позиции считать сам maintenance margin —
+    от входной (avg*q) или от текущей (p*q). Берём БОЛЬШУЮ из двух, поэтому:
+
+        лонг (цена падает, больше входная):
+            mused - (avg - p)*q = MMR * avg * q  ->  p = avg*(1 - 1/LEV + MMR)
+        шорт (цена растёт, больше текущая):
+            mused + (avg - p)*q = MMR * p   * q  ->  p = avg*(1 + 1/LEV)/(1 + MMR)
+
+    (mused/q == avg/LEV тождественно: колено кладёт m_k маржи и берёт m_k*LEV
+    нотионала, значит avg*q == LEV*mused при любой раскладке весов.)
+
+    Почему не «MMR всегда от текущей стоимости», как было до этой правки.
+    Bybit считает maintenance margin от стоимости по цене ВХОДА:
+    LP = вход*(1 - IM + MM). При x5 и средней 100 биржа ликвидирует ЛОНГ на
+    80.500, а формула «от текущей» давала 80.402 — наш порог наступал ПОЗЖЕ
+    биржевого, и часть реально ликвидированных лонгов бэктест досчитывал
+    живыми. У шортов наоборот: «от текущей» даёт 119.403 против биржевых
+    119.500, то есть раньше биржи, — эту ветку и оставляем. Выбор большей базы
+    даёт порог не позже биржевого В ОБЕ стороны; это и закреплено тестом.
+
+    При MMR=0 обе ветки вырождаются в банкротную цену (убыток == вся маржа) —
+    ровно то, что было в прежней модели и что делало бэктест добрее биржи.
+    """
+    d = mused / q
+    if sgn == 1:
+        return avg - d + MMR * avg
+    return (avg + d) / (1.0 + MMR)
+
+
 def run5(candles, pre, g, entry_filter=None, events=None):
     """entry_filter(side, i) -> side|None — внешний фильтр входов (F&G, BTC...).
     events: если передан список — в него пишутся сделки (вход/сетка/выход).
@@ -119,6 +176,21 @@ def run5(candles, pre, g, entry_filter=None, events=None):
     rlow, rhigh = ev.rolling_extremes(candles, g["window"])
     rsi_os, rsi_ob = g["rsi_os"], 100 - g["rsi_os"]
     balance, peak, max_dd = START, START, 0.0
+    # Просадка с учётом ПЛАВАЮЩЕЙ переоценки, mark-to-market. max_dd видит
+    # только закрытые сделки: цикл, который неделю сидит в минусе на 90%
+    # маржи, а потом выходит в плюс по тейку, в неё не попадает вообще. А
+    # плечо выбиралось именно по просадке — значит выбиралось по метрике,
+    # которая слепа к главному риску сеточной стратегии.
+    #
+    # ВНИМАНИЕ, это НЕ то же самое, что dd_float на сайте
+    # (build_pnl_curves.dd_float_closed_peak / build_analytics.analyze). Здесь
+    # плавающий и пик, и дно: peak_f поднимается в том числе НЕРЕАЛИЗОВАННОЙ
+    # прибылью открытого цикла. На сайте пик поднимает только закрытый
+    # капитал, потому что из событий сделок лучшая точка цикла неизвестна —
+    # там метрика заведомо меньше. Поэтому у величин разные имена
+    # (max_dd_mtm против max_dd_float на сайте) и сравнивать их между собой
+    # нельзя.
+    peak_f, max_dd_mtm = START, 0.0
     trades = wins = 0
     monthly, hold_bars = {}, []
     pos = None
@@ -126,6 +198,31 @@ def run5(candles, pre, g, entry_filter=None, events=None):
     t0 = candles[0][0]
     weights = [g["mult"] ** k for k in range(g["levels"])]
     m_k = [MARGIN * w / sum(weights) for w in weights]
+
+    def mark(equity):
+        """Точка кривой капитала: закрытая сделка либо плавающая переоценка."""
+        nonlocal peak_f, max_dd_mtm
+        peak_f = max(peak_f, equity)
+        if peak_f > 0:
+            max_dd_mtm = max(max_dd_mtm, (peak_f - equity) / peak_f)
+
+    def float_mark(p, px_now):
+        """Плавающая переоценка открытого цикла по цене px_now, в $ как pnl.
+
+        Комиссии и фандинг уже начислены в p["fees"] — вычитаем и их, иначе
+        плавающий минус занижен на величину, которую владелец уже заплатил.
+
+        Ниже ликвидационного дна значение не опускается: маржа цикла
+        изолирована, потерять больше неё нельзя — на этом уровне позицию уже
+        закрыла бы биржа, и «минус на экране» дальше не растёт.
+        """
+        q = sum(f[1] for f in p["fills"])
+        avg = sum(fp * fq for fp, fq in p["fills"]) / q
+        s = 1 if p["side"] == "L" else -1
+        mk = p.get("m_k", m_k)
+        mused = sum(mk[k] for k in range(len(p["fills"])))
+        return max(s * (px_now - avg) * q - p["fees"],
+                   -mused * LIQ_LOSS - p["fees"])
 
     def book(pnl, ts, opened_i, i):
         nonlocal balance, trades, wins, peak, max_dd
@@ -136,25 +233,46 @@ def run5(candles, pre, g, entry_filter=None, events=None):
         peak = max(peak, balance)
         if peak > 0:
             max_dd = max(max_dd, (peak - balance) / peak)
+        mark(balance)
         monthly[(ts - t0) // MONTH_MS] = monthly.get((ts - t0) // MONTH_MS, 0) + pnl
         hold_bars.append(i - opened_i)
 
-    def close_pos(p, exit_price, ts, i, taker_exit, liq=False, reason="?"):
+    def close_pos(p, exit_price, ts, i, taker_exit, liq=False, reason="?",
+                  bar_lo=None, bar_hi=None):
         sgn = 1 if p["side"] == "L" else -1
         q = sum(f[1] for f in p["fills"])
         avg = sum(fp * fq for fp, fq in p["fills"]) / q
         if liq:
             mk = p.get("m_k", m_k)
             mused = sum(mk[k] for k in range(len(p["fills"])))
-            pnl = -mused * MM - p["fees"]
+            pnl = -mused * LIQ_LOSS - p["fees"]
         else:
             px = exit_price * (1 - sgn * SLIP) if taker_exit else exit_price
             fee = q * px * (TAKER if taker_exit else MAKER)
             pnl = sgn * (px - avg) * q - fee - p["fees"]
+        # Бар, НА КОТОРОМ цикл закрылся, тоже надо переоценить: плавающая
+        # переоценка ниже делается только для доживших до конца бара циклов, и
+        # без этого ход внутри последнего бара терялся целиком. Классический
+        # случай — тейк на баре, у которого лоу сильно ниже средней: на экране
+        # был глубокий минус, а в метрику попадала только прибыль по закрытию.
+        # Порядок цен внутри бара по OHLC неизвестен, поэтому считаем, что
+        # неблагоприятный конец был ДО выхода (в невыгодную сторону).
+        #
+        # Для стопа и ликвидации так делать НЕЛЬЗЯ, и вызовы оттуда бары не
+        # передают: позиции на этом баре уже нет, ход дальше уровня выхода к
+        # ней не относится, а сам убыток по стопу и есть худшая точка цикла.
+        if bar_lo is not None:
+            fl = float_mark(p, bar_lo if sgn == 1 else bar_hi)
+            p["worst"] = min(p.get("worst", 0.0), fl)
+            mark(balance + fl)          # до книжки: минус был ДО закрытия
         book(pnl, ts, p["opened_i"], i)
         if events is not None:
             events.append(dict(t=ts, type="close", price=exit_price,
-                               pnl=round(pnl, 4), liq=liq, reason=reason))
+                               pnl=round(pnl, 4), liq=liq, reason=reason,
+                               # худшая плавающая переоценка за цикл (в тех же
+                               # долларах, что pnl): чтобы кривая просадки на
+                               # сайте видела не только закрытые сделки
+                               worst=round(min(p.get("worst", 0.0), pnl), 4)))
 
     start_i = max(g["window"], max(RSI_SET) + 1, 98)
     for i in range(start_i, len(candles)):
@@ -182,12 +300,13 @@ def run5(candles, pre, g, entry_filter=None, events=None):
             # ликвидацию (доливка добавляет маржу) — и только потом
             # срабатывает тот из уровней, который встретился первым.
             killed = False
+            legs_filled = False       # исполнились ли колена в ЭТОЙ свече
             while True:
                 mk_pos = pos.get("m_k", m_k)
                 q = sum(f[1] for f in pos["fills"])
                 avg = sum(fp * fq for fp, fq in pos["fills"]) / q
                 mused = sum(mk_pos[k] for k in range(len(pos["fills"])))
-                p_liq = avg - sgn * (mused * MM) / q
+                p_liq = liq_price(avg, mused, q, sgn)
                 # что встретится раньше по пути вниз (для лонга)
                 danger = max(p_liq, stop) if sgn == 1 else min(p_liq, stop)
                 nxt = pos["adds"][0][0] if pos["adds"] else None
@@ -199,6 +318,7 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                     ap, aq = pos["adds"].pop(0)
                     pos["fees"] += aq * ap * MAKER
                     pos["fills"].append((ap, aq))
+                    legs_filled = True
                     if events is not None:
                         events.append(dict(t=ts, type="add", price=ap))
                     continue          # маржа выросла — пересчитываем ликвидацию
@@ -212,10 +332,36 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                     killed = True
                 break
 
+            # Тейк в свече, где сетка успела долить. Живой бот держит тейк на
+            # бирже от ТЕКУЩЕЙ средней (bot_rsi.tp_price -> avg_entry): как
+            # только колено исполнилось, тейк тут же переставляется ВНИЗ (для
+            # лонга) вместе с подешевевшей средней. Старого tp_pre в этот
+            # момент на бирже уже нет, и выход по нему — «долил на дне свечи,
+            # продал по цене до доливки», то есть прибыль из воздуха.
+            #
+            # Порядок движения цены ВНУТРИ свечи по OHLC неизвестен, поэтому
+            # оба конца берём в невыгодную для счёта сторону:
+            #   - СРАБАТЫВАНИЕ проверяем по tp_pre (старый, дальний уровень):
+            #     если путь был «сначала вверх, потом вниз», то в момент хая
+            #     колено ещё не исполнилось и на бирже стоял именно tp_pre;
+            #   - ИСПОЛНЯЕМ по tp_exec (новый, ближний): если путь был
+            #     «сначала вниз», тейк уже переехал за подешевевшей средней.
+            # Ослабить первое (ловить тейк по tp_exec) нельзя — это выдумывает
+            # выходы, которых у бота не было. Замер на боевых конфигах: такое
+            # ослабление даёт DOGE +116.2% вместо −38.1%, SOL +13.8% вместо
+            # −79.6%, и число «тейк в свече с доливкой» скачет с 11 до 106 —
+            # ровно те циклы, что на самом деле выносились стопом.
+            tp_exec = tp_pre
+            if legs_filled and not killed:
+                q_now = sum(f[1] for f in pos["fills"])
+                avg_now = sum(fp * fq for fp, fq in pos["fills"]) / q_now
+                tp_exec = avg_now * (1 + sgn * pos["tp_eff"])
+
             if killed:
                 pass
             elif hit_tp:
-                close_pos(pos, tp_pre, ts, i, taker_exit=False, reason="tp")
+                close_pos(pos, tp_exec, ts, i, taker_exit=TP_MARKET_EXIT,
+                          reason="tp", bar_lo=l, bar_hi=h)
                 pos = None
             else:
                 # обычные доливки (без стопа в этой свече)
@@ -272,11 +418,25 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                 if pos and i - pos["opened_i"] > g["max_bars"]:
                     r = rsi[i]
                     if r is not None and (r >= 50 if sgn == 1 else r <= 50):
-                        close_pos(pos, c, ts, i, taker_exit=True, reason="timeout")
+                        close_pos(pos, c, ts, i, taker_exit=True,
+                                  reason="timeout", bar_lo=l, bar_hi=h)
                         pos = None
+            if pos:
+                # переоценка открытого цикла по ХУДШЕЙ точке бара (лоу для
+                # лонга): именно столько владелец видел бы на экране в этот
+                # момент.
+                float_pnl = float_mark(pos, l if sgn == 1 else h)
+                pos["worst"] = min(pos.get("worst", 0.0), float_pnl)
+                mark(balance + float_pnl)
             if balance < MARGIN:
                 return dict(balance=balance, trades=trades, wins=wins,
-                            max_dd=max_dd, ruined=True, monthly=monthly,
+                            max_dd=max_dd, max_dd_mtm=max_dd_mtm,
+                            # алиас прежнего имени: его читают evolution4.py и
+                            # honest_eval.py — чужие файлы, их правит другой
+                            # агент. Значение то же, что max_dd_mtm.
+                            max_dd_float=max_dd_mtm,
+                            ruined=True, ruined_i=i, ruined_ts=ts,
+                            ruined_trade=trades, monthly=monthly,
                             hold=hold_bars,
                             months=(candles[-1][0] - t0) / MONTH_MS)
             if pos:
@@ -334,14 +494,23 @@ def run5(candles, pre, g, entry_filter=None, events=None):
                    opened_i=i, fees=q0 * px * TAKER, be_done=False,
                    tp_eff=tp_eff, vol_k=vol_k, entry_px=px, best=px,
                    m_k=mk_pos)
+        # первая точка кривой сразу после входа. Хода цены внутри бара входа
+        # уже не осталось (вход по закрытию), но комиссия и проскальзывание
+        # входа — это минус, который на экране виден в ту же секунду.
+        pos["worst"] = float_mark(pos, c)
+        mark(balance + pos["worst"])
         if events is not None:
             events.append(dict(t=ts, type="entry", side=side, price=px))
 
     if pos:
         close_pos(pos, closes[-1], candles[-1][0], len(candles) - 1,
-                  taker_exit=True)
+                  taker_exit=True, bar_lo=candles[-1][3], bar_hi=candles[-1][2])
     return dict(balance=balance, trades=trades, wins=wins, max_dd=max_dd,
-                ruined=False, monthly=monthly, hold=hold_bars,
+                max_dd_mtm=max_dd_mtm,
+                # алиас прежнего имени — см. комментарий у ветки ruined
+                max_dd_float=max_dd_mtm,
+                ruined=False, ruined_i=None, ruined_ts=None,
+                ruined_trade=None, monthly=monthly, hold=hold_bars,
                 months=(candles[-1][0] - t0) / MONTH_MS)
 
 
@@ -532,7 +701,10 @@ def main():
             wr = r["wins"] / r["trades"] * 100 if r["trades"] else 0
             print(f"  {label:9} год(честн.): {ret:+8.1f}% | мес.мед {st['med']:+5.2f}% "
                   f"| P25 {st['p25']:+5.2f}% | WR {wr:4.1f}% | "
-                  f"DD {r['max_dd']*100:4.1f}% | сделок {r['trades']}"
+                  # обе просадки рядом: закрытая (по сделкам) и плавающая
+                  # (с переоценкой открытых циклов) — вторая всегда >= первой
+                  f"DD {r['max_dd']*100:4.1f}%/{r['max_dd_mtm']*100:4.1f}% "
+                  f"| сделок {r['trades']}"
                   f"{' СЛИВ' if r['ruined'] else ''}")
 
         results[sym] = dict(

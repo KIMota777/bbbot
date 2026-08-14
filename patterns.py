@@ -72,13 +72,32 @@ def find_pivots(candles, w=W):
     return piv_high, piv_low
 
 
-def build_zigzag(piv_high, piv_low, highs, lows):
-    """[(pivot_bar, 'H'|'L', price), ...] чередующиеся, по возрастанию бара."""
+def pivot_events(piv_high, piv_low, highs, lows):
+    """Все подтверждённые пивоты по возрастанию бара, БЕЗ сжатия в зигзаг."""
     events = [(i, "H", highs[i]) for i, v in enumerate(piv_high) if v]
     events += [(i, "L", lows[i]) for i, v in enumerate(piv_low) if v]
     events.sort(key=lambda e: e[0])
+    return events
+
+
+def build_zigzag(piv_high, piv_low, highs, lows):
+    """[(pivot_bar, 'H'|'L', price), ...] чередующиеся, по возрастанию бара.
+
+    ВНИМАНИЕ, зигзаг ПЕРЕРИСОВЫВАЕТСЯ задним числом. Пока подряд идут пивоты
+    одного типа, последнее звено заменяется на более крайнее (`zz[-1] = ...`),
+    поэтому в готовом списке остаются только окончательные вершины. Живой код
+    видит историю по одному бару и какое-то время работает с ПРОМЕЖУТОЧНОЙ
+    вершиной, которой в этом списке уже нет. Значит, любой расчёт по готовому
+    зигзагу — это взгляд из будущего: он не «оптимистичнее», он просто ДРУГОЙ,
+    и совпадения бэктеста с лайвом не гарантирует.
+
+    compute_pattern_signals из-за этого зигзаг больше не строит — он
+    проигрывает пивоты по одному (см. ниже). Здесь функция оставлена потому,
+    что её берёт smc.py, а smc.py правит другой файл; когда до него дойдут
+    руки, ему нужен тот же причинный проход.
+    """
     zz = []
-    for pb, typ, price in events:
+    for pb, typ, price in pivot_events(piv_high, piv_low, highs, lows):
         if zz and zz[-1][1] == typ:
             better = (price > zz[-1][2]) if typ == "H" else (price < zz[-1][2])
             if better:
@@ -91,7 +110,18 @@ def build_zigzag(piv_high, piv_low, highs, lows):
 def compute_pattern_signals(candles, w=W, expiry=EXPIRY, bars_per_day=96):
     """bars_per_day: баров в сутках для ATR внутри функции (15m -> 96,
     4ч/"240" -> 6). На неверном значении волатильность считалась бы по
-    чужому окну (16 суток вместо суток на 4ч) — не декоративный параметр."""
+    чужому окну (16 суток вместо суток на 4ч) — не декоративный параметр.
+
+    Пивоты проигрываются ПО ОДНОМУ, а не по готовому зигзагу (см. большой
+    комментарий у build_zigzag). Разница не косметическая: пока подряд идут
+    вершины одного типа, зигзаг переписывает последнее звено, и в готовом
+    списке промежуточных вершин уже нет. Живой бот зовёт эту функцию на
+    хвосте истории и в тот момент работает именно с промежуточной вершиной —
+    то есть видел бы сигналы, которых бэктест не находил вовсе. Причинный
+    проход даёт ровно то же, что живой код: паттерн проверяется на каждом
+    состоянии зигзага, а сигнал начинается на баре pb+w, когда вершина
+    подтверждена и раньше знать о ней нельзя.
+    """
     n = len(candles)
     if n < 4 * w + 20:
         return [False] * n, [False] * n
@@ -100,7 +130,6 @@ def compute_pattern_signals(candles, w=W, expiry=EXPIRY, bars_per_day=96):
     closes = [c[4] for c in candles]
     atr = _calc_atr_pct(candles, n=bars_per_day)
     piv_h, piv_l = find_pivots(candles, w)
-    zz = build_zigzag(piv_h, piv_l, highs, lows)
 
     def tol_at(bar):
         a = atr[bar] if bar < len(atr) and atr[bar] else 0.01
@@ -112,17 +141,32 @@ def compute_pattern_signals(candles, w=W, expiry=EXPIRY, bars_per_day=96):
 
     events = []  # (confirm_bar, +1 bull / -1 bear)
     last_highs, last_lows = [], []
+    zz = []      # состояние зигзага НА ТЕКУЩИЙ момент, а не итоговое
 
-    for idx, (pb, typ, price) in enumerate(zz):
-        confirm = min(pb + w, n - 1)
-        if typ == "H":
-            last_highs.append((pb, price))
-            if len(last_highs) > 6:
-                last_highs.pop(0)
+    for pb, typ, price in pivot_events(piv_h, piv_l, highs, lows):
+        if zz and zz[-1][1] == typ:
+            better = (price > zz[-1][2]) if typ == "H" else (price < zz[-1][2])
+            if not better:
+                continue          # звено не изменилось — проверять нечего
+            zz[-1] = (pb, typ, price)
+            # last_highs/last_lows идут звено-в-звено с zz, значит правим
+            # последний элемент, а не добавляем новый
+            if typ == "H":
+                last_highs[-1] = (pb, price)
+            else:
+                last_lows[-1] = (pb, price)
         else:
-            last_lows.append((pb, price))
-            if len(last_lows) > 6:
-                last_lows.pop(0)
+            zz.append((pb, typ, price))
+            if typ == "H":
+                last_highs.append((pb, price))
+                if len(last_highs) > 6:
+                    last_highs.pop(0)
+            else:
+                last_lows.append((pb, price))
+                if len(last_lows) > 6:
+                    last_lows.pop(0)
+        idx = len(zz) - 1
+        confirm = min(pb + w, n - 1)
 
         tol, leg = tol_at(confirm), leg_at(confirm)
         window = zz[max(0, idx - 4):idx + 1]

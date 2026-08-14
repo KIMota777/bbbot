@@ -9,9 +9,22 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 
 from flask import Flask, jsonify, render_template
+
+# Консоль Windows — cp866, и в ней нет ни тире «—», ни «ёлочек», ни эмодзи,
+# которыми полны наши сообщения. Без этой поправки print падает с
+# UnicodeEncodeError и убивает поток прогрева вместе с сообщением о нём.
+# Поправка стоит на уровне модуля, а не в блоке __main__: сайт запускают и
+# через «flask run», и через waitress/другой сервер — там __main__ чужой,
+# а печатаем мы (прогрев, ошибки биржи) всё так же из этого модуля.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,12 +40,67 @@ import patterns as pt  # noqa: E402
 from pybit.unified_trading import HTTP  # noqa: E402
 
 app = Flask(__name__)
-session = HTTP(testnet=False)
 BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# предпосчёт build_analytics.py / build_pnl_curves.py. Объявлен здесь, а не
+# ниже по файлу: список ботов на главной тоже читает эту папку, и адрес папки
+# должен быть один на весь модуль.
+FINAL_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+# Клиент биржи. Dev-сервер обслуживает запросы в разных потоках, а один общий
+# клиент между потоками делить небезопасно — поэтому у каждого потока свой.
+BYBIT_TIMEOUT = 5     # секунд на ОДИН запрос к бирже (по умолчанию pybit — 10)
+FETCH_BUDGET = 20     # секунд на всю догрузку истории в одном обработчике
+_local = threading.local()
+
+
+def bybit():
+    """Клиент Bybit текущего потока (создаётся при первом обращении)."""
+    s = getattr(_local, "session", None)
+    if s is None:
+        s = HTTP(testnet=False, timeout=BYBIT_TIMEOUT)
+        _local.session = s
+    return s
+
 
 MODE_NAMES = {"normal": "Обычный", "turbo": "Турбо", "bear": "Медвежий",
               "final": "Финальный"}
 ARCHIVE_MODES = ("normal", "bear", "turbo")
+
+# --- проверка параметров маршрутов ---
+# Параметры из URL подставляются в имена файлов, поэтому пропускаем только
+# известные монеты/режимы и ключи без разделителей пути. На Windows
+# разделителем считается и обратный слэш, а Flask его в параметре не режет —
+# без проверки /api/analytics/..\..\..\report3y читал бы файл вне webapp/data.
+VALID_MODES = frozenset(MODE_NAMES)
+RE_KEY = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+
+
+def valid_symbol(symbol):
+    return symbol in config.SYMBOL_PARAMS
+
+
+def valid_mode(mode):
+    return mode in VALID_MODES
+
+
+def safe_path(directory, filename):
+    """Абсолютный путь внутри directory или None, если имя уводит наружу
+    (../, ..\\, абсолютный путь, другой диск)."""
+    base = os.path.realpath(directory)
+    full = os.path.realpath(os.path.join(base, filename))
+    try:
+        if os.path.commonpath([base, full]) != base:
+            return None
+    except ValueError:      # разные диски — точно наружу
+        return None
+    return full
+
+
+def bot_log_path(symbol, mode):
+    """Путь к логу бота или None, если такой пары монета/режим нет."""
+    if not valid_symbol(symbol) or not valid_mode(mode):
+        return None
+    return safe_path(BOT_DIR, f"bot_{symbol}_{mode}.log")
 
 # волна отбора, которой принадлежит конфиг (v2 — глубокая эволюция 2г,
 # v4 — киты/макро 3.2г, v5 — индикаторы 3.2г, v6 — медвежьи специалисты,
@@ -210,6 +278,44 @@ META = {
 }
 
 
+def load_analytics(key):
+    """Предпосчёт build_analytics.py (webapp/data/analytics_<key>.json) или {}.
+
+    Сайт ничего не считает сам: числа обязаны совпадать со страницей /pnl.
+    Битый или недописанный файл (идёт пересборка) — не повод ронять страницу.
+    """
+    path = safe_path(FINAL_DATA_DIR, f"analytics_{key}.json")
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def ruined_flag(data):
+    """Слит ли счёт на этой стратегии.
+
+    Признак ставит пересчёт бэктеста: прогон обрывается, когда капитала не
+    хватает на убыток. Ключ принимаем и из stats, и из корня файла — самый
+    важный для владельца факт не должен потеряться из-за того, куда именно
+    его положил движок.
+    """
+    if not isinstance(data, dict):
+        return False
+    stats = data.get("stats")
+    if not isinstance(stats, dict):
+        stats = {}
+    if data.get("ruined") or stats.get("ruined"):
+        return True
+    # страховка на случай, если признак не проставлен: капитал в нуле или
+    # минусе — это слив по определению, каким бы ключом его ни называли
+    end = stats.get("final_usd")
+    return isinstance(end, (int, float)) and end <= 0
+
+
 def list_bots(modes):
     bots = []
     for sym, sym_modes in config.SYMBOL_PARAMS.items():
@@ -222,18 +328,19 @@ def list_bots(modes):
             active = (os.path.exists(log_file) and
                       time.time() - os.path.getmtime(log_file) < 180)
             iv = p.get("interval", "15")
-            reinvest = ""
+            reinvest, ruined = "", False
+            dd, dd_float = None, None
             if mode == "final":
-                apath = os.path.join(BOT_DIR, "webapp", "data",
-                                     f"analytics_bot_{sym}.json")
-                try:
-                    with open(apath, encoding="utf-8") as fh:
-                        a = json.load(fh)["stats"]
+                data = load_analytics(f"bot_{sym}")
+                ruined = ruined_flag(data)
+                a = data.get("stats") or {}
+                if a:
                     sign = "+" if a["final_pct"] >= 0 else ""
                     reinvest = (f"💰 с реинвестом: $50 → ${a['final_usd']} "
                                 f"({sign}{a['final_pct']}%)")
-                except Exception:
-                    pass
+                    # обе просадки: закрытая (по завершённым сделкам) занижена,
+                    # именно по ней когда-то выбиралось плечо
+                    dd, dd_float = a.get("max_dd"), a.get("max_dd_float")
             bots.append(dict(
                 symbol=sym, coin=sym.replace("USDT", ""), mode=mode,
                 mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
@@ -241,6 +348,7 @@ def list_bots(modes):
                 ver=VER.get((sym, mode), ""),
                 title=meta.get("title", f"{sym.replace('USDT','')} — {mode}"),
                 stats=meta.get("stats", ""), reinvest=reinvest, active=active,
+                ruined=ruined, dd=dd, dd_float=dd_float,
                 has_log=os.path.exists(log_file)))
     return bots
 
@@ -328,11 +436,16 @@ def signals_page():
 
 _sig_chart_cache = {}
 _btc_sig_data = {}
+_btc_lock = threading.Lock()
+_btc_ready = threading.Event()
+_btc_loading = False
 
 
-def _btc_signal_data():
-    """Ленивая загрузка BTC 4ч/15м серий и контекста для страниц сетапов."""
-    if not _btc_sig_data:
+def _btc_load():
+    """Качает 3.2 года истории BTC (4ч и 15м). При холодном кэше это минуты,
+    поэтому только в фоне — обработчик столько ждать не должен."""
+    global _btc_loading
+    try:
         import evolution as ev
         import signal_engine as se
         c4 = ev.fetch("BTCUSDT", "240", 1150)
@@ -340,7 +453,24 @@ def _btc_signal_data():
         _btc_sig_data.update(
             c4=c4, c15=c15, ts15=[c[0] for c in c15],
             ctx=se.prep_context(c4))
-    return _btc_sig_data
+        _btc_ready.set()
+    except Exception as e:
+        print("История BTC не загрузилась:", e)
+        with _btc_lock:              # пусть следующий запрос попробует снова
+            _btc_loading = False
+
+
+def _btc_signal_data(wait=FETCH_BUDGET):
+    """BTC 4ч/15м серии и контекст для страниц сетапов — или None, если данные
+    ещё греются: ждём не дольше wait секунд и отдаём страницу без графика."""
+    global _btc_loading
+    if _btc_ready.is_set():
+        return _btc_sig_data
+    with _btc_lock:
+        if not _btc_loading:
+            _btc_loading = True
+            threading.Thread(target=_btc_load, daemon=True).start()
+    return _btc_sig_data if _btc_ready.wait(wait) else None
 
 
 def load_signal_setups():
@@ -357,8 +487,14 @@ def signal_page(name):
     rec = setups.get(name)
     if not rec:
         return "Нет такого сетапа", 404
+    # то же, что у ботов: слив счёта и плавающая просадка — из предпосчёта,
+    # прямо в разметку, не полагаясь на JS
+    data = load_analytics(f"sig_{name}")
+    an = data.get("stats") or {}
     return render_template("signal.html", name=name,
                            title=RU_SETUPS.get(name, name), rec=rec,
+                           ruined=ruined_flag(data), dd=an.get("max_dd"),
+                           dd_float=an.get("max_dd_float"),
                            st=rec.get("stats", {}))
 
 
@@ -375,6 +511,9 @@ def api_signal_chart(name):
         return jsonify(dict(error="нет сетапа")), 404
     import signal_engine as se
     d = _btc_signal_data()
+    if d is None:                       # история ещё качается — не держим страницу
+        return jsonify(dict(candles=[], trades=[], active=None, warming=True,
+                            note="Данные греются, обновите страницу через минуту")), 503
     r = se.run_setup(name, rec["genome"], d["c4"], d["ctx"], d["c15"],
                      d["ts15"], rec.get("rec_lev", 15))
     candles = [dict(time=c[0] // 1000, open=c[1], high=c[2], low=c[3],
@@ -405,7 +544,11 @@ _analytics_cache = {}
 def api_analytics(key):
     """Аналитика бота/сигнала (key: bot_<SYM> | sig_<name>) из предпосчёта
     build_analytics.py."""
-    path = os.path.join(FINAL_DATA_DIR, f"analytics_{key}.json")
+    if not RE_KEY.match(key):
+        return jsonify(dict(available=False, error="недопустимый ключ")), 404
+    path = safe_path(FINAL_DATA_DIR, f"analytics_{key}.json")
+    if path is None:
+        return jsonify(dict(available=False, error="недопустимый ключ")), 404
     mtime = os.path.getmtime(path) if os.path.exists(path) else None
     cached = _analytics_cache.get(key)
     if cached and cached[0] == mtime:
@@ -446,6 +589,11 @@ def bot_page(symbol, mode):
         return "Нет такого бота", 404
     meta = META.get((symbol, mode), {})
     interval = p.get("interval", "15")
+    # слив счёта и просадки рисуем прямо в разметке, а не только в карточке
+    # аналитики на JS: если скрипт не отработал, владелец всё равно обязан
+    # увидеть, что счёт слит
+    data = load_analytics(f"bot_{symbol}") if mode == "final" else {}
+    an = data.get("stats") or {}
     return render_template(
         "bot.html", symbol=symbol, coin=symbol.replace("USDT", ""),
         mode=mode, mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
@@ -455,12 +603,14 @@ def bot_page(symbol, mode):
         title=meta.get("title", f"{symbol} {mode}"),
         stats=meta.get("stats", ""), about=meta.get("about", ""),
         usage=meta.get("usage", ""), core=STRATEGY_CORE,
+        ruined=ruined_flag(data), dd=an.get("max_dd"),
+        dd_float=an.get("max_dd_float"), trades=an.get("trades"),
         params=p, dry_run=config.DRY_RUN)
 
 
 CANDLE_DAYS = 90    # окно графика ("с мая" с запасом)
 RAW_DAYS = 130      # + тёплый старт симуляции (окна до 877 свечей, EMA, режим)
-_raw_cache = {}     # (symbol,interval) -> (fetched_at, candles)
+_raw_cache = {}     # (symbol,interval) -> (fetched_at, candles, ttl_сек)
 
 
 def bot_interval(symbol, mode):
@@ -470,42 +620,65 @@ def bot_interval(symbol, mode):
 
 def get_raw_candles(symbol, interval="15"):
     """[[ts,o,h,l,c]...] за RAW_DAYS дней на заданном таймфрейме. Кэш:
-    память + json на диске (10 мин). Один источник для графика и симуляции."""
+    память + json на диске (10 мин). Один источник для графика и симуляции.
+
+    Догрузка ограничена бюджетом FETCH_BUDGET: страница не должна ждать, пока
+    биржа молчит (20 запросов по 10 секунд — это до 200 секунд ожидания).
+    Если бюджет вышел или биржа не ответила, отдаём то, что успели скачать
+    (иногда пусто), неполное на диск не пишем и в памяти держим недолго."""
+    if not valid_symbol(symbol) or not str(interval).isdigit():
+        return []
     key = (symbol, interval)
     now = time.time()
     cached = _raw_cache.get(key)
-    if cached and now - cached[0] < 600:
+    if cached and now - cached[0] < cached[2]:
         return cached[1]
-    disk = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        f"cache_{symbol}_{interval}.json")
-    if os.path.exists(disk) and now - os.path.getmtime(disk) < 600:
+    disk = safe_path(os.path.dirname(os.path.abspath(__file__)),
+                     f"cache_{symbol}_{interval}.json")
+    if disk and os.path.exists(disk) and now - os.path.getmtime(disk) < 600:
         with open(disk) as fh:
             data = json.load(fh)
-        _raw_cache[key] = (now, data)
+        _raw_cache[key] = (now, data, 600)
         return data
     start = int((now - RAW_DAYS * 86400) * 1000)
-    out, cursor = [], int(now * 1000)
+    deadline = now + FETCH_BUDGET
+    out, cursor, full = [], int(now * 1000), False
     for _ in range(20):
-        r = session.get_kline(category="linear", symbol=symbol,
-                              interval=interval, limit=1000, end=cursor)
-        rows = r["result"]["list"]
+        if time.time() > deadline:   # бюджет вышел — работаем с тем, что есть
+            print(f"Bybit: не уложились в {FETCH_BUDGET}с по {symbol}/{interval}м,"
+                  f" отдаём частичные данные ({len(out)} свечей)")
+            break
+        try:
+            r = bybit().get_kline(category="linear", symbol=symbol,
+                                  interval=interval, limit=1000, end=cursor)
+            rows = r["result"]["list"]
+        except Exception as e:       # биржа молчит/таймаут — не роняем страницу
+            print(f"Bybit не ответил по {symbol}/{interval}м: {e}")
+            break
         if not rows:
+            full = True
             break
         out = rows[::-1] + out
         oldest = int(rows[-1][0])
         if oldest <= start or oldest >= cursor:
+            full = True
             break
         cursor = oldest - 1
+    else:
+        full = True                  # 20 запросов — штатный предел, как и раньше
     data = [[int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4])]
             for x in out if int(x[0]) >= start]
-    with open(disk, "w") as fh:
-        json.dump(data, fh)
-    _raw_cache[key] = (now, data)
+    if full and disk:                # на диск — только полную историю
+        with open(disk, "w") as fh:
+            json.dump(data, fh)
+    _raw_cache[key] = (now, data, 600 if full else 60)
     return data
 
 
 @app.route("/api/candles/<symbol>/<mode>")
 def api_candles(symbol, mode):
+    if not valid_symbol(symbol) or not valid_mode(mode):
+        return jsonify([]), 404
     raw = get_raw_candles(symbol, bot_interval(symbol, mode))
     start = (time.time() - CANDLE_DAYS * 86400) * 1000
     return jsonify([
@@ -543,6 +716,9 @@ def build_sim(symbol, mode):
     bars_per_day = max(4, 1440 // int(interval))
     g = cfg_to_genome(p, mode)
     candles = get_raw_candles(symbol, interval)
+    if not candles:   # биржа не ответила — пустой результат не кэшируем
+        return dict(events=[], n=0, wins=0, total_pnl=0,
+                    note="данные греются, обновите страницу через минуту")
     pre = e2.prep(candles)
     pct5 = xd.fetch_daily_pct5()
     aux = e12.make_aux_builder(pct5, bars_per_day)(symbol, candles)
@@ -574,19 +750,25 @@ def build_sim(symbol, mode):
 
 @app.route("/api/sim/<symbol>/<mode>")
 def api_sim(symbol, mode):
+    if not valid_symbol(symbol) or not valid_mode(mode):
+        return jsonify(dict(events=[], n=0, wins=0, total_pnl=0,
+                            note="нет такого бота")), 404
     return jsonify(build_sim(symbol, mode))
 
 
 _finalstats_cache = {}
-FINAL_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
 @app.route("/api/finalstats/<symbol>")
 def api_finalstats(symbol):
     """Помесячная (любое окно за 3.2г) и погодовая (3 года) статистика
     финального бота — из предпосчитанного finalize_final_bots.py."""
+    if not valid_symbol(symbol):
+        return jsonify(dict(available=False, error="нет такой монеты")), 404
     cached = _finalstats_cache.get(symbol)
-    path = os.path.join(FINAL_DATA_DIR, f"final_{symbol}.json")
+    path = safe_path(FINAL_DATA_DIR, f"final_{symbol}.json")
+    if path is None:
+        return jsonify(dict(available=False, error="нет такой монеты")), 404
     mtime = os.path.getmtime(path) if os.path.exists(path) else None
     if cached and cached[0] == mtime:
         return jsonify(cached[1])
@@ -615,7 +797,9 @@ def parse_ts(line):
 
 @app.route("/api/trades/<symbol>/<mode>")
 def api_trades(symbol, mode):
-    log_file = os.path.join(BOT_DIR, f"bot_{symbol}_{mode}.log")
+    log_file = bot_log_path(symbol, mode)
+    if log_file is None:
+        return jsonify(dict(error="нет такого бота")), 404
     events, cycles = [], []
     if os.path.exists(log_file):
         with open(log_file, encoding="utf-8", errors="replace") as fh:
@@ -648,7 +832,9 @@ def api_trades(symbol, mode):
 
 @app.route("/api/status/<symbol>/<mode>")
 def api_status(symbol, mode):
-    log_file = os.path.join(BOT_DIR, f"bot_{symbol}_{mode}.log")
+    log_file = bot_log_path(symbol, mode)
+    if log_file is None:
+        return jsonify(dict(active=False, tail=[], error="нет такого бота")), 404
     tail = []
     if os.path.exists(log_file):
         with open(log_file, encoding="utf-8", errors="replace") as fh:
@@ -678,6 +864,8 @@ def _warmup():
 
 
 if __name__ == "__main__":
-    import threading
     threading.Thread(target=_warmup, daemon=True).start()
-    app.run(host="127.0.0.1", port=8000, debug=False)
+    # порт через переменную окружения — чтобы поднять вторую копию для проверки,
+    # не выключая ту, что уже работает на 8000
+    app.run(host="127.0.0.1", port=int(os.environ.get("SITE_PORT", "8000")),
+            debug=False)

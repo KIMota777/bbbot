@@ -11,11 +11,22 @@
   pattern_gate (0=выкл, 1=требовать совпадающий паттерн, 2=требовать
                 отсутствие противоположного — мягкий вариант)
 
-Итог — ОДИН лучший конфиг на монету (не отдельно normal/bear). После отбора
-конфига прогоняется лестница плечей x5..x15 на полных 3.2 годах.
+Итог — ОДИН лучший конфиг на монету (не отдельно normal/bear).
 
-Использует общий генетический харнесс evolution4.run_version (тот же, что
-использовался в v4/v5/v6) — экономит код, walk-forward та же (3 экзамена).
+ПЛЕЧО (правка протокола 08.2026). Раньше здесь было написано «после отбора
+конфига прогоняется лестница плечей x5..x15 на полных 3.2 годах» — и так и
+делалось: плечо подбиралось по всей истории, включая экзаменационное окно, а
+сам отбор и ворота риска шли на x5. Теперь плечо известно ДО оценки, выбирается
+лестницей по ОБУЧАЮЩЕЙ части (e4.choose_leverage по ПЛАВАЮЩЕЙ просадке), и на
+нём же считаются фитнес, валидация, экзамен и ворота honest_eval. Лестница на
+полных 3.2 годах осталась, но она — только отчёт, выбирать по ней нельзя.
+
+Использует общий генетический харнесс evolution4.run_version (тот же, что в
+v4/v5) — экономит код. Walk-forward в нём больше не «3 экзамена»: кандидат
+оценивается только на окнах строго после своего обучения, победитель
+выбирается по окну валидации, приёмка смотрит на отдельное экзаменационное
+окно (e4.choose_winner). v6 и v9 общий харнесс НЕ используют — у них свой,
+починенный отдельно.
 """
 
 import json
@@ -160,11 +171,21 @@ def build_aux_full(sym, candles, pct5):
 
 
 def pick_leverage(ladder):
-    best = ladder[0]
-    for row in ladder:
-        if row["dd"] <= DD_CAP * 100:
-            best = row
-    return best["lev"]
+    """Наибольшее плечо с просадкой <= DD_CAP и без слива.
+
+    ВАЖНО: ladder сюда обязана приходить с ОБУЧАЮЩЕЙ части истории
+    (e4.train_slice). Плечо — подгоняемый параметр не хуже любого гена: если
+    лестницу считать на полной истории, порог просадки подбирается в том числе
+    по экзаменационному окну, на котором конфиг потом «сдаёт экзамен». Раньше
+    здесь была именно полная история.
+
+    Сама проверка живёт в e4.choose_leverage (одна на все волны): она смотрит
+    на ПЛАВАЮЩУЮ просадку, дисквалифицирует ступени со сливом и — главное — не
+    молчит, когда порог не проходит ни одна ступень. Здесь возвращается только
+    номер плеча; кому нужны предупреждения, тот зовёт e4.choose_leverage
+    напрямую (main ниже так и делает).
+    """
+    return e4.choose_leverage(ladder, DD_CAP)["lev"]
 
 
 def main():
@@ -202,25 +223,63 @@ def main():
         filt = make_filter7(g, aux)
         print(f"\n{sym}: direction={g['direction']} regime_gate={g['regime_gate']} "
               f"pattern_gate={g['pattern_gate']}")
-        ladder = []
-        for lev in LEVS:
-            old = e2.LEV
-            e2.LEV = lev
-            try:
-                r = e2.run5(candles, pre, g, entry_filter=filt)
-            finally:
-                e2.LEV = old
-            ret = (r["balance"] / e2.START - 1) * 100
-            st = e2.stats(r)
-            print(f"  x{lev:<3} | {ret:+8.1f}% | мед.мес {st['med']:+5.2f}% | "
-                  f"DD {r['max_dd']*100:5.1f}% | слив {'ДА' if r['ruined'] else 'нет'} "
-                  f"| сделок {r['trades']}")
-            ladder.append(dict(lev=lev, ret=round(ret, 1), med=round(st["med"], 2),
-                               dd=round(r["max_dd"] * 100, 1), ruined=r["ruined"],
-                               trades=r["trades"]))
-        rec_lev = pick_leverage(ladder)
-        print(f"  -> рекомендованное плечо: x{rec_lev}")
-        final[sym] = dict(genome=g, ladder=ladder, rec_lev=rec_lev,
+
+        # обучающая часть = префикс истории, поэтому индексы aux совпадают и
+        # резать aux не нужно — фильтр обращается только к i < cut
+        train = e4.train_slice(candles)
+        pre_tr = e2.prep(train)
+
+        def run_ladder(cnd, pre_c, title):
+            rows = []
+            for lev in LEVS:
+                old = e2.LEV
+                e2.LEV = lev
+                try:
+                    r = e2.run5(cnd, pre_c, g, entry_filter=filt)
+                finally:
+                    e2.LEV = old
+                ret = (r["balance"] / e2.START - 1) * 100
+                st = e2.stats(r)
+                ddf = r.get("max_dd_float")
+                print(f"  [{title}] x{lev:<3} | {ret:+8.1f}% | "
+                      f"мед.мес {st['med']:+5.2f}% | DD закр "
+                      f"{r['max_dd']*100:5.1f}% | DD плав "
+                      f"{'н/д' if ddf is None else '%5.1f%%' % (ddf*100)} | "
+                      f"слив {'ДА' if r['ruined'] else 'нет'} "
+                      f"| сделок {r['trades']}")
+                rows.append(dict(lev=lev, ret=round(ret, 1),
+                                 med=round(st["med"], 2),
+                                 dd=round(r["max_dd"] * 100, 1),
+                                 dd_float=(round(ddf * 100, 1)
+                                           if ddf is not None else None),
+                                 ruined=r["ruined"], trades=r["trades"]))
+            return rows
+
+        # Плечо. Для принятого кандидата оно уже выбрано ВНУТРИ отбора
+        # (e4.run_version): именно на нём считались фитнес, экзамен и ворота
+        # риска, и менять его здесь значило бы отправить в конфиг плечо, на
+        # котором конфиг ничего не сдавал. Для отклонённого кандидата в конфиг
+        # идёт база — её плечо выбирается тут же, по обучающей части.
+        ladder_train = run_ladder(train, pre_tr, "обучение")
+        if rec["adopt"]:
+            rec_lev, lev_ok, lev_warns = rec["lev"], rec["lev_confirmed"], []
+            print(f"  плечо x{rec_lev} — то же, на котором шли экзамен и "
+                  f"ворота (взято из отбора)")
+        else:
+            ch = e4.choose_leverage(ladder_train, DD_CAP)
+            rec_lev, lev_ok, lev_warns = ch["lev"], ch["ok"], ch["warns"]
+        for w in lev_warns:
+            print(f"  ВНИМАНИЕ: {w}")
+        # полная лестница считается ПОСЛЕ выбора и нужна только для отчёта:
+        # смотреть на неё можно, выбирать по ней нельзя
+        ladder = run_ladder(candles, pre, "вся история")
+        print(f"  -> рекомендованное плечо: x{rec_lev}"
+              f"{'' if lev_ok else ' (НЕ ПОДТВЕРЖДЕНО просадкой)'} "
+              f"(обучающая часть: {len(train)} баров из {len(candles)})")
+        final[sym] = dict(genome=g, ladder=ladder, ladder_train=ladder_train,
+                          rec_lev=rec_lev, lev_picked_on="train",
+                          lev_confirmed=lev_ok, lev_warnings=lev_warns,
+                          exam_lev=rec["lev"],
                           base_oos=rec["base_oos"], cand_oos=rec["cand_oos"],
                           adopt=rec["adopt"])
 

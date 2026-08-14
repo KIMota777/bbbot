@@ -1,7 +1,21 @@
 # -*- coding: utf-8 -*-
 """v9: генетический отбор параметров 6 сигнальных сетапов BTC
-(signal_engine.py). Walk-forward из 3 экзаменов (как во всех волнах),
-затем лестница плечей x10/x15/x20 на полных 3.2 годах.
+(signal_engine.py). Walk-forward, затем лестница плечей x10/x15/x20 на полных
+3.2 годах.
+
+ПРОТОКОЛ (правка 08.2026, второй круг). Было «walk-forward из 3 экзаменов»: на
+деле кандидат оценивался на всех трёх OOS-окнах, включая лежащие внутри его
+обучения, и среднее по ним служило и выбором победителя, и заявленным
+результатом. Теперь победитель выбирается по окну валидации (первое окно после
+его обучения), а печатается и записывается балл отдельного экзаменационного
+окна (e4.choose_winner). Кандидаты последнего фолда выбывают — экзаменовать их
+нечем, кроме будущего.
+
+Плечо здесь по-прежнему рекомендуется по лестнице на ПОЛНОЙ истории, то есть
+по окну, которое считается экзаменационным. Это известная незакрытая дыра
+(сигнальные сетапы живут отдельно от ботовых волн, где выбор идёт по обучающей
+части); пока она не закрыта, rec_lev из этого файла — справка, а не
+рекомендация к запуску.
 
 Отличия методологии от ботовых волн:
   - НЕТ переноса в безубыток вообще (урок v8);
@@ -86,33 +100,54 @@ def main():
     for setup in se.SETUPS:
         print(f"\n================ {setup} ================")
         candidates = []
+        base_key = tuple(se.DEFAULTS[k] for k in GENES9)
         for fi, (a, b, e_) in enumerate(folds):
             scored = evolve_setup(setup, c4, ctx, c15, ts15, (a, b),
                                   f"{setup[:10]}-f{fi+1}")
             seen = set()
             for f_, g in scored:
                 key = tuple(g[k] for k in GENES9)
-                if key not in seen:
-                    seen.add(key)
-                    candidates.append(g)
+                # дефолт — точка отсчёта, а не соперник; фолд запоминается
+                # вместе с геномом, иначе не узнать, какие окна для этого
+                # кандидата уже «просмотрены» обучением
+                if key == base_key or key in seen:
+                    continue
+                seen.add(key)
+                candidates.append((fi, g))
                 if len(seen) == 3:
                     break
 
-        def agg(g):
-            sc = []
-            for (a, b, e_) in folds:
-                r = se.run_setup(setup, g, c4, ctx, c15, ts15, GA_LEV,
-                                 signal_range=(b, e_))
-                sc.append(se.oos_score(r))
-            return sum(sc) / len(sc), sc
+        def score_on(g, wi):
+            """Балл сетапа на ОДНОМ OOS-окне.
 
-        best = None
-        for g in candidates:
-            m, sc = agg(g)
-            if best is None or m > best[0]:
-                best = (m, sc, g)
-        m, sc, g_win = best
-        print(f"ЛУЧШИЙ {setup}: средний OOS {m:+.2f} | "
+            Здесь был свой протекающий харнесс — agg(g) по всем трём окнам с
+            argmax по среднему. Фолды anchored, поэтому для кандидата третьего
+            фолда два «экзамена» из трёх лежали внутри его обучения, и то же
+            среднее решало, что печатать как результат волны. v9 общий харнесс
+            e4.run_version не использует, так что правка e4 её не чинила —
+            цикл разведён здесь (правка второго круга, 08.2026).
+            """
+            a, b, e_ = folds[wi]
+            r = se.run_setup(setup, g, c4, ctx, c15, ts15, GA_LEV,
+                             signal_range=(b, e_))
+            return se.oos_score(r)
+
+        # база = дефолтные параметры сетапа (тот же геном, которым засеяна
+        # популяция): без неё не с чем сравнивать отрывы на разных окнах
+        base_g = dict(se.DEFAULTS)
+        base_sc = [score_on(base_g, wi) for wi in range(len(folds))]
+        print(f"БАЗА {setup}: OOS по окнам {['%+.2f' % s for s in base_sc]} "
+              f"(экзамен = окно {e4.exam_window_index(len(folds))+1}: "
+              f"{base_sc[-1]:+.2f})")
+
+        pick = e4.choose_winner(candidates, base_sc, score_on)
+        g_win = pick["genome"]
+        m = pick["exam_score"]
+        # честные окна кандидата: валидационное и все последующие
+        sc = [score_on(g_win, wi) for wi in range(pick["train_fold"],
+                                                  len(folds))]
+        print(f"ЛУЧШИЙ {setup}: экзамен {m:+.2f} против базы "
+              f"{pick['base_exam']:+.2f} | честные окна кандидата "
               f"{['%+.2f' % s for s in sc]}")
 
         ladder = []
@@ -144,7 +179,19 @@ def main():
         print(f"  -> рекомендованное плечо: x{rec}"
               f"{' (осторожно: на 15-20 просадка велика)' if caution else ''}")
 
+        # oos_mean больше НЕ среднее трёх окон: это балл экзаменационного окна
+        # (в json волны 08.2026 под этим именем лежало среднее — поля protocol
+        # и base_folds не дают перепутать их при чтении рядом)
         results[setup] = dict(genome=g_win, oos_mean=m, oos_folds=sc,
+                              protocol=("leaky-3window-mean" if pick["leaky"]
+                                        else "honest-val-then-exam"),
+                              base_folds=base_sc, base_exam=pick["base_exam"],
+                              val_window=pick["val_window"],
+                              val_score=pick["val_score"],
+                              val_edge=pick["val_edge"],
+                              exam_window=pick["exam_window"],
+                              train_fold=pick["train_fold"],
+                              skipped_candidates=pick["skipped"],
                               ladder=ladder, rec_lev=rec, caution=caution)
 
     with open("evolution9_winners.json", "w", encoding="utf-8") as fh:

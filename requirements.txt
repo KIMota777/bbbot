@@ -1,5 +1,21 @@
-pybit>=5.7.0
-flask>=3.0
+# Установка: pip install -r requirements.txt
+# Версии — нижние границы того, на чём проект реально проверялся
+# (в рабочем окружении: pybit 5.17.0, flask 3.1.3, yfinance 1.6.0,
+#  requests 2.34.2, mcp 2.0.0, pandas 3.0.5, numpy 2.5.2).
+
+pybit>=5.7.0        # торговое API Bybit (боты, догрузка свечей для сайта)
+flask>=3.0          # локальный сайт webapp/app.py
+requests>=2.31      # RSS-ленты новостей, уведомления в Telegram
+
+# внешние данные: S&P 500 / DXY / золото.
+# pandas и numpy мы НЕ импортируем ни в одном файле — их тянет yfinance.
+# Но yfinance отдаёт именно pandas-объект, и мы работаем с ним напрямую:
+# df.empty, df.index, df["Close"].values.ravel() (ext_data.py,
+# build_pnl_curves.py, vs_benchmark.py). Значит, ломающее изменение их API
+# ломает нас, а не только yfinance — поэтому нижние границы стоят здесь,
+# хотя строчки "import pandas" в проекте нет.
 yfinance>=0.2
-requests>=2.31
-mcp>=2.0
+pandas>=2.0
+numpy>=1.24
+
+mcp>=2.0            # новостной фон через MCP-сервер (news_mcp.py)

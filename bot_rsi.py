@@ -17,9 +17,15 @@ Kill switch: MAX_CONSEC_LOSSES убыточных циклов подряд -> �
 В DRY_RUN бот ведёт виртуальную позицию по тем же правилам и пишет лог.
 """
 
+import json
 import logging
+import os
 import sys
+import tempfile
 import time
+import urllib.parse
+import urllib.request
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 
 from pybit.unified_trading import HTTP
 
@@ -28,6 +34,133 @@ import gridlib
 import indicators
 import patterns
 import smc
+
+# Ставки издержек — те же, что в честном бэктесте (evolution2), чтобы
+# виртуальный DRY_RUN не расходился с симуляцией. Константы дублируются
+# намеренно: живой бот не должен тянуть тяжёлый модуль эволюции.
+TAKER = 0.00055     # тейкерская комиссия Bybit
+MAKER = 0.0002      # мейкерская (лимитные колена сетки и тейк-профит)
+SLIP = 0.0003       # проскальзывание рыночного исполнения
+FUND_8H = 0.0001    # фандинг за 8 часов удержания
+
+# Консоль Windows по умолчанию живёт не в UTF-8 (cp866/cp1251): русский лог в
+# ней либо превращается в кракозябры, либо роняет процесс UnicodeEncodeError'ом
+# прямо в момент, когда надо читать сообщение об аварии. Файл лога уже пишется
+# в utf-8 — приводим к нему же и консоль: сперва кодовую страницу самого окна
+# (иначе правильные utf-8 байты нарисуются мусором), потом потоки Python.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    except Exception:       # noqa: BLE001 — вывод не повод не торговать
+        pass
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
+
+
+class Notifier:
+    """Канал «владельцу» в Telegram.
+
+    Молчит и не падает, если TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID не заданы:
+    отсутствие уведомлений — не повод останавливать торговлю. По той же
+    причине сетевые ошибки Telegram гасятся в предупреждение.
+
+    Ключ + min_gap защищают от спама: события вроде «биржа не отвечает»
+    повторяются каждые POLL_SECONDS, и без глушилки чат станет нечитаемым
+    ровно тогда, когда его надо читать внимательнее всего.
+    """
+
+    API = "https://api.telegram.org/bot{}/sendMessage"
+
+    def __init__(self, prefix, log):
+        self.token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        self.chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+        self.prefix = prefix
+        self.log = log
+        self._sent = {}          # ключ события -> monotonic последней отправки
+        if not (self.token and self.chat):
+            self.log.info("Telegram-уведомления выключены "
+                          "(нет TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)")
+
+    def send(self, text, key=None, min_gap=None):
+        if key is not None:
+            gap = config.NOTIFY_MIN_GAP_SEC if min_gap is None else min_gap
+            now = time.monotonic()
+            if gap and now - self._sent.get(key, -1e9) < gap:
+                return False
+            self._sent[key] = now
+        if not (self.token and self.chat):
+            return False
+        try:
+            data = urllib.parse.urlencode(
+                {"chat_id": self.chat, "text": f"{self.prefix} {text}",
+                 "disable_web_page_preview": "true"}).encode()
+            with urllib.request.urlopen(
+                    urllib.request.Request(self.API.format(self.token), data=data),
+                    timeout=10) as resp:
+                resp.read()
+            return True
+        except Exception as e:      # noqa: BLE001 — канал связи не критичен
+            self.log.warning("Telegram недоступен: %s", e)
+            return False
+
+
+class _EntryGate:
+    """Файл-замок в STATE_DIR: один вход на счёт за раз (см. RsiGridBot.entry_gate)."""
+
+    def __init__(self, bot):
+        self.bot = bot
+        self.held = False
+
+    def __enter__(self):
+        if config.DRY_RUN:
+            return self        # бумажные боты не делят один кошелёк
+        path = self.bot._lock_path()
+        deadline = time.monotonic() + self.bot.LOCK_WAIT_SEC
+        while True:
+            try:
+                os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+                # O_EXCL — атомарное «создать, если нет» и на Windows, и на Linux
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, f"{os.getpid()} {self.bot.symbol}".encode())
+                os.close(fd)
+                self.held = True
+                return self
+            except FileExistsError:
+                try:
+                    age = time.time() - os.path.getmtime(path)
+                except OSError:
+                    age = 0
+                if age > self.bot.LOCK_STALE_SEC:
+                    self.bot.log.warning("Замок входа брошен (%.0f c) — снимаю", age)
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+                    continue
+                if time.monotonic() >= deadline:
+                    self.bot.log.warning(
+                        "Замок входа занят дольше %d c — вхожу без очереди "
+                        "(потолок маржи может быть посчитан по устаревшим "
+                        "данным)", self.bot.LOCK_WAIT_SEC)
+                    return self
+                time.sleep(0.2)
+            except OSError as e:
+                self.bot.log.warning("Замок входа недоступен (%s) — вхожу "
+                                     "без очереди", e)
+                return self
+
+    def __exit__(self, *exc):
+        if self.held:
+            try:
+                os.remove(self.bot._lock_path())
+            except OSError:
+                pass
+            self.held = False
+        return False
 
 
 def calc_rsi(closes, period):
@@ -80,16 +213,25 @@ class RsiGridBot:
             ],
         )
         self.log = logging.getLogger(f"{symbol}-{mode}")
+        self.notifier = Notifier(f"[{symbol} {mode}]", self.log)
 
         self.session = HTTP(testnet=config.TESTNET,
                             api_key=config.API_KEY, api_secret=config.API_SECRET)
         info = self.session.get_instruments_info(
             category="linear", symbol=symbol)["result"]["list"][0]
         f = info["lotSizeFilter"]
-        self.qty_step = float(f["qtyStep"])
+        self.qty_step = Decimal(str(f["qtyStep"]))
         self.min_qty = float(f["minOrderQty"])
-        tick = info["priceFilter"]["tickSize"]
-        self.price_dec = len(tick.split(".")[1]) if "." in tick else 0
+        # минимальный НОМИНАЛ заявки (у всех пяти монет 5 USDT). Проверять
+        # только minOrderQty мало: 0.001 BTC проходит по количеству, но заявка
+        # на 1 USDT будет отклонена биржей — и бот считал бы себя в позиции.
+        self.min_notional = float(f.get("minNotionalValue") or 0)
+        # Шаг цены хранится как Decimal, а не как «число знаков после точки».
+        # tickSize у BTC = "0.10", у SOL = "0.010": по числу знаков получалось
+        # бы 2 и 3 знака, и цена 60123.45 (или 142.155) прошла бы форматирование,
+        # но НЕ кратна шагу — биржа отклоняет такой ордер (10001 Invalid price).
+        self.tick = Decimal(str(info["priceFilter"]["tickSize"]))
+        self.price_dec = max(0, -self.tick.as_tuple().exponent)
 
         # таймфрейм — атрибут КОНКРЕТНОГО бота, не глобальная константа: в
         # портфеле могут одновременно жить боты на 15m и на 4ч (Bybit: "240").
@@ -98,13 +240,22 @@ class RsiGridBot:
         # сравнивали бы движение с ложным окном волатильности.
         self.interval = str(self.p.get("interval", config.INTERVAL))
         self.interval_ms = int(self.interval) * 60 * 1000
+        # сколько свечей бота укладывается в интервал фандинга (8ч). Считается
+        # от РЕАЛЬНОГО таймфрейма, а не от константы движка (там 32 = 8ч в
+        # 15m): на 4ч-боте фандинг иначе начислялся бы в 16 раз чаще.
+        self.bars_8h = max(1, 8 * 60 // int(self.interval))
         self.atr_period = self.p.get("atr_period", max(4, 1440 // int(self.interval)))
 
         levels = self.p.get("levels", config.GRID_LEVELS)
         mult = self.p.get("mult", config.GRID_MULT)
-        w = [mult ** k for k in range(levels)]
-        self.leg_weights = [x / sum(w) for x in w]
         self.levels = levels
+        self.mult = mult
+        # веса колен считает gridlib — тот же код, что и движок отбора
+        # (evolution2.run5). Раньше бот считал их сам, [mult**k], и ген
+        # grid_w_atr_k из боевого конфига LTC был для него невидим: отбор
+        # проверял сетку, которая дышит с волатильностью, а торговала бы
+        # статическая. Базовые веса (k=0) тождественны прежней формуле.
+        self.leg_weights = gridlib.leg_weights(mult, levels, None, None, 0.0)
         # реинвест: виртуальный капитал в DRY_RUN (в реале — кошелёк биржи)
         self.virtual_balance = config.START_BALANCE
         self._equity_cache = (0.0, None)  # (моно-время, значение)
@@ -151,14 +302,20 @@ class RsiGridBot:
         self.grid_span = self.p.get("grid_span", gridlib.OFF10["grid_span"])
         self.grid_spread = self.p.get("grid_spread", gridlib.OFF10["grid_spread"])
         self.grid_atr_k = self.p.get("grid_atr_k", gridlib.OFF10["grid_atr_k"])
+        self.grid_w_atr_k = self.p.get("grid_w_atr_k", gridlib.OFF10["grid_w_atr_k"])
         self.grid_retune = self.p.get("grid_retune", gridlib.OFF10["grid_retune"])
         self.tp_atr_k = self.p.get("tp_atr_k", gridlib.OFF10["tp_atr_k"])
         self.trail_k = self.p.get("trail_k", gridlib.OFF10["trail_k"])
         self.trail_start = self.p.get("trail_start", gridlib.OFF10["trail_start"])
-        self.needs_atr_ref = bool(self.grid_atr_k or self.tp_atr_k)
+        # список генов, которым нужна «норма» ATR, обязан совпадать с движком
+        # (evolution2.run5): забытый ген молча умирает — vol_factor вернёт 1.0
+        self.needs_atr_ref = bool(self.grid_atr_k or self.tp_atr_k
+                                  or self.grid_w_atr_k)
         # Новостей здесь НЕТ и быть не должно: фьючерсная сетка торгует
-        # ровно то, что проверяет бэктест. Новостной фон подключён к
-        # спотовому боту (bot_spot.py) — см. docs/NEWS_STRATEGY.md.
+        # ровно то, что проверяет бэктест, а историю новостей движок отбора
+        # воспроизводить не умеет. Сам новостной фон реализован (news_mcp.py,
+        # newsfeed.py) и виден на витрине, но НИ К ОДНОМУ торгующему боту не
+        # подключён — спотового бота в проекте нет.
         self._last_pushed = (None, None)   # чтобы не слать один и тот же SL/TP
         # направление: новый числовой ген direction (0=обе/1=лонг/2=шорт)
         # приоритетнее старого строкового dir ("B"/"L"/"S"), которым были
@@ -182,18 +339,156 @@ class RsiGridBot:
 
         self.last_candle_ts = 0
         self.pos = None
+        # какое расхождение с биржей уже разобрано: (сторона, размер, время
+        # открытия). Нужно, чтобы одна и та же ручная позиция не ставила
+        # 24-часовую паузу заново на КАЖДОМ цикле (см. handle_orphan).
+        self.orphan_key = None
         self.consec_losses = 0
         self.paused_until = 0     # kill switch, unix ms
         self.cooldown_until = 0   # турбо: пауза после стопа, unix ms
+        self.halted = False       # стоп по просадке: снимается только руками
+        self.peak_balance = self.virtual_balance   # пик капитала для просадки
+        self.day_key = self._day_key()
+        self.day_start_balance = self.virtual_balance
+        self.day_pnl = 0.0
+        self.api_errors = 0        # подряд идущие ошибки цикла
+        self.state_file = os.path.join(
+            config.STATE_DIR, f"botstate_{self.symbol}_{self.mode}.json")
+        self.load_state()
+
+    # ---------- состояние между запусками ----------
+
+    @staticmethod
+    def _day_key():
+        """Календарные сутки UTC — общая точка отсчёта для дневного лимита."""
+        return int(time.time()) // 86400
+
+    def load_state(self):
+        """Капитал, пауза kill switch, серия убытков, дневной лимит и ОТКРЫТАЯ
+        позиция должны переживать перезапуск: иначе после рестарта виртуальный
+        капитал возвращается к стартовому, 24-часовая пауза после трёх убытков
+        снимается досрочно (ровно та защита, ради которой она вводилась), а
+        позиция на бирже остаётся без ведения — без стопа, тейка и таймаута."""
+        # первый ли это запуск: в реале капитал такого бота ещё не известен и
+        # его надо взять с кошелька, а не с бумажного START_BALANCE
+        self._fresh_state = True
+        try:
+            with open(self.state_file, encoding="utf-8") as fh:
+                st = json.load(fh)
+        except FileNotFoundError:
+            return              # обычный первый запуск — это не авария
+        except (OSError, ValueError) as e:
+            # Файл ЕСТЬ, но не читается: сорванная запись, полный диск, чужая
+            # правка. Молчаливый выход отсюда неотличим от первого запуска —
+            # и тогда рестарт снимает 24-часовую паузу, стоп по просадке и
+            # ведение позиции ровно в момент, когда защита нужнее всего.
+            # Поэтому: кричим, сохраняем испорченный файл для разбора и
+            # запрещаем НОВЫЕ входы (halted). Открытую позицию это не бросает:
+            # её подхватит сверка с биржей, а снять запрет может человек,
+            # убрав "halted" из файла состояния.
+            self.log.error("ФАЙЛ СОСТОЯНИЯ ИСПОРЧЕН (%s): %s. Новые входы "
+                           "запрещены до разбора человеком.",
+                           self.state_file, e)
+            bad = f"{self.state_file}.bad-{int(time.time())}"
+            try:
+                os.replace(self.state_file, bad)
+                self.log.error("Испорченный файл сохранён как %s", bad)
+            except OSError as e2:
+                self.log.error("Не удалось отложить испорченный файл: %s", e2)
+            self.notifier.send(
+                f"файл состояния испорчен ({e}) — новые входы запрещены, "
+                f"копия: {bad}", key="state_broken")
+            self.halted = True
+            return
+        self._fresh_state = False
+        self.virtual_balance = float(st.get("virtual_balance",
+                                            self.virtual_balance))
+        self.consec_losses = int(st.get("consec_losses", 0))
+        self.paused_until = int(st.get("paused_until", 0))
+        self.cooldown_until = int(st.get("cooldown_until", 0))
+        self.halted = bool(st.get("halted", False))
+        self.peak_balance = float(st.get("peak_balance", self.virtual_balance))
+        self.day_key = int(st.get("day_key", self.day_key))
+        self.day_start_balance = float(st.get("day_start_balance",
+                                              self.virtual_balance))
+        self.day_pnl = float(st.get("day_pnl", 0.0))
+        # последняя ОБРАБОТАННАЯ закрытая свеча: без неё рестарт заново
+        # прогоняет ту же свечу (в DRY_RUN — второй раз исполняет сетку и
+        # искажает кривую капитала, в реале — заново дёргает вход/лимиты)
+        self.last_candle_ts = int(st.get("last_candle_ts", 0))
+        self.orphan_key = st.get("orphan_key")
+        pos = st.get("pos")
+        if pos:
+            # кортежи после JSON становятся списками — возвращаем как было,
+            # иначе распаковка `ap, aq = ...` начнёт зависеть от источника
+            pos["fills"] = [tuple(x) for x in pos.get("fills", [])]
+            pos["adds"] = [tuple(x) for x in pos.get("adds", [])]
+            self.pos = pos
+        left = (self.paused_until - time.time() * 1000) / 3600000
+        self.log.info("Состояние восстановлено: капитал $%.2f, убытков подряд "
+                      "%d%s%s%s", self.virtual_balance, self.consec_losses,
+                      f", пауза ещё {left:.1f}ч" if left > 0 else "",
+                      ", ОСТАНОВЛЕН по просадке" if self.halted else "",
+                      f", позиция {self.pos['side']}" if self.pos else "")
+
+    def save_state(self):
+        """Запись АТОМАРНАЯ: временный файл рядом + os.replace.
+
+        Обычная запись «на месте» оставляет обрезанный JSON, если процесс
+        умрёт (или сервер перезагрузят) между открытием файла и сбросом
+        буфера. Разбирать такой файл нечем — бот стартует с чистого листа и
+        теряет ведение живой позиции. os.replace на одном томе атомарен и на
+        Windows, и на Linux."""
+        data = dict(virtual_balance=round(self.virtual_balance, 6),
+                    consec_losses=self.consec_losses,
+                    paused_until=self.paused_until,
+                    cooldown_until=self.cooldown_until,
+                    halted=self.halted,
+                    peak_balance=round(self.peak_balance, 6),
+                    day_key=self.day_key,
+                    day_start_balance=round(self.day_start_balance, 6),
+                    day_pnl=round(self.day_pnl, 6),
+                    last_candle_ts=self.last_candle_ts,
+                    orphan_key=self.orphan_key,
+                    pos=self.pos,
+                    saved_ts=int(time.time() * 1000))
+        try:
+            d = os.path.dirname(self.state_file) or "."
+            os.makedirs(d, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=d, prefix=".botstate-", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(data, fh, ensure_ascii=False)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp, self.state_file)
+            except Exception:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                raise
+        except OSError as e:
+            self.log.warning("не удалось сохранить состояние: %s", e)
 
     # ---------- утилиты ----------
 
     def rq(self, qty):
-        q = int(qty / self.qty_step) * self.qty_step
-        return float(f"{q:.10f}".rstrip("0").rstrip("."))
+        """Количество, округлённое ВНИЗ к шагу лота (Decimal: 0.3/0.1 в float
+        даёт 2.9999… и обычный int() отрезал бы целое колено)."""
+        q = (Decimal(str(qty)) / self.qty_step).to_integral_value(
+            rounding=ROUND_FLOOR) * self.qty_step
+        return float(q)
 
     def rp(self, price):
-        return f"{price:.{self.price_dec}f}"
+        """Цена, ПРИТЯНУТАЯ к сетке тика и уже готовая к отправке на биржу.
+
+        Форматирования по числу знаков мало: у BTC tickSize "0.10", у SOL
+        "0.010" — цена обязана быть кратна шагу, а не просто иметь нужное
+        число знаков после точки. Округляем к ближайшему узлу сетки (сдвиг
+        не больше половины тика, для стопа и тейка это доли базисного пункта).
+        """
+        q = (Decimal(str(price)) / self.tick).quantize(
+            Decimal(1), rounding=ROUND_HALF_UP) * self.tick
+        return f"{q:.{self.price_dec}f}"
 
     def candles(self):
         need = max(self.window,
@@ -263,6 +558,11 @@ class RsiGridBot:
     # ---------- биржа ----------
 
     def set_leverage(self):
+        if config.DRY_RUN:
+            # плечо — настройка СЧЁТА, а не ордер: в бумажном режиме менять её
+            # нельзя. Вызов и так стоит под проверкой в run(), но защита должна
+            # быть в самой функции — иначе любой новый вызов станет дырой
+            return
         try:
             self.session.set_leverage(category="linear", symbol=self.symbol,
                                       buyLeverage=str(self.p["lev"]),
@@ -271,13 +571,94 @@ class RsiGridBot:
             if "110043" not in str(e):
                 raise
 
-    def exchange_position(self):
+    def exchange_position_full(self):
+        """Сырая позиция с биржи или None. При сверке нужны не только сторона
+        и размер, но и stopLoss/takeProfit/createdTime — по ним восстанавливается
+        ведение позиции, которую бот «проспал»."""
         r = self.session.get_positions(category="linear", symbol=self.symbol)
         for pp in r["result"]["list"]:
-            size = float(pp["size"] or 0)
-            if size > 0:
-                return pp["side"], size, float(pp["avgPrice"])
-        return None, 0.0, 0.0
+            if float(pp["size"] or 0) > 0:
+                return pp
+        return None
+
+    def exchange_position(self):
+        pp = self.exchange_position_full()
+        if not pp:
+            return None, 0.0, 0.0
+        return pp["side"], float(pp["size"]), float(pp["avgPrice"])
+
+    def check_position_mode(self):
+        """positionIdx=0, которым бот шлёт все ордера, существует только в
+        одностороннем режиме (one-way). На хедж-счёте позиции живут под
+        индексами 1 и 2, и КАЖДЫЙ ордер отлетает с 10001 — бот бесконечно
+        крутит цикл ошибок, не понимая, что дело в настройке счёта."""
+        r = self.session.get_positions(category="linear", symbol=self.symbol)
+        idx = {int(p.get("positionIdx", 0) or 0) for p in r["result"]["list"]}
+        if idx - {0}:
+            raise SystemExit(
+                f"{self.symbol}: счёт в режиме хеджирования (positionIdx "
+                f"{sorted(idx)}), а бот торгует только в одностороннем. "
+                f"Bybit -> Настройки позиции -> Режим позиции -> "
+                f"«Односторонний», затем перезапусти бота.")
+
+    def wallet_snapshot(self):
+        """(equity, занятая маржа) кошелька либо None при ошибке.
+
+        Занятая маржа нужна не «для отчёта»: она включает позиции СОСЕДНИХ
+        ботов на том же счёте, и только по ней видно, влезает ли ещё один
+        вход в общий потолок."""
+        try:
+            acc = self.session.get_wallet_balance(
+                accountType="UNIFIED")["result"]["list"][0]
+            equity = float(acc["totalEquity"])
+            used = float(acc.get("totalInitialMargin") or 0)
+            return equity, used
+        except Exception as e:      # noqa: BLE001
+            # Молчаливый фолбэк на START_BALANCE — как раз тот случай, когда
+            # бот считает капитал по бумажке и может заявить объём, которого
+            # на счёте нет. Об этом обязаны узнать.
+            self.log.warning("Кошелёк недоступен (%s) — считаю капитал "
+                             "по последнему известному значению", e)
+            self.notifier.send(f"кошелёк недоступен: {e}", key="wallet")
+            return None
+
+    def cancel_own_orders(self, reason=""):
+        """Снять ТОЛЬКО свои лимитки сетки — по сохранённым orderId.
+
+        cancel_all_orders снёс бы и ручные ордера владельца по этой монете.
+        Точечная отмена дешёвая: колен максимум два-три, их id известны с
+        момента постановки.
+
+        Признак «свои id известны» — НАЛИЧИЕ ключа add_ids, а не непустой
+        список. Проверять на непустоту нельзя: функция сама опустошает список
+        после отмены, и второй же вызов (перестановка сетки, потом закрытие
+        цикла) вырождался бы в глобальный сброс — то есть сносил бы ручные
+        ордера владельца. Пустой список означает ровно то, что написано:
+        своих лимиток на бирже нет и отменять нечего. Глобальный сброс
+        остаётся только для состояния, записанного старой версией бота, где
+        ключа add_ids ещё не существовало.
+        """
+        if config.DRY_RUN:
+            return
+        pos = self.pos or {}
+        if "add_ids" in pos:
+            for oid in list(pos.get("add_ids") or []):
+                try:
+                    self.session.cancel_order(category="linear",
+                                              symbol=self.symbol, orderId=oid)
+                except Exception as e:      # noqa: BLE001
+                    # 110001 = ордера уже нет (исполнился или снят биржей)
+                    if "110001" not in str(e):
+                        self.log.warning("Не снялась лимитка %s: %s", oid, e)
+            pos["add_ids"] = []
+            return
+        try:
+            self.session.cancel_all_orders(category="linear", symbol=self.symbol)
+            if reason:
+                self.log.info("Сняты все ордера по %s (%s): свои id неизвестны",
+                              self.symbol, reason)
+        except Exception as e:      # noqa: BLE001
+            self.log.warning("Не удалось снять ордера: %s", e)
 
     # ---------- внешние сигналы ----------
 
@@ -513,6 +894,52 @@ class RsiGridBot:
 
     # ---------- цикл сделки ----------
 
+    # Замок «очередь на вход» между процессами одного счёта.
+    LOCK_WAIT_SEC = 15      # сколько ждать чужой вход, прежде чем идти без очереди
+    LOCK_STALE_SEC = 60     # после этого замок считается брошенным (процесс убит)
+
+    def _lock_path(self):
+        return os.path.join(config.STATE_DIR, "entry.lock")
+
+    def entry_gate(self):
+        """Контекст «я сейчас вхожу»: выстраивает боты одного счёта в очередь.
+
+        Потолок общей маржи (margin_allowed) считается по ответу биржи, а
+        занятая маржа там появляется только ПОСЛЕ исполнения ордера. Пять
+        ботов, стартовавших одновременно, спрашивают кошелёк в одну и ту же
+        секунду, все видят used=0 и все проходят проверку — потолка как будто
+        нет. Замок пропускает их по одному: следующий спрашивает кошелёк уже
+        после того, как предыдущий вошёл.
+
+        Замок НИКОГДА не останавливает торговлю навсегда: не дождались за
+        LOCK_WAIT_SEC, файл протух (процесс убит с замком в руках) или ФС не
+        даёт его создать — идём дальше с предупреждением. Перебор маржи в
+        редкой гонке дешевле, чем портфель, застрявший на файле-замке.
+        """
+        return _EntryGate(self)
+
+    def account_state(self, max_age=60):
+        """(equity, занятая маржа) с кэшем: в DRY_RUN — виртуальный капитал.
+
+        Кэш на минуту, потому что и вход, и риск-лимиты спрашивают одно и то
+        же, а лимит запросов к приватному API общий на весь портфель ботов.
+        """
+        if config.DRY_RUN:
+            return self.virtual_balance, 0.0
+        now = time.monotonic()
+        if self._equity_cache[1] is None or now - self._equity_cache[0] > max_age:
+            snap = self.wallet_snapshot()
+            if snap is None:
+                if self._equity_cache[1] is None:
+                    # первое же обращение и оно неудачное: считать не по чему
+                    self.log.warning("Капитал неизвестен — беру START_BALANCE "
+                                     "$%.2f как заглушку", config.START_BALANCE)
+                    snap = (config.START_BALANCE, 0.0)
+                else:
+                    snap = self._equity_cache[1]
+            self._equity_cache = (now, snap)
+        return self._equity_cache[1]
+
     def margin_total(self):
         """Маржа на цикл. "fixed" — константа (как в бэктестах, линейный
         рост); "percent" — доля текущего капитала (реинвест). Капитал:
@@ -520,72 +947,180 @@ class RsiGridBot:
         кошелька (кэш 60 сек)."""
         if config.MARGIN_MODE != "percent":
             return config.MARGIN_USDT
-        if config.DRY_RUN:
-            equity = self.virtual_balance
-        else:
-            now = time.monotonic()
-            if self._equity_cache[1] is None or now - self._equity_cache[0] > 60:
-                try:
-                    r = self.session.get_wallet_balance(accountType="UNIFIED")
-                    equity = float(r["result"]["list"][0]["totalEquity"])
-                except Exception:
-                    equity = self._equity_cache[1] or config.START_BALANCE
-                self._equity_cache = (now, equity)
-            equity = self._equity_cache[1]
+        equity, _ = self.account_state()
         return max(1.0, equity * config.MARGIN_FRACTION)
+
+    def margin_allowed(self, want):
+        """Влезает ли заявка на маржу `want` в общий потолок счёта.
+
+        Корень проблемы: при MARGIN_MODE="percent" каждый бот берёт долю от
+        ОБЩЕГО equity, и пять ботов по 25% просят 125% капитала. Комментарий
+        в config этого не остановит — останавливает эта проверка.
+
+        Считаем по потенциалу цикла (маржа ВСЕХ колен, а не только первого):
+        колена доливаются автоматически, и если места под них нет, позиция
+        останется без сетки — то есть без того, ради чего вход и делался.
+        Возвращает (можно ли, текст причины).
+        """
+        # СВЕЖИЙ ответ биржи, а не минутный кэш: соседний бот мог войти
+        # секунду назад, и по кэшу его маржа ещё «не занята». Кэш экономит
+        # запросы в рутине, но перед входом экономить на этом нельзя.
+        equity, used = self.account_state(max_age=0)
+        cap = equity * config.MAX_TOTAL_MARGIN_FRACTION
+        if used + want > cap:
+            return False, (f"занято ${used:.2f} + заявка ${want:.2f} > "
+                           f"потолка ${cap:.2f} "
+                           f"({config.MAX_TOTAL_MARGIN_FRACTION:.0%} от "
+                           f"${equity:.2f})")
+        return True, ""
+
+    def leg_margins(self, m_total, atr_now=None, atr_ref=None):
+        """Маржа по коленам. Веса берёт gridlib.leg_weights — тот же код и те
+        же данные (ATR ряда gridlib и его «норма»), что у движка отбора, иначе
+        ген grid_w_atr_k боевого конфига LTC работал бы только в бэктесте."""
+        w = gridlib.leg_weights(self.mult, self.levels, atr_now, atr_ref,
+                                self.grid_w_atr_k)
+        return w, [m_total * x for x in w]
+
+    def order_ok(self, qty, price, what):
+        """Пройдёт ли заявка минимумы биржи (количество И номинал)."""
+        if qty < self.min_qty:
+            self.log.warning("%s: объём %s < минимума %s — пропущено "
+                             "(мало маржи)", what, qty, self.min_qty)
+            return False
+        if self.min_notional and qty * price < self.min_notional:
+            self.log.warning("%s: номинал %.2f USDT < минимума %.2f — "
+                             "пропущено (биржа отклонит заявку)",
+                             what, qty * price, self.min_notional)
+            return False
+        return True
 
     def enter(self, side, price, r_low, r_high, atr, atr_now=None, atr_ref=None):
         sgn = 1 if side == "L" else -1
-        m_total = self.margin_total()
-        leg_margins = [m_total * w for w in self.leg_weights]
-        qty0 = self.rq(leg_margins[0] * self.p["lev"] / price)
-        if qty0 < self.min_qty:
-            self.log.warning("Объём %s < минимума %s — вход пропущен (мало маржи)",
-                             qty0, self.min_qty)
-            return
-        step = (config.TURBO_STEP_K * atr) if self.turbo else self.p["step"]
-        if self.turbo:
-            stop = price * (1 - sgn * self.p["stop_k"] * atr)
-        else:
-            stop = (r_low * (1 - self.p["sweep"]) if side == "L"
-                    else r_high * (1 + self.p["sweep"]))
-        # множители волатильности фиксируются на входе и дальше не меняются —
-        # так же, как в движке (иначе тейк ездил бы задним числом)
-        vol_k = gridlib.vol_factor(atr_now, atr_ref, self.grid_atr_k)
-        tp_eff = (self.p["tp"] * gridlib.tp_factor(atr_now, atr_ref,
-                                                   self.tp_atr_k)
-                  if not self.turbo else 0.0)
-        prices = gridlib.grid_prices(price, stop, sgn, self.levels, step,
-                                     self.grid_mode, self.grid_span,
-                                     self.grid_spread, vol_k)
-        adds = [(ap, self.rq(leg_margins[k + 1] * self.p["lev"] / ap))
-                for k, ap in enumerate(prices)]
+        if config.DRY_RUN:
+            # Бумажный вход исполняется по той же цене, что и в движке отбора
+            # (evolution2: px = c*(1+sgn*SLIP)) — рыночный ордер по закрытию
+            # свечи не бывает бесплатным. Без этого DRY_RUN систематически
+            # рисует результат лучше того, что проверял бэктест, и расхождение
+            # «бумага против биржи» замечалось бы уже на реальных деньгах.
+            price = price * (1 + sgn * SLIP)
+        # Проверка потолка маржи и сам рыночный вход идут ПОД ЗАМКОМ: иначе
+        # соседние боты того же счёта считают потолок по одному и тому же
+        # «ещё не занято» (см. entry_gate).
+        with self.entry_gate():
+            m_total = self.margin_total()
+            ok, why = self.margin_allowed(m_total)
+            if not ok:
+                # заведомо отклоняемый ордер отправлять нельзя: биржа ответит
+                # ошибкой, а бот получит серию «непонятных» сбоев вместо причины
+                self.log.warning("Вход пропущен — не влезает в потолок маржи: %s",
+                                 why)
+                self.notifier.send(f"вход пропущен, потолок маржи: {why}",
+                                   key="margin_cap")
+                return
+            weights, leg_margins = self.leg_margins(m_total, atr_now, atr_ref)
+            qty0 = self.rq(leg_margins[0] * self.p["lev"] / price)
+            if not self.order_ok(qty0, price, "Вход"):
+                return
+            step = (config.TURBO_STEP_K * atr) if self.turbo else self.p["step"]
+            if self.turbo:
+                stop = price * (1 - sgn * self.p["stop_k"] * atr)
+            else:
+                stop = (r_low * (1 - self.p["sweep"]) if side == "L"
+                        else r_high * (1 + self.p["sweep"]))
+            # множители волатильности фиксируются на входе и дальше не меняются —
+            # так же, как в движке (иначе тейк ездил бы задним числом)
+            vol_k = gridlib.vol_factor(atr_now, atr_ref, self.grid_atr_k)
+            tp_eff = (self.p["tp"] * gridlib.tp_factor(atr_now, atr_ref,
+                                                       self.tp_atr_k)
+                      if not self.turbo else 0.0)
+            prices = gridlib.grid_prices(price, stop, sgn, self.levels, step,
+                                         self.grid_mode, self.grid_span,
+                                         self.grid_spread, vol_k)
+            adds = [(ap, self.rq(leg_margins[k + 1] * self.p["lev"] / ap))
+                    for k, ap in enumerate(prices)]
 
-        self.pos = dict(side=side, fills=[(price, qty0)], stop=stop, adds=adds,
-                        opened_ts=int(time.time() * 1000), atr0=atr,
-                        tp_eff=tp_eff, vol_k=vol_k, entry_px=price, best=price)
-        self._last_pushed = (None, None)
-        tp = self.tp_price()
+            # Позиция ФИКСИРУЕТСЯ ТОЛЬКО ПОСЛЕ успешного ордера. Раньше self.pos
+            # присваивался до place_order: если биржа отклоняла заявку или рвалась
+            # связь, бот считал себя в рынке, вёл несуществующую позицию, тянул ей
+            # стопы и в конце «закрывал» её с выдуманным PnL. Пока ордер не ушёл,
+            # позиция живёт в локальной переменной и при любой ошибке исчезает.
+            # adds пока ПУСТ намеренно: колена ещё не выставлены, а в состояние
+            # можно писать только то, что реально есть на бирже.
+            pos = dict(side=side, fills=[(price, qty0)], stop=stop, adds=[],
+                       opened_ts=int(time.time() * 1000), atr0=atr,
+                       tp_eff=tp_eff, vol_k=vol_k, entry_px=price, best=price,
+                       leg_w=weights, add_ids=[],
+                       # накопленные издержки цикла: комиссия входа, дальше
+                       # добавляются мейкерские комиссии колен и фандинг
+                       fees=qty0 * price * TAKER)
+            self.pos = pos          # tp_price/stop_price читают self.pos
+            self._last_pushed = (None, None)
+            tp = self.tp_price()
+            sl = self.stop_price()
+
+            if not config.DRY_RUN:
+                order_side = "Buy" if side == "L" else "Sell"
+                try:
+                    r = self.session.place_order(
+                        category="linear", symbol=self.symbol, side=order_side,
+                        orderType="Market", qty=str(qty0),
+                        stopLoss=self.rp(sl), takeProfit=self.rp(tp))
+                    if int(r.get("retCode", 0)) != 0:
+                        raise RuntimeError(f"retCode {r.get('retCode')}: "
+                                           f"{r.get('retMsg')}")
+                except Exception as e:      # noqa: BLE001
+                    self.pos = None         # откат: цикла не было
+                    self.log.exception("ВХОД НЕ СОСТОЯЛСЯ (ордер отклонён)")
+                    self.notifier.send(f"вход не состоялся: {e}", key="entry_fail")
+                    return
+            else:
+                self.log.info("[DRY_RUN] ордера не отправлены")
+
+            # ПОЗИЦИЯ УЖЕ НА БИРЖЕ — записываем состояние немедленно, до
+            # постановки колен. Обрыв процесса между входом и коленами иначе
+            # оставлял бы позицию, которой в состоянии нет: следующий старт
+            # видит «чужую» позицию и при CLOSE_UNEXPECTED_POSITION закрывает
+            # её по рынку. Колена допишутся вторым сохранением ниже.
+            self.save_state()
+
         self.log.info(">>> ВХОД %s x%d: %s по ~%s | стоп %s | тейк %s | ATR %.2f%%",
                       "LONG" if side == "L" else "SHORT", self.p["lev"],
-                      qty0, self.rp(price), self.rp(self.stop_price()),
-                      self.rp(tp), atr * 100)
+                      qty0, self.rp(price), self.rp(sl), self.rp(tp), atr * 100)
         for i, (ap, aq) in enumerate(adds):
             self.log.info("    сетка %d: лимитка %s по %s", i + 2, aq, self.rp(ap))
 
         if not config.DRY_RUN:
             order_side = "Buy" if side == "L" else "Sell"
-            self.session.place_order(
-                category="linear", symbol=self.symbol, side=order_side,
-                orderType="Market", qty=str(qty0),
-                stopLoss=self.rp(self.stop_price()), takeProfit=self.rp(tp))
+            placed = []
             for ap, aq in adds:
-                if aq >= self.min_qty:
-                    self.session.place_order(
+                if not self.order_ok(aq, ap, "Колено сетки"):
+                    continue        # выставить нельзя — и в ведении его быть не должно
+                try:
+                    r = self.session.place_order(
                         category="linear", symbol=self.symbol, side=order_side,
                         orderType="Limit", qty=str(aq), price=self.rp(ap))
+                    pos["add_ids"].append(r["result"]["orderId"])
+                    placed.append((ap, aq))
+                except Exception as e:      # noqa: BLE001
+                    # позиция уже открыта и защищена стопом — вход не
+                    # отменяем, но колено, которого нет на бирже, выкидываем
+                    # из ведения: иначе бот ждал бы доливку, которой не будет
+                    self.log.exception("Колено сетки по %s не выставлено",
+                                       self.rp(ap))
+                    self.notifier.send(f"колено сетки не выставлено: {e}",
+                                       key="leg_fail")
+            pos["adds"] = placed
         else:
-            self.log.info("[DRY_RUN] ордера не отправлены")
+            # в DRY_RUN колена, которые биржа не приняла бы, тоже не живут:
+            # виртуальный результат обязан совпадать с исполнимым
+            pos["adds"] = [(ap, aq) for ap, aq in adds
+                           if self.order_ok(aq, ap, "Колено сетки")]
+
+        self.save_state()       # позиция должна пережить перезапуск
+        self.notifier.send(
+            f"вход {'LONG' if side == 'L' else 'SHORT'} x{self.p['lev']} "
+            f"{qty0} по {self.rp(price)}, стоп {self.rp(sl)}, тейк {self.rp(tp)}")
 
     def retune_grid(self, atr_now=None, atr_ref=None):
         """Перевыставить неисполненные лимитки сетки под текущую обстановку.
@@ -614,71 +1149,214 @@ class RsiGridBot:
         if all(abs(n - o) / o < 0.0005 for n, o in zip(fresh, old)):
             return
         m_total = self.margin_total()
-        leg_margins = [m_total * w for w in self.leg_weights]
-        self.pos["adds"] = [
-            (p, self.rq(leg_margins[k0 + j] * self.p["lev"] / p))
-            for j, p in enumerate(fresh)]
+        # веса колен зафиксированы на входе — как в движке (pos["m_k"]):
+        # пересчитывать их по сегодняшней волатильности значило бы менять
+        # раскладку маржи внутри уже открытого цикла
+        w = self.pos.get("leg_w") or self.leg_weights
+        leg_margins = [m_total * x for x in w]
+        fresh_adds = [(p, self.rq(leg_margins[k0 + j] * self.p["lev"] / p))
+                      for j, p in enumerate(fresh)]
         self.log.info("Сетка переставлена: %s -> %s",
                       [self.rp(x) for x in old],
-                      [self.rp(x) for x, _ in self.pos["adds"]])
+                      [self.rp(x) for x, _ in fresh_adds])
         if not config.DRY_RUN:
-            self.session.cancel_all_orders(category="linear", symbol=self.symbol)
+            self.cancel_own_orders("перестановка сетки")
             order_side = "Buy" if self.pos["side"] == "L" else "Sell"
-            for ap, aq in self.pos["adds"]:
-                if aq >= self.min_qty:
-                    self.session.place_order(
+            placed = []
+            for ap, aq in fresh_adds:
+                if not self.order_ok(aq, ap, "Колено сетки"):
+                    continue
+                try:
+                    r = self.session.place_order(
                         category="linear", symbol=self.symbol, side=order_side,
                         orderType="Limit", qty=str(aq), price=self.rp(ap))
+                    self.pos["add_ids"].append(r["result"]["orderId"])
+                    placed.append((ap, aq))
+                except Exception as e:      # noqa: BLE001
+                    self.log.exception("Колено сетки по %s не выставлено",
+                                       self.rp(ap))
+                    self.notifier.send(f"колено сетки не выставлено: {e}",
+                                       key="leg_fail")
+            fresh_adds = placed
+        else:
+            fresh_adds = [(ap, aq) for ap, aq in fresh_adds
+                          if self.order_ok(aq, ap, "Колено сетки")]
+        self.pos["adds"] = fresh_adds
+        self.save_state()
 
-    def finish_cycle(self, pnl, reason):
+    def roll_day(self):
+        """Перевод дневного счётчика на новые сутки UTC.
+
+        Вызывается и по свече, и по завершении цикла: без этого день, в
+        котором не было ни одной сделки, не сбрасывал бы дневной убыток и
+        лимит «съедал» бы уже следующие сутки."""
+        today = self._day_key()
+        if today != self.day_key:
+            self.day_key = today
+            self.day_start_balance = self.virtual_balance
+            self.day_pnl = 0.0
+
+    def risk_limits(self):
+        """Дневной лимит потерь и стоп по просадке — после каждого цикла.
+
+        Kill switch по серии убытков не ловит ни один провальный день (три
+        подряд убытка могут стоить меньше, чем один большой), ни медленное
+        сползание капитала месяцами. Считаем от кривой капитала САМОГО бота:
+        в DRY_RUN она начинается с START_BALANCE, в реале — с equity кошелька
+        на первом запуске (см. seed_capital), и оба варианта переживают
+        перезапуск в файле состояния."""
+        now = int(time.time() * 1000)
+        limit = config.DAILY_LOSS_LIMIT_FRACTION * self.day_start_balance
+        if limit > 0 and self.day_pnl <= -limit and now >= self.paused_until:
+            self.paused_until = now + config.DAILY_LOSS_PAUSE_HOURS * 3600 * 1000
+            msg = (f"дневной лимит: {self.day_pnl:+.2f} USDT за сутки при "
+                   f"пороге -{limit:.2f} — пауза "
+                   f"{config.DAILY_LOSS_PAUSE_HOURS}ч")
+            self.log.warning("ДНЕВНОЙ ЛИМИТ ПОТЕРЬ: %s", msg)
+            self.notifier.send(msg, key="daily_loss")
+        self.peak_balance = max(self.peak_balance, self.virtual_balance)
+        floor = self.peak_balance * (1 - config.MAX_DRAWDOWN_FRACTION)
+        if not self.halted and self.peak_balance > 0 and self.virtual_balance < floor:
+            self.halted = True
+            dd = 1 - self.virtual_balance / self.peak_balance
+            msg = (f"просадка {dd:.1%} от пика ${self.peak_balance:.2f} — "
+                   f"торговля ОСТАНОВЛЕНА, снимается только руками")
+            self.log.error("СТОП ПО ПРОСАДКЕ: %s", msg)
+            self.notifier.send(msg, key="drawdown")
+
+    def finish_cycle(self, pnl, reason, kind=""):
+        """Закрытие цикла. kind: stop|tp|timeout|exchange — от него зависит
+        кулдаун (в движке evolution2 он ставится ТОЛЬКО после выбивания
+        стопом/ликвидацией, а не после любого убытка)."""
+        self.roll_day()
         self.virtual_balance += pnl
+        self.day_pnl += pnl
         self.log.info("<<< ЦИКЛ ЗАВЕРШЁН (%s): PnL ~%+.3f USDT | капитал ~%.2f",
                       reason, pnl, self.virtual_balance)
         self.pos = None
         now = int(time.time() * 1000)
+        # правило кулдауна = правило движка (evolution2.py:270): пауза после
+        # выхода по стопу, независимо от знака PnL (с переносом в безубыток
+        # стоп может выбить и в плюс), и НЕ ставится после тейка/таймаута.
+        # Закрытие биржей различить нельзя — там ориентируемся на убыток.
+        stopped = kind == "stop" or (kind == "exchange" and pnl < 0)
+        if self.cooldown_bars and stopped:
+            self.cooldown_until = now + self.cooldown_bars * self.interval_ms
         if pnl < 0:
             self.consec_losses += 1
-            if self.cooldown_bars:
-                self.cooldown_until = now + self.cooldown_bars * self.interval_ms
             if self.consec_losses >= config.MAX_CONSEC_LOSSES:
                 self.paused_until = now + config.KILL_PAUSE_HOURS * 3600 * 1000
                 self.log.warning("KILL SWITCH: %d убытков подряд. Пауза до %s",
                                  self.consec_losses,
                                  time.strftime("%d.%m %H:%M",
                                                time.localtime(self.paused_until / 1000)))
+                self.notifier.send(
+                    f"kill switch: {self.consec_losses} убытков подряд, пауза "
+                    f"{config.KILL_PAUSE_HOURS}ч", key="kill")
                 self.consec_losses = 0
         else:
             self.consec_losses = 0
+        self.risk_limits()
+        # состояние обязано пережить перезапуск ИМЕННО в этот момент: иначе
+        # рестарт сразу после убыточного цикла снимает и паузу, и счётчик
+        self.save_state()
+
+    def paper_close(self, price, reason, kind, taker=True):
+        """Закрытие с издержками по модели бэктеста (evolution2.close_pos):
+        рыночный выход двигает цену на SLIP и стоит TAKER, лимитный — MAKER,
+        сверху накопленные за цикл комиссии колен и фандинг."""
+        p = self.pos
+        sgn = 1 if p["side"] == "L" else -1
+        avg, qty = self.avg_entry()
+        px = price * (1 - sgn * SLIP) if taker else price
+        fee = qty * px * (TAKER if taker else MAKER)
+        pnl = sgn * (px - avg) * qty - fee - p.get("fees", 0.0)
+        self.finish_cycle(pnl, reason, kind)
 
     def close_market(self, reason, price):
-        avg, qty = self.avg_entry()
-        sgn = 1 if self.pos["side"] == "L" else -1
-        pnl = sgn * (price - avg) * qty
+        qty = self.avg_entry()[1]
         if not config.DRY_RUN:
-            self.session.cancel_all_orders(category="linear", symbol=self.symbol)
+            # только свои лимитки: cancel_all снёс бы и ручные ордера владельца
+            self.cancel_own_orders(reason)
             side = "Sell" if self.pos["side"] == "L" else "Buy"
             self.session.place_order(category="linear", symbol=self.symbol,
                                      side=side, orderType="Market",
                                      qty=str(self.rq(qty)), reduceOnly=True)
-        self.finish_cycle(pnl, reason)
+        # выход рыночным ордером — тейкерский, с проскальзыванием
+        self.paper_close(price, reason, "timeout")
 
     # ---------- DRY_RUN: виртуальное исполнение ----------
 
     def paper_fill(self, candle):
+        """Виртуальное исполнение свечи — по правилам движка отбора.
+
+        Порядок событий внутри свечи и издержки повторяют evolution2.run5:
+        бумажный результат должен совпадать с тем, что проверял бэктест,
+        иначе DRY_RUN проверяет не ту стратегию, которая пойдёт в реал.
+
+        Про тейк в свече с доливкой (evolution2.py, комментарий у tp_exec).
+        Порядок движения цены внутри свечи по OHLC неизвестен, поэтому оба
+        конца берутся в невыгодную сторону: СРАБАТЫВАНИЕ проверяется по
+        tp_pre (дальний тейк, который стоял на бирже до доливки), а ИСПОЛНЕНИЕ
+        считается по tp_exec (ближний, переехавший вслед за средней). Ловить
+        срабатывание по пересчитанному tp_exec нельзя — это выдумывает выходы,
+        которых у бота не было: замер движка даёт DOGE +116% вместо −38%.
+        """
         _, o, h, l, c = candle
         p = self.pos
         sgn = 1 if p["side"] == "L" else -1
-        stop, tp = self.stop_price(), self.tp_price()
-        avg, qty = self.avg_entry()
-        if (l <= stop if sgn == 1 else h >= stop):
-            self.finish_cycle(sgn * (stop - avg) * qty, "[DRY_RUN] СТОП")
+        q_pre = sum(f[1] for f in p["fills"])
+        # фандинг за свечу удержания (0.01% за 8ч), как в движке
+        p["fees"] = p.get("fees", 0.0) + q_pre * c * FUND_8H / self.bars_8h
+        # стоп фиксируем на начало свечи: доливка внутри неё сдвинула бы
+        # среднюю и вместе с ней турбо-стоп — движок так не умеет, и брать
+        # более выгодный стоп задним числом нельзя
+        stop = self.stop_price()
+        tp_pre = self.tp_price()
+        hit_tp = (h >= tp_pre) if sgn == 1 else (l <= tp_pre)
+        legs_filled = False
+        # Колено, которое лежит БЛИЖЕ стопа, цена проходит раньше: оно
+        # успевает исполниться и изменить среднюю. Колено ЗА стопом уже не
+        # исполнится — позиция к этому моменту закрыта.
+        while True:
+            nxt = p["adds"][0][0] if p["adds"] else None
+            leg_first = nxt is not None and ((nxt > stop) if sgn == 1
+                                             else (nxt < stop))
+            leg_reached = nxt is not None and ((l <= nxt) if sgn == 1
+                                               else (h >= nxt))
+            if leg_first and leg_reached:
+                ap, aq = p["adds"].pop(0)
+                p["fees"] += aq * ap * MAKER
+                p["fills"].append((ap, aq))
+                legs_filled = True
+                self.log.info("[DRY_RUN] сетка исполнилась: %s по %s",
+                              aq, self.rp(ap))
+                continue
+            if (l <= stop) if sgn == 1 else (h >= stop):
+                self.paper_close(stop, "[DRY_RUN] СТОП", "stop")
+                return
+            break
+        if legs_filled:
+            # тейк стоит на бирже от ТЕКУЩЕЙ средней: как только колено
+            # исполнилось, он переехал вниз (для лонга) вместе с ней. Выход
+            # по старому тейку был бы прибылью из воздуха.
+            self.push_sl_tp()
+            tp_exec = self.tp_price()
+            # hit_tp НЕ пересчитываем: срабатывание остаётся по tp_pre, как в
+            # движке. Пересчёт (проверка по ближнему tp_exec) — то самое
+            # ослабление, которое evolution2 прямо запрещает.
+        else:
+            tp_exec = tp_pre
+        if hit_tp:
+            # тейк бот держит через set_trading_stop, то есть рыночным по
+            # триггеру — значит тейкерская комиссия и проскальзывание
+            self.paper_close(tp_exec, "[DRY_RUN] ТЕЙК", "tp")
             return
-        if (h >= tp if sgn == 1 else l <= tp):
-            self.finish_cycle(sgn * (tp - avg) * qty, "[DRY_RUN] ТЕЙК")
-            return
+        # остальные колена (стоп в этой свече не задет)
         while p["adds"]:
             ap, aq = p["adds"][0]
             if (l <= ap if sgn == 1 else h >= ap):
+                p["fees"] += aq * ap * MAKER
                 p["fills"].append((ap, aq))
                 p["adds"].pop(0)
                 self.log.info("[DRY_RUN] сетка исполнилась: %s по %s", aq, self.rp(ap))
@@ -688,13 +1366,198 @@ class RsiGridBot:
 
     # ---------- реал: синхронизация с биржей ----------
 
+    def handle_orphan(self, pp, why):
+        """Позиция на бирже, которой бот не ведёт.
+
+        Такая позиция опаснее любого убытка: у неё нет ни стопа, ни тейка, ни
+        таймаута — она может ехать до ликвидации, пока бот считает, что он вне
+        рынка. По умолчанию закрываем по рынку (CLOSE_UNEXPECTED_POSITION) и
+        встаём на паузу: причину расхождения должен посмотреть человек.
+        """
+        size = float(pp["size"] or 0)
+        pos_side = pp["side"]
+        # Ту же самую чужую позицию разбираем ОДИН раз. При
+        # CLOSE_UNEXPECTED_POSITION=False она никуда не девается, sync_exchange
+        # видит её каждый цикл — и без этой проверки пауза продлевалась бы на
+        # 24 часа каждые POLL_SECONDS, то есть ручная позиция владельца
+        # останавливала бы бота навсегда.
+        key = [pos_side, size, str(pp.get("createdTime") or "")]
+        if self.orphan_key == key:
+            if self.pos is not None:
+                # то же расхождение после перезапуска: ведение снимаем и
+                # записываем это на диск, иначе следующий старт снова
+                # прочитает позицию, которой у нас нет
+                self.pos = None
+                self.save_state()
+            return
+        self.orphan_key = key
+        self.log.error("РАСХОЖДЕНИЕ С БИРЖЕЙ: %s — %s %s по %s",
+                       why, pos_side, size, pp.get("avgPrice"))
+        self.notifier.send(f"расхождение с биржей: {why} ({pos_side} {size})",
+                           key="orphan")
+        if config.CLOSE_UNEXPECTED_POSITION and not config.DRY_RUN:
+            try:
+                self.session.cancel_all_orders(category="linear",
+                                               symbol=self.symbol)
+                self.session.place_order(
+                    category="linear", symbol=self.symbol,
+                    side=("Sell" if pos_side == "Buy" else "Buy"),
+                    orderType="Market", qty=str(self.rq(size)),
+                    reduceOnly=True)
+                self.log.warning("Неожиданная позиция закрыта по рынку")
+                self.notifier.send("неожиданная позиция закрыта по рынку",
+                                   key="orphan_closed")
+            except Exception as e:      # noqa: BLE001
+                self.log.exception("Не удалось закрыть неожиданную позицию")
+                self.notifier.send(f"НЕ УДАЛОСЬ закрыть позицию: {e}",
+                                   key="orphan_fail")
+        self.pos = None
+        # пауза, а не остановка: причина может быть безобидной (ручная сделка),
+        # но торговать вслепую до разбора нельзя
+        self.paused_until = max(
+            self.paused_until,
+            int(time.time() * 1000) + config.ORPHAN_PAUSE_HOURS * 3600 * 1000)
+        self.log.warning("Пауза %d ч после расхождения",
+                         config.ORPHAN_PAUSE_HOURS)
+        self.save_state()
+
+    def seed_capital(self):
+        """Первый запуск в реале: капитал бота = equity кошелька.
+
+        Дневной лимит и стоп по просадке считаются в долях капитала. Если
+        оставить бумажный START_BALANCE, на счёте в $500 «дневной лимит 10%»
+        означал бы $5 — защита, которая не сработает никогда."""
+        if not self._fresh_state:
+            return
+        snap = self.wallet_snapshot()
+        if snap is None:
+            return
+        self.virtual_balance = snap[0]
+        self.peak_balance = snap[0]
+        self.day_start_balance = snap[0]
+        self.log.info("Первый запуск: капитал взят с кошелька — $%.2f", snap[0])
+        self.save_state()
+
+    def reconcile_start(self):
+        """Сверка с биржей ДО первой свечи.
+
+        Бот мог быть выключен минуту, а мог сутки: за это время позиция могла
+        закрыться, дорасти коленами сетки или появиться там, где её быть не
+        должно. Пока сверки не было, любое ведение — догадка.
+        В DRY_RUN сверять нечего: бумажная позиция на бирже не существует.
+        """
+        if config.DRY_RUN:
+            return
+        self.check_position_mode()      # one-way/hedge: иначе все ордера в 10001
+        pp = self.exchange_position_full()
+        if self.pos and not pp:
+            self.cancel_own_orders("позиция закрылась, пока бот не работал")
+            pnl = self._last_closed_pnl(self.pos["opened_ts"])
+            if pnl is None:
+                self.log.warning("Позиция из состояния на бирже не найдена, "
+                                 "сделки в истории тоже нет. Цикл не засчитан.")
+                self.notifier.send("позиция из состояния не найдена на бирже — "
+                                   "цикл не засчитан", key="reconcile")
+                self.pos = None
+                self.save_state()
+            else:
+                self.finish_cycle(pnl, "закрыта биржей, пока бот не работал",
+                                  "exchange")
+            return
+        if self.pos and pp:
+            want = "Buy" if self.pos["side"] == "L" else "Sell"
+            if pp["side"] != want:
+                self.handle_orphan(pp, f"на бирже {pp['side']}, "
+                                       f"в ведении {want}")
+                return
+            filled = sum(f[1] for f in self.pos["fills"])
+            size = float(pp["size"])
+            self.log.info("Сверка: позиция подтверждена (%s %s, в ведении %s)",
+                          pp["side"], size, filled)
+            if size > filled * 1.001:
+                self.sync_exchange()    # доехали колена, пока бота не было
+            # SL/TP выставляем принудительно: пока бота не было, биржа могла
+            # их не иметь вовсе (например, ордера снимали руками)
+            if self.pos:
+                self.push_sl_tp(force=True)
+            return
+        if pp:
+            self.handle_orphan(pp, "позиция на бирже, а ведения нет")
+            return
+        # ни позиции, ни ведения — но лимитки могли пережить закрытие цикла
+        if config.CLOSE_UNEXPECTED_POSITION:
+            try:
+                self.session.cancel_all_orders(category="linear",
+                                               symbol=self.symbol)
+                self.log.info("Сверка: позиции нет, висячие ордера по %s сняты",
+                              self.symbol)
+            except Exception as e:      # noqa: BLE001
+                self.log.warning("Не удалось снять ордера при сверке: %s", e)
+
     def sync_exchange(self):
-        side, size, avg = self.exchange_position()
-        if self.pos and size == 0:
-            self.session.cancel_all_orders(category="linear", symbol=self.symbol)
-            pnl = self._last_closed_pnl()
-            self.finish_cycle(pnl, "SL/TP биржей")
-        elif self.pos and size > 0:
+        pp = self.exchange_position_full()   # один запрос на цикл, не два
+        size = float(pp["size"]) if pp else 0.0
+        if not self.pos:
+            # Позиции в ведении нет. Если на бирже она есть — это почти всегда
+            # исполнившееся колено сетки УЖЕ ПОСЛЕ того, как биржа закрыла
+            # цикл по SL/TP: голая позиция без стопа и тейка, ровно тот
+            # сценарий, ради которого лимитки и надо снимать сразу.
+            if pp:
+                self.handle_orphan(pp, "позиция на бирже без ведения ботом")
+            elif self.orphan_key is not None:
+                # чужой позиции больше нет: следующее расхождение — уже другое
+                # событие, и паузу за него ставить надо заново
+                self.orphan_key = None
+                self.save_state()
+            return
+        want = "Buy" if self.pos["side"] == "L" else "Sell"
+        if pp and pp["side"] != want:
+            # Сторона расходится с ведением. Дальше нельзя ничего: SL/TP мы
+            # тянули бы для лонга, а на бирже шорт, и reduceOnly на таймауте
+            # ушёл бы НЕ В ТУ сторону (то есть увеличил бы позицию, а не
+            # закрыл). В reconcile_start эта проверка была, в рабочем цикле —
+            # нет, хотя сторона может разойтись и на ходу (ручная сделка).
+            self.handle_orphan(pp, f"на бирже {pp['side']}, в ведении {want}")
+            return
+        if size == 0:
+            seen = self.pos.get("closed_seen_ts")
+            if seen is None:
+                seen = self.pos["closed_seen_ts"] = int(time.time() * 1000)
+                # снимаем свои лимитки ПЕРВЫМ делом и ровно один раз: пока они
+                # висят, любая может открыть позицию без стопа, но повторять
+                # отмену каждые POLL_SECONDS незачем — это уже слепой сброс
+                self.cancel_own_orders("позиция закрыта биржей")
+            pnl = self._last_closed_pnl(self.pos["opened_ts"])
+            if pnl is None:
+                waited = (time.time() * 1000 - seen) / 1000
+                if waited < config.CLOSED_PNL_GRACE_SEC:
+                    # сделка ещё не проявилась в истории биржи — ждём. Взять
+                    # сейчас «ноль» значило бы записать несуществующий цикл.
+                    self.log.info("Позиция закрыта биржей, жду сделку в "
+                                  "истории (%.0f c из %d)", waited,
+                                  config.CLOSED_PNL_GRACE_SEC)
+                    self.save_state()
+                    return
+                self.log.warning(
+                    "Позиция закрыта биржей, но сделки в истории нет за %d c. "
+                    "Цикл НЕ засчитан: счётчик убытков, дневной лимит и "
+                    "капитал не трогаю — иначе выдуманный ноль обнулил бы "
+                    "kill switch", config.CLOSED_PNL_GRACE_SEC)
+                self.notifier.send("позиция закрыта биржей, PnL не найден — "
+                                   "цикл не засчитан", key="pnl_missing")
+                self.pos = None
+                self.save_state()
+                return
+            self.finish_cycle(pnl, "SL/TP биржей", "exchange")
+        elif size > 0:
+            if self.pos.pop("closed_seen_ts", None) is not None:
+                # позиция снова видна на бирже: пока шло ожидание PnL,
+                # исполнилась лимитка сетки. Метку ожидания надо снять, иначе
+                # бот навсегда остался бы «в окне закрытия» и перестал вести
+                # живую позицию (ни стопа, ни тейка, ни таймаута)
+                self.log.warning("Позиция снова открыта на бирже (%s) — "
+                                 "ожидание закрытого PnL отменено", size)
+                self.save_state()
             filled = sum(f[1] for f in self.pos["fills"])
             if size > filled * 1.001:
                 while self.pos["adds"] and size > filled * 1.001:
@@ -703,18 +1566,96 @@ class RsiGridBot:
                     filled += aq
                 self.log.info("Сетка исполнилась (размер %s)", size)
                 self.push_sl_tp()
+                # доливка меняет среднюю, стоп и тейк: рестарт без этой записи
+                # вёл бы позицию по устаревшему составу колен
+                self.save_state()
 
-    def _last_closed_pnl(self):
+    def _last_closed_pnl(self, opened_ts):
+        """Реализованный PnL ИМЕННО ЭТОГО цикла, либо None, если биржа его ещё
+        не показала.
+
+        Раньше бралась просто последняя запись истории (limit=1 без фильтра).
+        Она могла принадлежать прошлому циклу, соседнему боту или ручной
+        сделке владельца, а при пустом ответе функция возвращала 0.0 —
+        «безубыточный цикл». Любой из этих вариантов обнулял серию убытков и
+        снимал kill switch ровно тогда, когда он и должен был сработать.
+
+        Теперь берём только записи, закрытые ПОСЛЕ открытия нашей позиции, и
+        суммируем их: биржа закрывает частями (колено сетки и остаток — разные
+        строки истории). Ничего не нашли — честно возвращаем None, чтобы
+        вызывающий подождал (CLOSED_PNL_GRACE_SEC) и не выдумывал ноль.
+
+        Одного времени мало: владелец может торговать этой же монетой руками с
+        того же счёта, и его сделка попала бы в PnL нашего цикла. Поэтому
+        сверяем ещё сторону закрытия (в closed-pnl поле side — сторона
+        ЗАКРЫВАЮЩЕГО ордера, для лонга это Sell) и среднюю цену входа
+        (avgEntryPrice): у чужой сделки она своя. Объём проверяем суммой
+        closedSize — она не должна заметно превышать наш размер.
+
+        Окно запроса: Bybit отдаёт максимум 7 суток и, если передать только
+        startTime, вернёт 7 суток ОТ него. Позиция может висеть дольше
+        (max_bars до 288 свечей плюс выключенный бот), и тогда сегодняшнее
+        закрытие в ответ просто не попадало. Спрашиваем последние 7 суток
+        назад от «сейчас» — закрытие всегда свежее запроса.
+        """
+        now = int(time.time() * 1000)
+        week = 7 * 24 * 3600 * 1000
         try:
-            r = self.session.get_closed_pnl(category="linear",
-                                            symbol=self.symbol, limit=1)
-            return float(r["result"]["list"][0]["closedPnl"])
-        except Exception:
-            return 0.0
+            r = self.session.get_closed_pnl(
+                category="linear", symbol=self.symbol,
+                startTime=max(int(opened_ts), now - week + 60000),
+                endTime=now, limit=50)
+            rows = r["result"]["list"]
+        except Exception as e:      # noqa: BLE001
+            self.log.warning("История сделок недоступна: %s", e)
+            return None
+        want_close = "Sell" if self.pos["side"] == "L" else "Buy"
+        avg_own, qty_own = self.avg_entry()
+        # потолок объёма — позиция ПЛЮС ещё не исполненные колена: колено могло
+        # доехать и выбиться стопом между двумя опросами, и такой цикл честно
+        # наш. Сверх этой суммы биржа закрыть наше уже не могла.
+        qty_max = qty_own + sum(a[1] for a in self.pos.get("adds") or [])
+        total, found, size_sum, skipped = 0.0, 0, 0.0, 0
+        for row in rows:
+            closed_at = int(row.get("updatedTime")
+                            or row.get("createdTime") or 0)
+            if closed_at < opened_ts:
+                continue        # чужая (более ранняя) сделка — не наша
+            if row.get("side") and row["side"] != want_close:
+                skipped += 1    # закрытие в другую сторону — не наш цикл
+                continue
+            entry_px = float(row.get("avgEntryPrice") or 0)
+            # 2% — запас на проскальзывание входа и на то, что в ведении цена
+            # записана по закрытию свечи, а биржа исполнила чуть иначе
+            if entry_px and abs(entry_px / avg_own - 1) > 0.02:
+                skipped += 1
+                continue
+            total += float(row["closedPnl"])
+            size_sum += float(row.get("closedSize") or 0)
+            found += 1
+        if not found:
+            if skipped:
+                self.log.warning("В истории биржи есть %d закрытых сделок по "
+                                 "%s, но ни одна не похожа на наш цикл "
+                                 "(сторона/цена входа) — цикл не засчитан",
+                                 skipped, self.symbol)
+            return None
+        if size_sum > qty_max * 1.05:
+            # закрыто больше, чем мы вообще могли вести: в выборку попала
+            # чужая сделка. Выдуманный PnL хуже незасчитанного цикла.
+            self.log.warning("PnL цикла отброшен: закрыто %s при нашем "
+                             "максимуме %s — в истории есть чужие сделки",
+                             size_sum, qty_max)
+            return None
+        self.log.info("PnL цикла по истории биржи: %+.4f USDT (%d записей, "
+                      "закрыто %s при позиции %s)", total, found, size_sum,
+                      qty_own)
+        return total
 
     # ---------- обработка свечи ----------
 
     def on_new_candle(self, cs):
+        self.roll_day()     # сутки могли смениться и без единой сделки
         closes = [x[4] for x in cs]
         c = closes[-1]
         rsi_now = calc_rsi(closes[-(self.rsi_period + 60):], self.rsi_period)
@@ -730,6 +1671,14 @@ class RsiGridBot:
                       self.rp(c), rsi_now, zone_pos * 100, atr * 100)
 
         if self.pos:
+            if self.pos.get("closed_seen_ts"):
+                # Биржа УЖЕ закрыла эту позицию, идёт только ожидание её PnL в
+                # истории (CLOSED_PNL_GRACE_SEC). Вести её нельзя ничем:
+                # set_trading_stop ушёл бы по несуществующей позиции, а таймаут
+                # ниже отправил бы cancel_all + reduceOnly и записал выдуманный
+                # PnL за цикл, которого уже нет. Ждём молча — окно закроет
+                # sync_exchange, засчитав цикл или отбросив его.
+                return
             if config.DRY_RUN:
                 self.paper_fill(cs[-1])
             if self.pos and self.be_move and not self.pos.get("be_done"):
@@ -780,9 +1729,18 @@ class RsiGridBot:
                 if bars > self.max_bars and (
                         rsi_now >= 50 if sgn == 1 else rsi_now <= 50):
                     self.close_market("таймаут", c)
+            if self.pos:
+                # позиция изменилась (доливка, перенос стопа) — состояние
+                # должно пережить перезапуск в том же виде
+                self.save_state()
             return
 
         now = int(time.time() * 1000)
+        if self.halted:
+            # стоп по просадке снимается только руками (halted в файле
+            # состояния): ведение открытой позиции выше по коду продолжается,
+            # запрещены только НОВЫЕ входы
+            return
         if now < self.paused_until:
             return
         if now < self.cooldown_until:
@@ -857,23 +1815,47 @@ class RsiGridBot:
                       self.describe(), self.p["lev"], margin_desc,
                       "TESTNET" if config.TESTNET else "MAINNET", config.DRY_RUN)
         self.log.info("Параметры: %s", self.p)
+        # файл состояния заводим сразу: если процесс упадёт на первом же цикле,
+        # читать при следующем запуске будет уже что
+        self.save_state()
         if not config.DRY_RUN:
             if not config.API_KEY or not config.API_SECRET:
                 raise SystemExit("Нет BYBIT_API_KEY / BYBIT_API_SECRET")
             self.set_leverage()
+            self.seed_capital()
+            self.reconcile_start()      # ведение = то, что реально на бирже
         while True:
             try:
-                if not config.DRY_RUN and self.pos:
+                # сверка КАЖДЫЙ цикл, а не только при открытой позиции: без
+                # позиции опасность обратная — лимитка сетки, пережившая
+                # закрытие, открывает голую позицию без стопа, и заметить это
+                # можно только спросив биржу
+                if not config.DRY_RUN:
                     self.sync_exchange()
                 cs = self.candles()
-                if cs and cs[-1][0] != self.last_candle_ts:
+                # строго НОВЕЕ обработанной: last_candle_ts переживает
+                # перезапуск, и "!=" повторно прогнал бы ту же свечу, если
+                # состояние оказалось впереди биржи
+                if cs and cs[-1][0] > self.last_candle_ts:
                     self.last_candle_ts = cs[-1][0]
                     self.on_new_candle(cs)
+                    # какая свеча уже отработана — тоже часть состояния:
+                    # без этого рестарт исполняет её второй раз (в DRY_RUN
+                    # это лишние доливки и кривая капитала «из воздуха»)
+                    self.save_state()
+                self.api_errors = 0
             except KeyboardInterrupt:
                 raise
             except Exception:
-                self.log.exception("Ошибка цикла, повтор через %s c",
-                                   config.POLL_SECONDS)
+                self.api_errors += 1
+                self.log.exception("Ошибка цикла (%d подряд), повтор через %s c",
+                                   self.api_errors, config.POLL_SECONDS)
+                # серия ошибок = бот ослеп: позиция на бирже живёт, а ведения
+                # фактически нет. Об этом надо узнать сразу, а не из отчёта.
+                if self.api_errors >= config.API_ERROR_STREAK:
+                    self.notifier.send(
+                        f"{self.api_errors} ошибок цикла подряд — бот не видит "
+                        f"биржу", key="api_errors")
             time.sleep(config.POLL_SECONDS)
 
 

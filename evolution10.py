@@ -21,12 +21,26 @@
 
 ПРАВИЛО ПРИНЯТИЯ (жёстче обычного, потому что пользователь потребовал явно
 «не убыточнее текущей»). Кандидат принимается, только если ОДНОВРЕМЕННО:
-  1) средний OOS выше базы более чем на MIN_EDGE (не шум);
-  2) ни один из трёх экзаменов не просел ниже базы больше чем на FOLD_TOL;
+  1) балл на ЭКЗАМЕНАЦИОННОМ окне выше базы более чем на MIN_EDGE (не шум);
+  2) на своём окне валидации кандидат не ниже базы больше чем на FOLD_TOL;
   3) итог за все 3.2 года на боевом плече не ниже базового;
-  4) просадка не выросла больше чем на DD_TOL.
+  4) просадка не выросла больше чем на DD_TOL;
+  5) пройдены ворота honest_eval — хвост (худший месяц, худшая сделка,
+     ликвидации, плавающая просадка, риск руина) и вырожденность (минимум
+     сделок, сделок в месяц, экспозиции).
 Провал любого пункта -> монета остаётся на прежней сетке, и это честно
 записывается в evolution10_winners.json.
+
+Правка 08.2026: пункты 1-2 раньше считались по СРЕДНЕМУ трёх OOS-окон, из
+которых для позднего кандидата два лежали внутри его обучения, и то же среднее
+решало приёмку. Теперь выбор идёт по окну валидации, приёмка — по отдельному
+экзаменационному окну (e4.choose_winner), а рекомендация по плечу считается
+только на обучающей части и по ПЛАВАЮЩЕЙ просадке.
+
+Правка второго круга: нынешняя сетка убрана из списка кандидатов. Пока она
+стояла там наравне с остальными, её отрыв от самой себя (ноль) был нижней
+границей отрыва победителя, val_edge никогда не уходил в минус, и пункт 2 не
+мог сработать ни при каких данных.
 
 Запуск: python evolution10.py            (все монеты)
         python evolution10.py BTCUSDT    (одна монета)
@@ -46,6 +60,7 @@ import evolution7 as e7
 import evolution8 as e8
 import ext_data as xd
 import gridlib
+import honest_eval as he
 
 random.seed(1010)
 
@@ -180,8 +195,13 @@ def full_run(base, sub, candles, pre, aux, lev):
     # мираж на 4ч: конфиг, который «почти никогда не теряет», не гениален,
     # а упирается в дыру движка. Ниже она же участвует в правиле принятия.
     loss_share = ((r["trades"] - r["wins"]) / r["trades"]) if r["trades"] else 0
+    ddf = r.get("max_dd_float")
     return dict(ret=round((r["balance"] / e2.START - 1) * 100, 2),
-                dd=round(r["max_dd"] * 100, 2), trades=r["trades"],
+                dd=round(r["max_dd"] * 100, 2),
+                # плавающая просадка: по ней выбирается плечо, потому что
+                # закрытая не видит переоценки открытой сетки
+                dd_float=(round(ddf * 100, 2) if ddf is not None else None),
+                trades=r["trades"],
                 wr=round(r["wins"] / r["trades"] * 100, 1) if r["trades"] else 0,
                 loss_share=round(loss_share * 100, 2),
                 med=round(st["med"], 3), ruined=r["ruined"])
@@ -197,11 +217,17 @@ def ladder(base, sub, candles, pre, aux):
 
 
 def pick_lev(rows):
-    best = rows[0]["lev"]
-    for row in rows:
-        if row["dd"] <= DD_CAP * 100 and not row["ruined"]:
-            best = row["lev"]
-    return best
+    """Наибольшее плечо с просадкой <= DD_CAP и без слива.
+
+    rows — лестница по ОБУЧАЮЩЕЙ части (e4.train_slice). Раньше сюда шла
+    лестница за все 3.2 года: рекомендация по плечу смотрела в окно, которое
+    считается экзаменационным, и переставала быть проверяемой.
+
+    Само правило — общее для всех волн (e4.choose_leverage): плавающая
+    просадка, слив дисквалифицирует ступень, и если порог не проходит НИ ОДНА
+    ступень, это говорится словами, а не прячется за молчаливым x5.
+    """
+    return e4.choose_leverage(rows, DD_CAP)["lev"]
 
 
 def run_symbol(sym, aux_builder):
@@ -219,34 +245,46 @@ def run_symbol(sym, aux_builder):
         seg = candles[b:e]
         oos.append((seg, e2.prep(seg), slice_aux(aux, b, e)))
 
-    def agg(sub):
-        """Три экзамена OOS — НА БОЕВОМ ПЛЕЧЕ монеты.
+    def score_on(sub, wi):
+        """Балл одного OOS-окна — НА БОЕВОМ ПЛЕЧЕ монеты.
 
         Прежние волны считали экзамены на плече по умолчанию (x5), а итог —
         на боевом. Для BTC (x15) из-за этого шкала экзамена оказывалась втрое
         мельче денежной: OOS-оценки выходили порядка 0.0-0.1, и порог MIN_EDGE
         был для них недостижим в принципе. Решение о принятии обязано
         приниматься на той же шкале, на которой считаются деньги.
+
+        Окна больше не усредняются скопом: кандидату дозволены только те, что
+        лежат строго после его обучения (см. e4.choose_winner).
         """
         g = with_genes(base, sub)
+        seg, pre_s, aux_s = oos[wi]
         old, e2.LEV = e2.LEV, lev
         try:
-            sc = [e2.oos_score(e2.run5(seg, pre_s, g,
-                                       entry_filter=e8.make_filter8(g, aux_s)))
-                  for seg, pre_s, aux_s in oos]
+            r = e2.run5(seg, pre_s, g, entry_filter=e8.make_filter8(g, aux_s))
         finally:
             e2.LEV = old
-        return sum(sc) / len(sc), sc
+        return e2.oos_score(r)
 
     off = clamp10(dict(gridlib.OFF10))
-    base_mean, base_sc = agg(off)
+    base_sc = [score_on(off, wi) for wi in range(len(oos))]
+    base_mean = sum(base_sc) / len(base_sc)
+    exam_i = e4.exam_window_index(len(folds))
     base_full = full_run(base, off, candles, pre_full, aux, lev)
-    print(f"БАЗА (нынешняя сетка): OOS {base_mean:+.3f} "
-          f"{['%+.3f' % s for s in base_sc]} | 3.2г x{lev} {base_full['ret']:+.2f}% "
+    print(f"БАЗА (нынешняя сетка): OOS по окнам "
+          f"{['%+.3f' % s for s in base_sc]} (экзамен {base_sc[exam_i]:+.3f}) "
+          f"| 3.2г x{lev} {base_full['ret']:+.2f}% "
           f"| DD {base_full['dd']:.2f}% | сделок {base_full['trades']} "
           f"| убыточных {base_full['loss_share']:.2f}%", flush=True)
 
-    cands = [off]
+    # Нынешняя сетка (off) в гонке НЕ участвует. Раньше она стояла здесь как
+    # cands=[(0, off)] — «она не обучалась ни на чём, поэтому честна на любом
+    # окне». Но она же служит БАЗОЙ, от которой считается отрыв: её отрыв от
+    # самой себя на окне 1 тождественно равен нулю, поэтому победитель всегда
+    # имел val_edge >= 0, и правило приёмки 2 («на своём окне валидации
+    # кандидат ниже базы больше чем на FOLD_TOL») не могло сработать физически
+    # ни разу. База — точка отсчёта, а не соперник.
+    cands = []
     for fi, (a, b, e) in enumerate(folds):
         train = candles[a:b]
         scored = evolve(base, train, e2.prep(train), slice_aux(aux, a, b),
@@ -257,23 +295,29 @@ def run_symbol(sym, aux_builder):
             if key in seen:
                 continue
             seen.add(key)
-            cands.append(sub)
+            cands.append((fi, sub))
             if len(seen) == 3:
                 break
 
-    best = None
-    for sub in cands:
-        m, sc = agg(sub)
-        if best is None or m > best[0]:
-            best = (m, sc, sub)
-    mean, sc, sub = best
+    pick = e4.choose_winner(cands, base_sc, score_on)
+    sub = pick["genome"]
+    mean, sc = pick["exam_score"], [pick["exam_score"]]
     cand_full = full_run(base, sub, candles, pre_full, aux, lev)
 
-    reasons = []
-    if mean <= base_mean + MIN_EDGE:
-        reasons.append(f"отрыв по OOS {mean-base_mean:+.3f} <= {MIN_EDGE}")
-    if any(c < b_ - FOLD_TOL for c, b_ in zip(sc, base_sc)):
-        reasons.append("один из экзаменов просел ниже базы")
+    # ворота honest_eval на экзаменационном окне и боевом плече монеты
+    ex_seg, ex_pre, ex_aux = oos[pick["exam_window"]]
+    g_win = with_genes(base, sub)
+    mm = he.measure(ex_seg, ex_pre, g_win, e8.make_filter8(g_win, ex_aux), lev,
+                    tag=f"{sym}/v10")
+    gates_ok, gate_reasons, warns = he.verdict(mm)
+
+    reasons = list(gate_reasons)
+    if mean <= base_sc[exam_i] + MIN_EDGE:
+        reasons.append(f"отрыв на экзамене {mean-base_sc[exam_i]:+.3f} "
+                       f"<= {MIN_EDGE}")
+    if pick["val_edge"] is not None and pick["val_edge"] < -FOLD_TOL:
+        reasons.append(f"на своём окне валидации кандидат ниже базы "
+                       f"({pick['val_edge']:+.3f} < -{FOLD_TOL})")
     if cand_full["ret"] < base_full["ret"]:
         reasons.append(f"итог 3.2г {cand_full['ret']:+.2f}% < базового "
                        f"{base_full['ret']:+.2f}%")
@@ -287,27 +331,55 @@ def run_symbol(sym, aux_builder):
             f"а дыра в движке")
     adopt = not reasons
 
-    print(f"ЛУЧШИЙ КАНДИДАТ: OOS {mean:+.3f} {['%+.3f' % s for s in sc]} | "
-          f"3.2г x{lev} {cand_full['ret']:+.2f}% | DD {cand_full['dd']:.2f}% | "
-          f"сделок {cand_full['trades']} "
+    print(f"ЛУЧШИЙ КАНДИДАТ: экзамен {mean:+.3f} против базы "
+          f"{base_sc[exam_i]:+.3f} | 3.2г x{lev} {cand_full['ret']:+.2f}% | "
+          f"DD {cand_full['dd']:.2f}% | сделок {cand_full['trades']} "
           f"| убыточных {cand_full['loss_share']:.2f}%", flush=True)
+    e4.gate_report(mm, gate_reasons, warns)
     print(f"  гены: { {k: (round(v, 4) if isinstance(v, float) else v) for k, v in sub.items()} }")
     print(f"  ПРИНЯТ: {'ДА' if adopt else 'нет — ' + '; '.join(reasons)}",
           flush=True)
 
     chosen = sub if adopt else off
+    # рекомендация по плечу — по обучающей части; полная лестница только отчёт
+    train_c = e4.train_slice(candles)
+    lad_train = ladder(base, chosen, train_c, e2.prep(train_c), aux)
+    lev_ch = e4.choose_leverage(lad_train, DD_CAP)
+    rec_lev = lev_ch["lev"]
     lad = ladder(base, chosen, candles, pre_full, aux)
-    rec_lev = pick_lev(lad)
-    print(f"  лестница плечей: "
-          f"{[(r['lev'], r['ret'], r['dd']) for r in lad]} -> x{rec_lev}",
+    print(f"  лестница плечей (обучение, DD плав.): "
+          f"{[(r['lev'], r['ret'], r['dd_float']) for r in lad_train]} "
+          f"-> x{rec_lev}"
+          f"{'' if lev_ch['ok'] else ' (НЕ ПОДТВЕРЖДЕНО просадкой)'}",
           flush=True)
+    for w in lev_ch["warns"]:
+        print(f"    ВНИМАНИЕ: {w}", flush=True)
+    # Экзамен, ворота и итог 3.2г в этой волне считались на БОЕВОМ плече монеты
+    # (config), потому что волна меняет только гены сетки, а плечо в конфиге
+    # остаётся прежним. Если лестница рекомендует другое — об этом надо сказать
+    # вслух: цифры приёмки описывают x{lev}, а не x{rec_lev}.
+    if rec_lev != lev:
+        print(f"    ВНИМАНИЕ: приёмка считалась на боевом плече x{lev}, а "
+              f"лестница по обучающей части рекомендует x{rec_lev} — "
+              f"рекомендация НЕ проверена экзаменом и воротами", flush=True)
 
     return dict(genes=sub, adopt=adopt, reject_reasons=reasons,
-                base_oos=round(base_mean, 4), cand_oos=round(mean, 4),
+                warnings=warns,
+                exam_measure={k: v for k, v in mm.items() if k != "rs"},
+                protocol=("leaky-3window-mean" if pick["leaky"]
+                          else "honest-val-then-exam"),
+                base_oos=round(base_sc[exam_i], 4), cand_oos=round(mean, 4),
+                base_mean_all=round(base_mean, 4),
                 base_folds=[round(x, 4) for x in base_sc],
                 cand_folds=[round(x, 4) for x in sc],
+                exam_window=pick["exam_window"], val_window=pick["val_window"],
+                val_edge=pick["val_edge"], train_fold=pick["train_fold"],
+                skipped_candidates=pick["skipped"],
                 base_full=base_full, cand_full=cand_full,
-                lev=lev, ladder=lad, rec_lev=rec_lev, chosen=chosen)
+                lev=lev, ladder=lad, ladder_train=lad_train,
+                rec_lev=rec_lev, lev_picked_on="train",
+                lev_confirmed=lev_ch["ok"], lev_warnings=lev_ch["warns"],
+                exam_lev=lev, chosen=chosen)
 
 
 def main():

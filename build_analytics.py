@@ -30,19 +30,42 @@ MONTH = 30 * 86400
 
 
 def analyze(t0, pnls, extra=None):
-    """pnls: [(ts_сек, pnl_$5маржи)]. Возвращает полный набор аналитики."""
+    """pnls: [(ts_сек, pnl_$5маржи, худшая_плавающая_точка_цикла)].
+
+    Третье поле приходит из движка (событие close, ключ `worst`) и всегда
+    <= min(0, pnl). Оно даёт вторую кривую просадки — с переоценкой ОТКРЫТЫХ
+    циклов. Прежние ключи (`drawdown`, `stats.max_dd`) считаются ровно как
+    раньше: их читает сайт, и менять смысл уже опубликованной метрики нельзя.
+
+    `stats.max_dd_float` здесь — то же, что build_pnl_curves.dd_float_closed_peak:
+    дно плавающее, а ПИК берётся только по закрытым сделкам. Это НЕ движковая
+    evolution2.run5.max_dd_mtm, и различий сразу два: там пик поднимает и
+    нереализованная прибыль (здесь поднимать нечем — из событий сделок
+    известна только ХУДШАЯ точка цикла), и там нет реинвеста (фиксированная
+    база $20 против растущего капитала от $50). Поэтому числа расходятся в
+    обе стороны (LTC 30.8% здесь против 25.3% в движке, DOGE 60.4% против
+    73.9%) и сравнивать их между собой нельзя — движковый лежит отдельно, в
+    `stats.engine`.
+    """
     eq, peak = SLEEVE0, SLEEVE0
     equity = [[t0, round(SLEEVE0, 2)]]
     drawdown = [[t0, 0.0]]
+    drawdown_float = [[t0, 0.0]]
+    max_dd_float = 0.0
     monthly = defaultdict(float)
     wins, losses = [], []
     streak, max_win_streak, max_loss_streak = 0, 0, 0
 
-    for ts, pnl in pnls:
+    for ts, pnl, worst in pnls:
+        # худшая точка цикла наступает ДО его закрытия, поэтому меряется от
+        # пика, накопленного предыдущими сделками
+        dd_low = (peak - eq * (1 + worst / BT_BASE)) / peak
         eq *= (1 + pnl / BT_BASE)
         peak = max(peak, eq)
+        max_dd_float = max(max_dd_float, dd_low)
         equity.append([ts, round(eq, 2)])
         drawdown.append([ts, round(-(peak - eq) / peak * 100, 2)])
+        drawdown_float.append([ts, round(-max(dd_low, (peak - eq) / peak) * 100, 2)])
         monthly[(ts - t0) // MONTH] += pnl
         if pnl > 0:
             wins.append(pnl)
@@ -65,6 +88,7 @@ def analyze(t0, pnls, extra=None):
         final_usd=round(eq, 2),
         final_pct=round((eq / SLEEVE0 - 1) * 100, 1),
         max_dd=round(max((-d[1] for d in drawdown), default=0), 1),
+        max_dd_float=round(max_dd_float * 100, 1),
         trades=len(pnls), wins=len(wins), losses=len(losses),
         wr=round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
         profit_factor=round(gross_p / gross_l, 2) if gross_l > 0 else None,
@@ -82,6 +106,7 @@ def analyze(t0, pnls, extra=None):
         stats.update(extra)
     return dict(equity=bpc.downsample(equity),
                 drawdown=bpc.downsample(drawdown),
+                drawdown_float=bpc.downsample(drawdown_float),
                 monthly=monthly_pts, stats=stats)
 
 
@@ -94,8 +119,25 @@ def main():
         if not p:
             continue
         print(f"bot_{sym}...")
-        t0, pnls = bpc.bot_pnls(sym, p, pct5)
-        data = analyze(t0, pnls, extra=dict(lev=p.get("lev", 5)))
+        t0, pnls, meta = bpc.bot_pnls(sym, p, pct5)
+        if meta["ruined"]:
+            print(f"  ВНИМАНИЕ: счёт слит на {meta['ruined_trade']}-й сделке")
+        # Признак слива обязан доехать до файла: движок обрывает прогон, когда
+        # капитала не хватает на очередной цикл, и всё, что ниже (доходность,
+        # winrate, месяцы), относится только к участку ДО слива. Сайт читает
+        # его из stats.ruined (webapp/app.py: ruined_flag).
+        data = analyze(t0, pnls, extra=dict(
+            lev=p.get("lev", 5), ruined=meta["ruined"],
+            ruined_trade=meta["ruined_trade"], ruined_ts=meta["ruined_ts"],
+            # Итог САМОГО движка — отдельным гнездом, чтобы его нельзя было
+            # перепутать с числами выше: там реинвест от $50, здесь
+            # фиксированная база $20 и маржа $5, как в отборе. На оборванном
+            # прогоне разница особенно велика (SOL: -79.6% против -60.1%).
+            engine=dict(base_usd=20.0, reinvest=False,
+                        ret_pct=meta["ret_flat"],
+                        max_dd=meta["dd_closed_flat"],
+                        max_dd_mtm=meta["max_dd_mtm"],
+                        trades=meta["trades"], wins=meta["wins"])))
         with open(os.path.join(OUT_DIR, f"analytics_bot_{sym}.json"), "w",
                   encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False)
@@ -113,13 +155,17 @@ def main():
         r = se.run_setup(name, rec["genome"], c4, ctx, c15, ts15,
                          rec.get("rec_lev", 15))
         t0 = c4[0][0] // 1000
-        pnls = [(t["exit_ts"] // 1000, t["pnl"]) for t in r["trades"]]
+        # у сигналов внутрицикловой переоценки нет — см. bpc.signal_pnls
+        pnls = [(t["exit_ts"] // 1000, t["pnl"], min(t["pnl"], 0.0))
+                for t in r["trades"]]
         reasons = defaultdict(int)
         holds = []
         for t in r["trades"]:
             reasons[t["reason"]] += 1
             holds.append(t["hold_h"])
-        extra = dict(lev=rec.get("rec_lev", 15),
+        # у сигнального движка признака слива нет — ставим False явно, чтобы
+        # отсутствие ключа не читалось как «не проверяли»
+        extra = dict(lev=rec.get("rec_lev", 15), ruined=False,
                      n_tp=reasons.get("tp", 0), n_stop=reasons.get("stop", 0),
                      n_timeout=reasons.get("timeout", 0),
                      n_liq=reasons.get("liq", 0),

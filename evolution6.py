@@ -8,7 +8,18 @@
 
 Специалист: вход разрешён только в bear/range (в bull бот стоит в стороне).
 Фитнес и экзамены считаются ТОЛЬКО по медвежьим/боковым месяцам.
-База = финальные конфиги. Затем лестница плечей x5..x15 на 3.2 годах.
+База = финальные конфиги.
+
+ПРОТОКОЛ ОТБОРА (правка 08.2026, второй круг). У этой волны свой харнесс, и
+он тёк так же, как общий: кандидат оценивался на всех трёх OOS-окнах, включая
+лежащие внутри его обучения, и argmax по среднему служил и выбором, и
+приёмкой. Теперь победитель выбирается по окну валидации (первое окно после
+его обучения), а приёмка смотрит на отдельное экзаменационное окно
+(e4.choose_winner). Кандидаты последнего фолда из гонки выбывают — им нечем
+сдавать экзамен, кроме будущего.
+
+Лестница плечей x5..x15 на 3.2 годах осталась, но это ОТЧЁТ: плечо здесь не
+рекомендуется, потому что полная история включает экзаменационное окно.
 """
 
 import json
@@ -20,6 +31,7 @@ import evolution2 as e2
 import evolution4 as e4
 import evolution5 as e5
 import ext_data as xd
+import honest_eval as he
 
 random.seed(46)
 SYMBOLS = e4.SYMBOLS
@@ -192,18 +204,30 @@ def main():
 
         base = final_genome(sym)
 
-        def agg(g):
-            sc = []
-            for seg, pre_s, aux_s, reg_s, mreg_s in segs:
-                filt = make_gate(reg_s, e5.make_filter5(g, aux_s))
-                r = e2.run5(seg, pre_s, g, entry_filter=filt)
-                sc.append(bear_score(r, mreg_s))
-            return sum(sc) / len(sc), sc
+        # ЧЕСТНЫЙ WALK-FORWARD (правка второго круга, 08.2026).
+        # Здесь был свой протекающий харнесс: agg(g) гоняла кандидата по ВСЕМ
+        # трём OOS-окнам, включая те, что лежат внутри его собственного
+        # обучения (фолды anchored: train фолда 3 — это [0..30м), а окна 18-24 и
+        # 24-30 внутри него), и argmax по среднему решал И выбор, И приёмку —
+        # одно число служило и вопросом, и ответом. v6 общий харнесс e4 не
+        # использует, поэтому правка e4 её НЕ чинила: цикл нужно было развести
+        # здесь. Теперь роли окон те же, что в e4.choose_winner: валидация —
+        # первое окно после обучения кандидата, экзамен — последнее окно, в
+        # выборе не участвует.
+        def score_on(g, wi):
+            seg, pre_s, aux_s, reg_s, mreg_s = segs[wi]
+            filt = make_gate(reg_s, e5.make_filter5(g, aux_s))
+            r = e2.run5(seg, pre_s, g, entry_filter=filt)
+            return bear_score(r, mreg_s)
 
-        base_mean, base_sc = agg(base)
-        print(f"БАЗА (FINAL + режимный гейт): bear/range-OOS {base_mean:+.2f} | "
-              f"{['%+.2f' % s for s in base_sc]}")
+        base_sc = [score_on(base, wi) for wi in range(len(segs))]
+        base_mean = sum(base_sc) / len(base_sc)
+        print(f"БАЗА (FINAL + режимный гейт): bear/range-OOS по окнам "
+              f"{['%+.2f' % s for s in base_sc]} (среднее {base_mean:+.2f}, "
+              f"экзамен = окно {e4.exam_window_index(len(segs))+1}: "
+              f"{base_sc[-1]:+.2f})")
 
+        base_key = tuple(base[k] for k in e5.GENES5)
         cand = []
         for fi, (a, b, e) in enumerate(folds):
             train = candles[a:b]
@@ -215,31 +239,59 @@ def main():
             seen = set()
             for f_, g in scored:
                 key = tuple(g[k] for k in e5.GENES5)
-                if key not in seen:
-                    seen.add(key)
-                    cand.append(g)
+                # база — точка отсчёта, а не соперник (её отрыв от себя = 0)
+                if key == base_key or key in seen:
+                    continue
+                seen.add(key)
+                # номер фолда обязателен: без него не узнать, какие окна для
+                # этого кандидата уже «просмотрены» обучением
+                cand.append((fi, g))
                 if len(seen) == 3:
                     break
 
-        best = None
-        for g in cand:
-            m, sc = agg(g)
-            if best is None or m > best[0]:
-                best = (m, sc, g)
-        m, sc, g_win = best
-        adopt = m > base_mean + 0.5
-        print(f"ЛУЧШИЙ bear-конфиг: {m:+.2f} | {['%+.2f' % s for s in sc]} | "
+        pick = e4.choose_winner(cand, base_sc, score_on)
+        g_win = pick["genome"]
+        m, base_exam = pick["exam_score"], pick["base_exam"]
+        sc = [score_on(g_win, wi) for wi in range(pick["train_fold"],
+                                                  len(segs))]
+        # Ворота honest_eval на экзаменационном окне. Без них отбор здесь
+        # повторяет ошибку волны v11 по SOL: bear_score конфига, который не
+        # торгует, равен ровно 0.00, а база на медвежьем окне почти всегда в
+        # минусе — «ноль больше минуса» и вырожденный геном проходит как
+        # победа. Плечо ворот = e2.LEV, то же, на котором шёл отбор: своё
+        # плечо эта волна не выбирает и в конфиг не отдаёт (её выход — базовый
+        # геном для v7), а лестница ниже — только отчёт.
+        ex_seg, ex_pre, ex_aux, ex_reg, _ = segs[pick["exam_window"]]
+        mm = he.measure(ex_seg, ex_pre, g_win,
+                        make_gate(ex_reg, e5.make_filter5(g_win, ex_aux)),
+                        e2.LEV, tag=f"{sym}/v6")
+        gates_ok, reasons, warns = he.verdict(mm)
+        edge_ok = m > base_exam + 0.5
+        if not edge_ok:
+            reasons = [f"отрыв на экзамене {m - base_exam:+.2f} <= 0.5"
+                       ] + list(reasons)
+        adopt = bool(edge_ok and gates_ok)
+        print(f"ЛУЧШИЙ bear-конфиг: экзамен {m:+.2f} против базы "
+              f"{base_exam:+.2f} | честные окна кандидата "
+              f"{['%+.2f' % s for s in sc]} | "
               f"принят: {'ДА' if adopt else 'нет (остаётся FINAL+гейт)'}")
+        e4.gate_report(mm, reasons, warns)
         g_use = g_win if adopt else base
 
         # --- лестница плечей на полных 3.2г (вход только bear/range) ---
+        # Это ОТЧЁТ, а не выбор: плечо здесь не рекомендуется. Лестница по всей
+        # истории включает экзаменационное окно, и выбирать по ней плечо —
+        # такая же утечка, как выбирать по ней геном (в v7/v10/v11/v12 выбор
+        # идёт по обучающей части, e4.choose_leverage).
         print("Плечо | Итог 3.2г | bear-мес мед | DD | Слив")
         ladder = []
         for lev in LEVS:
-            e2.LEV = lev
-            filt = make_gate(regime, e5.make_filter5(g_use, aux))
-            r = e2.run5(candles, e2.prep(candles), g_use, entry_filter=filt)
-            e2.LEV = 5
+            old_lev, e2.LEV = e2.LEV, lev
+            try:
+                filt = make_gate(regime, e5.make_filter5(g_use, aux))
+                r = e2.run5(candles, e2.prep(candles), g_use, entry_filter=filt)
+            finally:
+                e2.LEV = old_lev   # раньше здесь стояло e2.LEV = 5 «на глазок»
             mreg_full = month_regimes(regime)
             st = bear_stats(r, mreg_full)
             ret = (r["balance"] / e2.START - 1) * 100
@@ -250,8 +302,22 @@ def main():
                                dd=round(r["max_dd"] * 100, 1),
                                ruined=r["ruined"]))
 
-        results[sym] = dict(base_oos=base_mean, cand_oos=m, adopt=bool(adopt),
+        # base_oos/cand_oos — баллы ЭКЗАМЕНАЦИОННОГО окна (в волне 08.2026 тут
+        # лежало среднее по трём окнам); поля protocol/val_* не дают перепутать
+        # старый json с новым при чтении их рядом
+        results[sym] = dict(base_oos=base_exam, cand_oos=m, adopt=bool(adopt),
                             genome=g_use, ladder=ladder,
+                            protocol=("leaky-3window-mean" if pick["leaky"]
+                                      else "honest-val-then-exam"),
+                            base_folds=base_sc, base_mean_all=base_mean,
+                            cand_folds=sc,
+                            val_window=pick["val_window"],
+                            val_score=pick["val_score"],
+                            val_edge=pick["val_edge"],
+                            exam_window=pick["exam_window"],
+                            train_fold=pick["train_fold"],
+                            skipped_candidates=pick["skipped"],
+                            lev_picked_on=None,   # v6 плечо не рекомендует
                             regime_share=share)
     with open("evolution6_winners.json", "w", encoding="utf-8") as fh:
         json.dump(results, fh, ensure_ascii=False, indent=2, default=float)

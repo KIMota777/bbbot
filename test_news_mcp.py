@@ -18,6 +18,7 @@ import time
 import mcp
 
 import news_state
+import newsfeed
 
 OK = 0
 
@@ -94,6 +95,41 @@ async def scenario():
         over = [r for r in saved if r["title"] == "вес выше потолка"]
         check(over and over[0]["weight"] == news_state.MAX_WEIGHT,
               "вес 99.0 обрезан до потолка 1.0, а не принят как есть")
+
+        # --- защита: подделка под белый список ---
+        # Все ссылки ниже ведут на ЧУЖОЙ сервер, но содержат доверенный домен
+        # как подстроку. Пока домен искался поиском подстроки (`d in url`),
+        # такая запись входила в фон «от имени» уважаемого издания — то есть
+        # с максимальным доверием и без всякой проверки со стороны кода.
+        tricky = [
+            "https://evil.io/?ref=coindesk.com",       # в параметре запроса
+            "https://theblock.com.attacker.io/x",      # в чужом домене
+            "https://coindesk.com@evil.io/x",          # в userinfo
+            "https://evil.io/www.theblock.co/story",   # в пути
+            "https://decrypt.co.evil.io/x",            # поддомен наоборот
+            "javascript:fetch('coindesk.com')",        # вообще не http
+        ]
+        sneaky = payload(await client.call_tool("news_submit_scores", {"items": [
+            {"url": u, "title": f"подделка под белый список {i}",
+             "category": "regulation", "weight": 0.9, "direction": -1}
+            for i, u in enumerate(tricky)]}))
+        check(sneaky["принято"] == 0 and sneaky["отклонено"] == len(tricky),
+              f"подделки под белый список отклонены все {len(tricky)} "
+              f"(принято {sneaky['принято']})")
+        check(all(newsfeed.match_allowed_domain(u) is None for u in tricky),
+              "match_allowed_domain не признаёт своей ни одну из подделок")
+        # обратная сторона: настоящие ссылки лент должны проходить, иначе
+        # «починка» превратилась бы в глухой запрет всего подряд
+        real = {
+            "https://www.coindesk.com/policy/2026/01/01/sec": "coindesk.com",
+            "https://coindesk.com/markets/x": "coindesk.com",
+            "https://www.theblock.co/post/1?utm_source=rss": "theblock.co",
+            "https://cointelegraph.com/news/x#top": "cointelegraph.com",
+            "https://decrypt.co/1/btc": "decrypt.co",
+        }
+        check(all(newsfeed.match_allowed_domain(u) == d
+                  for u, d in real.items()),
+              "настоящие ссылки четырёх лент по-прежнему проходят")
 
         # --- нормальный сценарий ---
         now_ms = int(time.time() * 1000)
