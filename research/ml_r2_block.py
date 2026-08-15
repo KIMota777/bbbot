@@ -46,16 +46,32 @@ def runs(mask):
     return int(1 + np.count_nonzero(mask[1:] != mask[:-1])) // 2 + int(mask[0])
 
 
-def shift_null(ret, cfg, keep, n_rep=N_SHIFT, seed=0):
-    u"""Циклический сдвиг маски внутри каждой пары (правило, тф)."""
+def shift_null(ret, cfg, keep, n_rep=N_SHIFT, seed=0, joint=False):
+    u"""Циклический сдвиг маски вдоль времени.
+
+    joint=False — каждая пара (правило, тф) сдвигается на свою величину.
+    joint=True  — ВСЕ пары сдвигаются на одну и ту же долю истории, то есть
+    примерно на одно и то же время.
+
+    Разница между ними принципиальная. Настоящий фильтр по обстановке
+    (волатильность, направление рынка) выключает ВСЕ правила ОДНОВРЕМЕННО:
+    это одна ставка на один участок истории, а не четыре независимые. Если
+    сдвигать каждое правило само по себе, ноль складывается из четырёх
+    независимых промахов, взаимно гасящих друг друга, его разброс выходит
+    заниженным — и любая общая ставка получает лишние «сигмы» просто из-за
+    того, что ноль устроен не так, как проверяемое.
+    """
     rng = np.random.default_rng(seed)
     idx_by = {c: np.flatnonzero(cfg == c) for c in np.unique(cfg)}
     out = np.empty(n_rep)
     for s in range(n_rep):
         k2 = np.zeros(len(ret), dtype=bool)
+        frac = float(rng.random())
         for c, idx in idx_by.items():
             m = keep[idx]
-            k2[idx] = np.roll(m, int(rng.integers(len(idx))))
+            off = (int(round(frac * len(idx))) if joint
+                   else int(rng.integers(len(idx))))
+            k2[idx] = np.roll(m, off)
         out[s] = N.dmean_in(ret, cfg, k2)
     return out
 
@@ -65,22 +81,27 @@ def report(title, ret, cfg, keep, n_tries):
     n_by = {c: int((keep & (cfg == c)).sum()) for c in np.unique(cfg)}
     a = N.rand_null(ret, cfg, n_by, n_rep=2000)
     b = shift_null(ret, cfg, keep)
-    nr = sum(runs(keep[cfg == c]) for c in np.unique(cfg))
+    c = shift_null(ret, cfg, keep, joint=True, seed=7)
+    nr = sum(runs(keep[cfg == c_]) for c_ in np.unique(cfg))
+    pj = float((c >= real).mean())
     print(u"   %-28s прибавка %+.4f%%, оставлено %d, сплошных кусков %d"
           % (title, 100 * real, int(keep.sum()), nr))
-    print(u"      жребий по сделкам:  ±%.4f%%  ->  %5.2f сигмы, p = %.4f"
+    print(u"      жребий по сделкам:   ±%.4f%%  ->  %5.2f сигмы, p = %.4f"
           % (100 * a.std(ddof=1), real / a.std(ddof=1),
              float((a >= real).mean())))
-    print(u"      сдвиг по времени:   ±%.4f%%  ->  %5.2f сигмы, p = %.4f "
-          u"(с поправкой на %d попыток: %.2f)"
+    print(u"      сдвиг врозь:         ±%.4f%%  ->  %5.2f сигмы, p = %.4f"
           % (100 * b.std(ddof=1), real / b.std(ddof=1),
-             float((b >= real).mean()), n_tries,
-             min(1.0, n_tries * float((b >= real).mean()))))
+             float((b >= real).mean())))
+    print(u"      сдвиг ЗАОДНО:        ±%.4f%%  ->  %5.2f сигмы, p = %.4f "
+          u"(с поправкой на %d попыток: %.2f)"
+          % (100 * c.std(ddof=1), real / c.std(ddof=1), pj, n_tries,
+             min(1.0, n_tries * pj)))
     return dict(title=title, real=real, sd_rand=float(a.std(ddof=1)),
                 sd_shift=float(b.std(ddof=1)),
+                sd_joint=float(c.std(ddof=1)),
                 p_rand=float((a >= real).mean()),
-                p_shift=float((b >= real).mean()), runs=nr,
-                n_keep=int(keep.sum()))
+                p_shift=float((b >= real).mean()), p_joint=pj, runs=nr,
+                n_keep=int(keep.sum()), n_tries=n_tries)
 
 
 def main():
@@ -125,18 +146,21 @@ def main():
     for ptag, keep in ((u"медиана", km), (u"верх 30%", kt)):
         res.append(report(u"бустинг|нет|%s" % ptag, rr, cc, keep, 96))
 
-    sd_ratio = np.array([r["sd_shift"] / r["sd_rand"] for r in res])
+    r1 = np.array([r["sd_shift"] / r["sd_rand"] for r in res])
+    r2 = np.array([r["sd_joint"] / r["sd_rand"] for r in res])
     print(u"\n\nСКОЛЬКО СТОИЛА ОШИБКА В НУЛЕ")
-    print(u"   разброс при сдвиге во времени больше, чем при жребии, в "
-          u"%.1f раза в среднем (от %.1f до %.1f)"
-          % (sd_ratio.mean(), sd_ratio.min(), sd_ratio.max()))
-    print(u"   то есть «сигмы», посчитанные по жребию, завышены во столько же.")
-    surv = [r for r in res if r["p_shift"] < 0.05]
-    print(u"   выдержали правильный ноль на уровне 5%%: %d из %d"
-          % (len(surv), len(res)))
-    surv2 = [r for r in res if r["p_shift"] * 39 < 0.05]
-    print(u"   выдержали его же с поправкой на число попыток: %d из %d"
-          % (len(surv2), len(res)))
+    print(u"   разброс больше, чем при жребии по сделкам:")
+    print(u"      при сдвиге врозь  — в %.1f раза (от %.1f до %.1f)"
+          % (r1.mean(), r1.min(), r1.max()))
+    print(u"      при сдвиге заодно — в %.1f раза (от %.1f до %.1f)"
+          % (r2.mean(), r2.min(), r2.max()))
+    print(u"   во столько же раз завышены «сигмы», посчитанные по жребию.")
+    for key, tag in (("p_rand", u"жребий"), ("p_shift", u"сдвиг врозь"),
+                     ("p_joint", u"сдвиг заодно")):
+        a = len([r for r in res if r[key] < 0.05])
+        b = len([r for r in res if r[key] * r["n_tries"] < 0.05])
+        print(u"   ноль «%s»: выдержали %d из %d, с поправкой на число "
+              u"попыток %d из %d" % (tag, a, len(res), b, len(res)))
 
     if not os.path.isdir(OUT):
         os.makedirs(OUT)
