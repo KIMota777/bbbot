@@ -267,8 +267,13 @@ def s_rvol_break(bars, p):
     e = np.zeros(n, dtype=np.int8)
     e[_start(bars.c > hi) & conf] = 1
     e[_start(bars.c < lo) & conf] = -1
-    ex = (bars.c < xl) | (bars.c > xh)
-    return strat.finish(bars, p, Signals(n), e, ex)
+    # Выход раздельный по сторонам: длинную закрывает уход НИЖЕ нижней
+    # границы выходного канала, короткую — ВЫШЕ верхней. Одним условием на обе
+    # стороны это правило закрывало длинную и при движении цены вверх, то есть
+    # на прибыльной стороне пробоя, и превращало черепаший выход в его
+    # противоположность.
+    return strat.finish(bars, p, Signals(n), e, None,
+                        exit_long=(bars.c < xl), exit_short=(bars.c > xh))
 
 
 @strat.register("vol_spike", "volume", {

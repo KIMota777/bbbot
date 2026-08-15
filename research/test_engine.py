@@ -225,7 +225,46 @@ check("дневная сетка не завышает просадку", dd_dai
 check("отчёт берёт просадку с сырой кривой",
       abs(metrics.summarize(r11)["maxdd"] - dd_curve) < 1e-9)
 
-print("12. Причинность всех зарегистрированных семейств")
+print("12. Проверка самого детектора: жулик обязан быть пойман")
+# Детектор причинности — прибор, и его самого надо поверять. Если он не ловит
+# заведомую утечку, его «зелено» не значит ничего, а на нём держится весь
+# каталог. Ровно этим он однажды и болел: открытие и закрытие портились одним
+# множителем, знак тела бара переживал порчу, и стратегия, читающая
+# направление СЛЕДУЮЩЕГО бара, проверку проходила насквозь.
+bt_c, _ = rdata.load_bars("BTCUSDT", "60").slice(*rdata.SPLITS["train"])
+
+
+def cheat_body(bars):
+    """Жулик: смотрит, куда закроется СЛЕДУЮЩИЙ бар, и входит туда же."""
+    s = Signals(len(bars.t))
+    nxt = np.zeros(len(bars.t))
+    nxt[:-1] = bars.c[1:] - bars.o[1:]
+    s.entry = np.sign(nxt).astype(np.int8)
+    s.stop[:] = 0.02
+    return s
+
+
+def cheat_level(bars):
+    """Жулик потоньше: стоп ставится по будущему минимуму ближайших баров."""
+    s = Signals(len(bars.t))
+    s.entry[::50] = 1
+    lo = np.array([bars.l[i:i + 20].min() if i + 20 <= len(bars.l)
+                   else bars.l[i] for i in range(len(bars.l))])
+    s.stop = np.clip(1.0 - lo / np.maximum(bars.c, 1e-9), 0.002, 0.2)
+    return s
+
+
+for nm, fn in (("вход по телу следующего бара", cheat_body),
+               ("стоп по будущему минимуму", cheat_level)):
+    caught = False
+    try:
+        engine.assert_causal(fn, bt_c)
+    except AssertionError:
+        caught = True
+    check("детектор ловит жулика: %s" % nm, caught,
+          "утечка прошла проверку — детектор слеп")
+
+print("13. Причинность всех зарегистрированных семейств")
 bt, _ = rdata.load_bars("BTCUSDT", "60").slice(*rdata.SPLITS["train"])
 for name, s in sorted(strat.REG.items()):
     try:

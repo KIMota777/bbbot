@@ -25,6 +25,8 @@ import metrics
 import protocol
 import rdata
 
+WARMUP = 600      # баров на прогрев индикаторов перед началом окна
+
 
 def oos_trades(st, symbol, tf, is_days=360, oos_days=90, anchored=False,
                t_start=None, t_end=None, risk=0.01, max_lev=10.0,
@@ -37,7 +39,7 @@ def oos_trades(st, symbol, tf, is_days=360, oos_days=90, anchored=False,
     t0 = t_start if t_start is not None else rdata.SPLITS["trainval"][0]
     t1 = t_end if t_end is not None else rdata.SPLITS["trainval"][1]
     bars = rdata.load_bars(symbol, tf)
-    sub, _ = bars.slice(t0, t1)
+    sub, off = bars.slice(t0, t1, warmup=WARMUP)
     cfg = engine.Cfg(risk_frac=risk, max_lev=max_lev, slip_mult=slip_mult,
                      fee=fee if fee is not None else rdata.TAKER_FEE)
     keys = sorted(st.grid)
@@ -49,7 +51,7 @@ def oos_trades(st, symbol, tf, is_days=360, oos_days=90, anchored=False,
             continue
         if int((sig.entry != 0).sum()) == 0:
             continue
-        res = engine.run(sub, sig, cfg)
+        res = engine.run(sub, sig, cfg, start_i=off)
         if len(res.trades) < 3:
             continue
         tapes[tuple(p[k] for k in keys)] = protocol.Tape(res)

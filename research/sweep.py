@@ -53,7 +53,12 @@ def one_task(task):
     except FileNotFoundError:
         return None
     t0, t1 = rdata.SPLITS["trainval"]
-    sub, _ = bars.slice(t0, t1, warmup=0)
+    # Прогрев обязателен: без него индикаторы стартуют холодными в начале
+    # выборки, и первые сотни баров живут по другим правилам, чем остальное.
+    # Бьёт неравномерно — у сочетаний с длинным окном (ema 200, ранг 500,
+    # импульс 336) непрогретый участок в разы длиннее, и они наказываются за
+    # длину окна, а не за качество гипотезы.
+    sub, off = bars.slice(t0, t1, warmup=WARMUP)
     if len(sub) < 2000:
         return None
 
@@ -70,7 +75,7 @@ def one_task(task):
         if int((sig.entry != 0).sum()) == 0:
             degenerate += 1
             continue
-        res = engine.run(sub, sig, cfg)
+        res = engine.run(sub, sig, cfg, start_i=off)
         if len(res.trades) < 3:
             degenerate += 1
             continue

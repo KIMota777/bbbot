@@ -66,11 +66,20 @@ def atr_stop(bars, p, sig, default=0.02):
     return np.clip(d, 0.002, 0.25)
 
 
-def finish(bars, p, sig, entry, exit_=None):
-    """Общий хвост: стоп, тейк, трейл, нормировка размера по волатильности."""
+def finish(bars, p, sig, entry, exit_=None, exit_long=None, exit_short=None):
+    """Общий хвост: стоп, тейк, трейл, нормировка размера по волатильности.
+
+    exit_ закрывает позицию любой стороны; exit_long/exit_short — только свою.
+    Односторонние нужны везде, где условие выхода несимметрично: «упало ниже
+    канала» закрывает длинную, но для короткой это прибыль, а не повод выйти.
+    """
     sig.entry = entry.astype(np.int8)
     if exit_ is not None:
         sig.exit = exit_.astype(bool)
+    if exit_long is not None:
+        sig.exit_long = exit_long.astype(bool)
+    if exit_short is not None:
+        sig.exit_short = exit_short.astype(bool)
     sig.stop = atr_stop(bars, p, sig)
     rr = p.get("rr", 0.0)
     sig.tp = sig.stop * rr if rr else np.zeros(len(bars.t))
@@ -110,8 +119,12 @@ def s_donchian(bars, p):
     e = np.zeros(n, dtype=np.int8)
     e[bars.c > hi] = 1
     e[bars.c < lo] = -1
-    ex = ((bars.c < xl) | (bars.c > xh))
-    return finish(bars, p, Signals(n), e, ex)
+    # Выход РАЗДЕЛЬНЫЙ по сторонам: длинную закрывает пробитие нижней границы
+    # выходного канала, короткую — верхней. Записанное одним условием на обе
+    # стороны, это правило закрывало длинную и при уходе цены вверх, то есть
+    # ровно там, где пробой начал приносить деньги.
+    return finish(bars, p, Signals(n), e, None,
+                  exit_long=(bars.c < xl), exit_short=(bars.c > xh))
 
 
 # --- 2. Пересечение скользящих ---------------------------------------------

@@ -84,18 +84,31 @@ class Signals:
     """Что стратегия говорит про КАЖДЫЙ бар, зная только бары до него.
 
     entry[i]  : -1/0/+1 — желаемое направление, исполняется на открытии i+1
-    exit[i]   : True — закрыть позицию на открытии i+1 (сигнал развернулся)
+    exit[i]   : True — закрыть позицию любой стороны на открытии i+1
+    exit_long[i]  : True — закрыть ТОЛЬКО длинную
+    exit_short[i] : True — закрыть ТОЛЬКО короткую
     stop[i]   : расстояние до стопа в долях цены на момент входа (>0)
     tp[i]     : расстояние до тейка в долях цены; 0 — тейка нет
     trail[i]  : ширина трейла в долях цены; 0 — трейла нет
     size_k[i] : множитель размера (для volatility targeting); 1.0 — обычный
+
+    ЗАЧЕМ РАЗДЕЛЬНЫЕ ВЫХОДЫ. Сначала выход был один на обе стороны, и это
+    молча ломало всё трендовое семейство. Черепаший выход задаётся как «закрыть
+    длинную, если цена упала ниже нижней границы выходного канала». Записанный
+    симметрично, он закрывал длинную и при выходе цены ВВЕРХ — то есть ровно
+    там, где пробой начал работать. Замер: 94% выходов по сигналу срабатывали
+    с прибыльной стороны канала, среднее удержание падало с 39 баров до 9.5.
+    Вывод «следование за трендом убыточно» отчасти опирался на эту ошибку.
     """
 
-    __slots__ = ("entry", "exit", "stop", "tp", "trail", "size_k", "meta")
+    __slots__ = ("entry", "exit", "exit_long", "exit_short", "stop", "tp",
+                 "trail", "size_k", "meta")
 
     def __init__(self, n, meta=None):
         self.entry = np.zeros(n, dtype=np.int8)
         self.exit = np.zeros(n, dtype=bool)
+        self.exit_long = np.zeros(n, dtype=bool)
+        self.exit_short = np.zeros(n, dtype=bool)
         self.stop = np.full(n, 0.02)
         self.tp = np.zeros(n)
         self.trail = np.zeros(n)
@@ -312,7 +325,9 @@ def run(bars, sig, cfg, start_i=0, symbol=None):
         # (г) сигнал текущего бара -> приказ на следующий -----------------
         if i + 1 < n:
             if pos is not None:
-                pending_exit = bool(sig.exit[i]) or \
+                side_exit = (sig.exit_long[i] if pos["side"] > 0
+                             else sig.exit_short[i])
+                pending_exit = bool(sig.exit[i]) or bool(side_exit) or \
                     (ent[i] != 0 and ent[i] != pos["side"])
                 if ent[i] != 0 and ent[i] != pos["side"] and _allowed(cfg, ent[i]):
                     pending = int(ent[i])       # разворот: закрыть и открыть
@@ -410,17 +425,26 @@ def assert_causal(build_signals, bars, cut=0.6, seed=0, tol=0.0):
     for f in ("o", "h", "l", "c", "v", "turnover"):
         setattr(b2, f, getattr(bars, f).copy())
     m = len(bars.t) - k
-    shock = rng.uniform(0.5, 1.8, m)
-    for f in ("o", "c"):
-        getattr(b2, f)[k:] *= shock
+    # Будущее заменяется СВОИМ случайным блужданием, а открытие и закрытие
+    # шумятся НЕЗАВИСИМО. Так было не всегда: сначала o и c умножались на один
+    # и тот же множитель, отчего знак тела бара (закрытие минус открытие)
+    # переживал порчу неизменным. Утечка, читающая направление будущего бара,
+    # такую проверку проходила насквозь — и проверка молча объявляла честными
+    # все стратегии каталога. Теперь после среза от прежних баров не остаётся
+    # ни уровня, ни направления, ни размаха.
+    base = float(bars.c[k - 1]) if k else float(bars.c[0])
+    walk = base * np.exp(np.cumsum(rng.normal(0, 0.01, m)))
+    b2.o[k:] = walk * (1 + rng.normal(0, 0.002, m))
+    b2.c[k:] = walk * (1 + rng.normal(0, 0.002, m))
     b2.h[k:] = np.maximum(b2.o[k:], b2.c[k:]) * (1 + rng.uniform(0, .02, m))
     b2.l[k:] = np.minimum(b2.o[k:], b2.c[k:]) * (1 - rng.uniform(0, .02, m))
-    b2.v[k:] *= rng.uniform(0.2, 5.0, m)
+    b2.v[k:] = bars.v[k:] * rng.uniform(0.2, 5.0, m)
     b2.turnover[k:] = b2.c[k:] * b2.v[k:]
     b = build_signals(b2)
 
     bad = []
-    for name in ("entry", "exit", "stop", "tp", "trail", "size_k"):
+    for name in ("entry", "exit", "exit_long", "exit_short", "stop", "tp",
+                 "trail", "size_k"):
         x = np.asarray(getattr(a, name), dtype=np.float64)[:k]
         y = np.asarray(getattr(b, name), dtype=np.float64)[:k]
         d = ~(np.isclose(x, y, rtol=1e-9, atol=1e-12, equal_nan=True))
