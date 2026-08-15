@@ -65,3 +65,7 @@ desktop.ini
 *.bak
 *.orig
 *.rej
+
+# сырые свечи исследования — качаются fetch_ohlcv.py, в репозиторий не кладём
+research/data/
+research/out/
