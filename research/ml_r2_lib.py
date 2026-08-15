@@ -40,6 +40,7 @@ u"""Вторая попытка мета-разметки: то, чего в п�
 """
 import os
 import sys
+import warnings
 
 import numpy as np
 
@@ -154,9 +155,15 @@ def xs_cols(bars, tf):
             my_ret = a
     R = np.vstack(R)
     V = np.vstack(V)
-    med = np.nanmedian(R, axis=0)
-    return dict(xs_rv_med=np.nanmedian(V, axis=0), xs_ret24_med=med,
-                xs_disp=np.nanstd(R, axis=0),
+    # на самых первых барах истории ни у одной монеты ещё нет значения —
+    # это законный NaN «сведений нет», а не ошибка, поэтому предупреждение
+    # numpy здесь глушится осознанно и только здесь
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        med = np.nanmedian(R, axis=0)
+        rvm = np.nanmedian(V, axis=0)
+        disp = np.nanstd(R, axis=0)
+    return dict(xs_rv_med=rvm, xs_ret24_med=med, xs_disp=disp,
                 rel_str=(my_ret - med) if my_ret is not None
                 else np.full(n, np.nan))
 

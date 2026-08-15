@@ -538,6 +538,30 @@ def archive():
                            dry_run=config.DRY_RUN)
 
 
+@app.route("/research")
+def research_report():
+    """Отчёт исследования — отдаётся с диска как есть.
+
+    Файл собирается отдельно (research/ОТЧЁТ.html) и лежит рядом с кодом,
+    которым он посчитан. Отдаём его прямо с сайта, а не ссылкой наружу, чтобы
+    рядом с обещаниями доходности всегда лежала проверка этих обещаний — и
+    чтобы она не пропала вместе с внешней ссылкой.
+    """
+    path = os.path.join(BOT_DIR, "research", "ОТЧЁТ.html")
+    if not os.path.exists(path):
+        return ("Отчёт ещё не собран: нет research/ОТЧЁТ.html", 404,
+                {"Content-Type": "text/plain; charset=utf-8"})
+    with open(path, encoding="utf-8") as fh:
+        body = fh.read()
+    # файл написан как содержимое страницы без обёртки — добавляем её здесь
+    if "<!doctype" not in body[:200].lower():
+        body = ("<!doctype html><html lang=\"ru\"><head>"
+                "<meta charset=\"utf-8\">"
+                "<meta name=\"viewport\" content=\"width=device-width,"
+                " initial-scale=1\"></head><body>" + body + "</body></html>")
+    return body, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
 RU_SETUPS = {
     "range_long": "Боковик: лонг от нижней границы",
     "range_short": "Боковик: шорт от верхней границы",
