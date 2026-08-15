@@ -22,6 +22,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import types
 
 REPO = os.path.dirname(os.path.abspath(__file__))
@@ -126,8 +127,41 @@ def main():
         check(res.available is False and dict(res) == {"spx": {}, "dxy": {},
                                                        "gold": {}},
               "форма мимо is_valid перехвачена, наружу пустой ряд")
+        # ключ float('inf'): int(inf) даёт OverflowError, а прежняя страховка
+        # перечисляла только (AttributeError, TypeError, ValueError) — то есть
+        # обещание «не бросаем наружу» на этой форме не выполнялось
+        xd._fetch_series = lambda *a, **k: {"spx": {float("inf"): 1.0},
+                                            "dxy": {}, "gold": {}}
+        res = xd.fetch_daily_pct5()
+        check(res.available is False,
+              "ключ float('inf') (OverflowError) перехвачен, а не выброшен")
     finally:
         xd._fetch_series = orig
+
+    # --- обновление кэша БЕЗ его удаления (max_age_s) ---
+    # Прежний способ обновить суточные данные — удалить файл перед вызовом
+    # (так делает bot_rsi.get_macro). Он несовместим с правилом «пустышку не
+    # кэшируем»: если источник в этот момент молчит, годная копия уже стёрта,
+    # и макро-фильтры выключаются на сутки. Проверяем оба конца.
+    shutil.copy(src, work)
+    retry_off()
+    check(xd.macro_available(xd.fetch_daily_pct5(max_age_s=86400)),
+          "свежий кэш при max_age_s отдаётся как есть")
+    old = time.time() - 2 * 86400
+    os.utime("daily_pct5.json", (old, old))
+    retry_off()
+    res = xd.fetch_daily_pct5(max_age_s=86400)
+    check(xd.macro_available(res) and os.path.exists("daily_pct5.json"),
+          "просроченный кэш + мёртвый источник: отдаются вчерашние данные, "
+          "а не пустой ряд")
+    retry_off()
+    check(xd.macro_available(xd.fetch_daily_pct5()),
+          "без max_age_s поведение прежнее: возраст кэша не проверяется")
+    os.remove("daily_pct5.json")
+    retry_off()
+    check(xd.fetch_daily_pct5().available is False,
+          "а вот удалённый заранее кэш восстановить нечем — так и теряются "
+          "макро-фильтры у нынешнего bot_rsi.get_macro")
 
     retry_off()
     check(xd.fetch_funding("BTCUSDT") == [], "fetch_funding при отказе: []")
@@ -145,6 +179,11 @@ def main():
     shutil.rmtree(work, ignore_errors=True)
 
     # --- числа покрытия из шапки модуля: проверяем, а не верим ---
+    # Пауза перед повтором обязана быть сброшена ИМЕННО ЗДЕСЬ: выше мы нарочно
+    # уронили источник, и все три ряда остались помечены «не трогать 5 минут».
+    # Без сброса замер шёл бы по пустым рядам и покрытие выходило нулевым —
+    # проверка ниже падала, то есть числа шапки на деле никто не подтверждал.
+    retry_off()
     hist = os.path.join(REPO, "history_BTCUSDT_15m_1150d.json")
     if os.path.exists(hist):
         import evolution4 as e4
@@ -167,6 +206,13 @@ def main():
               and abs(tr["gold5"] - 0.268) < 0.001,
               f"покрытие обучающей части: oi_chg {tr['oi_chg']:.1%}, "
               f"gold5 {tr['gold5']:.1%} — как написано в шапке")
+        # экзамен важен отдельно: на нём оба ряда полны, и только поэтому
+        # можно говорить, что экзамен эти гены вообще проверяет
+        ex = {k: sum(v is not None for v in aux[k][te:]) / (len(candles) - te)
+              for k in ("oi_chg", "gold5")}
+        check(all(round(ex[k], 3) == 1.0 for k in ("oi_chg", "gold5")),
+              f"на экзамене оба ряда полны: oi_chg {ex['oi_chg']:.1%}, "
+              f"gold5 {ex['gold5']:.1%}")
 
     print(f"\nВСЕ {OK[0]} ПРОВЕРОК ПРОЙДЕНЫ (боевые кэши не тронуты)")
 

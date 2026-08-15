@@ -59,8 +59,16 @@ def die(msg):
 def load():
     if not os.path.exists(CURVES):
         die("нет файла с кривыми")
-    with open(CURVES, encoding="utf-8") as fh:
-        data = json.load(fh)
+    try:
+        with open(CURVES, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        # build_pnl_curves.py может дописывать файл прямо сейчас. Отчёт про
+        # деньги обязан в этом случае сказать «не считаю» своим голосом, а не
+        # вывалить трассировку: владелец должен понять, что делать дальше.
+        die(f"файл с кривыми не читается ({e}) — возможно, идёт пересборка")
+    if not isinstance(data, dict):
+        die("в файле с кривыми не тот формат — ожидался объект")
     series = data.get("series")
     if not series:
         die("в файле нет ни одной серии")

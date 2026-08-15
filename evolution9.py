@@ -11,6 +11,14 @@
 окна (e4.choose_winner). Кандидаты последнего фолда выбывают — экзаменовать их
 нечем, кроме будущего.
 
+ПРИЁМКА (третий круг). Победителя гонки волна теперь не выдаёт за результат:
+у него считаются отрыв от базы, сделки, слив, просадка и худший месяц на
+экзаменационном окне, и в json уходит adopt с причинами отказа. До этой правки
+правила приёмки у волны не было ВООБЩЕ — сетап range_long попал в победители с
+экзаменом -2.09 против базы -1.71 (хуже базы), и ничто этому не мешало.
+Вырожденные кандидаты (меньше se.OOS_MIN_TRADES сделок на своём окне
+валидации) выбывают ещё до argmax.
+
 Плечо здесь по-прежнему рекомендуется по лестнице на ПОЛНОЙ истории, то есть
 по окну, которое считается экзаменационным. Это известная незакрытая дыра
 (сигнальные сетапы живут отдельно от ботовых волн, где выбор идёт по обучающей
@@ -184,7 +192,13 @@ def main():
               f"(экзамен = окно {e4.exam_window_index(len(folds))+1}: "
               f"{base_sc[-1]:+.2f})")
 
-        pick = e4.choose_winner(candidates, base_sc, score_on)
+        # min_trades: порог самого движка сигналов (5), а не e4.MIN_VAL_TRADES
+        # (10). Тот порог откалиброван на сеточный движок, где сделок сотни; у
+        # редких сигнальных сетапов 10 сделок за полугодовое окно — уже почти
+        # потолок, и общий порог выбросил бы из гонки всех, включая здоровых.
+        pick = e4.choose_winner(candidates, base_sc, score_on,
+                                trades_on=trades_on,
+                                min_trades=MIN_EXAM_TRADES)
         g_win = pick["genome"]
         m = pick["exam_score"]
         # честные окна кандидата: валидационное и все последующие
@@ -193,6 +207,39 @@ def main():
         print(f"ЛУЧШИЙ {setup}: экзамен {m:+.2f} против базы "
               f"{pick['base_exam']:+.2f} | честные окна кандидата "
               f"{['%+.2f' % s for s in sc]}")
+
+        # --- ПРИЁМКА: победитель гонки != принятый конфиг --------------------
+        # Раньше этих строк не было вовсе, и любой победитель уезжал в json как
+        # результат волны — включая того, кто на экзамене ХУЖЕ базы. Меряем на
+        # том же прогоне экзаменационного окна, по которому считался балл
+        # (_run_win отдаёт третьим элементом сам r), и на том же плече GA_LEV.
+        _, exam_n, exam_r = _run_win(g_win, pick["exam_window"])
+        exam_dd = exam_r["max_dd"] * 100
+        n_months = max(1, int(exam_r["months"]))
+        worst_month = min([(exam_r["monthly"].get(mo, 0.0) / se.START) * 100
+                           for mo in range(n_months)] or [0.0])
+        edge = m - pick["base_exam"]
+        reasons = []
+        if edge <= MIN_EDGE:
+            reasons.append(f"отрыв на экзамене {edge:+.2f} <= {MIN_EDGE}")
+        if exam_n < MIN_EXAM_TRADES:
+            reasons.append(f"сделок на экзамене {exam_n} < {MIN_EXAM_TRADES}: "
+                           f"окно не экзамен, а прогул")
+        if exam_r["ruined"]:
+            reasons.append("СЧЁТ СЛИТ на экзаменационном окне")
+        if exam_dd > DD_CAP9:
+            reasons.append(f"просадка на экзамене {exam_dd:.1f}% > {DD_CAP9}%")
+        if worst_month < WORST_MONTH_MIN:
+            reasons.append(f"худший месяц экзамена {worst_month:+.1f}% < "
+                           f"{WORST_MONTH_MIN:.0f}%")
+        if pick["all_degenerate"]:
+            reasons.append("ВСЕ кандидаты вырождены: гонку выиграл отказ от "
+                           "торговли, а не сетап")
+        adopt = not reasons
+        print(f"  экзамен x{GA_LEV}: сделок {exam_n}, DD {exam_dd:.1f}%, "
+              f"худший месяц {worst_month:+.1f}%, "
+              f"слив {'ДА' if exam_r['ruined'] else 'нет'}")
+        print(f"  ПРИНЯТ: {'ДА' if adopt else 'нет — ' + '; '.join(reasons)}")
 
         ladder = []
         for lev in LEVS:
@@ -227,6 +274,18 @@ def main():
         # (в json волны 08.2026 под этим именем лежало среднее — поля protocol
         # и base_folds не дают перепутать их при чтении рядом)
         results[setup] = dict(genome=g_win, oos_mean=m, oos_folds=sc,
+                              # adopt/reject_reasons: до третьего круга полей
+                              # не было — читающий не мог отличить победителя
+                              # гонки от конфига, который эту гонку заслужил
+                              adopt=adopt, reject_reasons=reasons,
+                              exam_lev=GA_LEV, exam_trades=exam_n,
+                              exam_dd=round(exam_dd, 1),
+                              exam_worst_month=round(worst_month, 1),
+                              exam_ruined=exam_r["ruined"],
+                              exam_edge=round(edge, 3),
+                              degenerate_candidates=pick["degenerate"],
+                              all_candidates_degenerate=pick["all_degenerate"],
+                              metric=pick["metric"],
                               protocol=("leaky-3window-mean" if pick["leaky"]
                                         else "honest-val-then-exam"),
                               base_folds=base_sc, base_exam=pick["base_exam"],
@@ -238,9 +297,11 @@ def main():
                               skipped_candidates=pick["skipped"],
                               ladder=ladder, rec_lev=rec, caution=caution)
 
-    with open("evolution9_winners.json", "w", encoding="utf-8") as fh:
-        json.dump(results, fh, ensure_ascii=False, indent=2, default=float)
-    print("\nИтоги в evolution9_winners.json")
+    # save_artifact, а не открытый на запись json.dump: файл прошлой волны —
+    # единственное доказательство того, как отбирались нынешние сетапы.
+    # (Заодно снят отказ по NameError: import json из этого файла убран.)
+    out = e4.save_artifact("evolution9_winners.json", results)
+    print(f"\nИтоги в {out}")
 
 
 if __name__ == "__main__":

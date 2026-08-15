@@ -103,6 +103,11 @@ def analyze(t0, pnls, extra=None):
         max_dd=round(max((-d[1] for d in drawdown), default=0), 1),
         max_dd_float=round(max_dd_float * 100, 1),
         trades=len(pnls), wins=len(wins), losses=len(losses),
+        # Третья корзина обязана лежать В ФАЙЛЕ, а не только в этой функции:
+        # иначе читатель по-прежнему видит 911 + 46 = 957 при 958 сделках и
+        # не может понять, куда делась сделка. `flat` закрывает баланс:
+        # wins + losses + flat == trades всегда.
+        flat=flat,
         wr=round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
         profit_factor=round(gross_p / gross_l, 2) if gross_l > 0 else None,
         gross_profit=round(gross_p, 2), gross_loss=round(gross_l, 2),
@@ -146,6 +151,12 @@ def main():
             # перепутать с числами выше: там реинвест от $50, здесь
             # фиксированная база $20 и маржа $5, как в отборе. На оборванном
             # прогоне разница особенно велика (SOL: -79.6% против -60.1%).
+            # Про engine.wins: оно может быть на единицу БОЛЬШЕ, чем wins выше
+            # (SOL: 912 против 911), и это не ошибка ни там, ни там. Движок
+            # считает выигрыши по сырому pnl (> 0), а сюда сделки приезжают
+            # через событие close, где pnl округлён до 4 знаков — цикл с
+            # прибылью меньше сотой доли цента становится нулевым и попадает в
+            # flat. Именно поэтому обе величины лежат в разных гнёздах.
             engine=dict(base_usd=20.0, reinvest=False,
                         ret_pct=meta["ret_flat"],
                         max_dd=meta["dd_closed_flat"],

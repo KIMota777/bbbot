@@ -62,7 +62,7 @@ SYMBOL_PARAMS = {
                        be_move=1,
                        fund_long_max=0.017, fund_short_min=-0.019, oi_gate=2,
                        spx_long_min=-4.8, dxy_long_max=0.93, gold_long_max=1.0),
-        "turbo": None,  # -9% — турбо противопоказан
+        "turbo": None,  # ист.: -9% — турбо противопоказан
     },
     "LTCUSDT": {   # ист.: +118.1% | 84% приб. мес | WR 96% | DD 16.2% (v5)
         "normal": dict(lev=5, rsi_period=7, rsi_os=40, zone_l=0.51, zone_s=0.53,
@@ -98,7 +98,7 @@ SYMBOL_PARAMS = {
                        fund_long_max=0.046, fund_short_min=0.023, oi_gate=1,
                        spx_long_min=-3.0, dxy_long_max=3.97,
                        aroon_n=25, aroon_long_min=91, aroon_short_min=42),
-        "turbo": None,  # +0.5% и WR 33% — не стоит риска
+        "turbo": None,  # ист.: +0.5% и WR 33% — не стоит риска
     },
 }
 
@@ -114,19 +114,19 @@ SYMBOL_PARAMS = {
 # случается (SOL, см. ниже). Плечи здесь выбирались по просадке ПО ЗАКРЫТЫМ
 # сделкам, то есть по заниженной величине.
 # В комментарии: итог 3.2г на выбранном плече | медиана bear-месяца | DD.
-SYMBOL_PARAMS["DOGEUSDT"]["bear"] = dict(  # x10: +145% | +6.5%/мес | DD 18.5%
+SYMBOL_PARAMS["DOGEUSDT"]["bear"] = dict(  # ист. x10: +145% | +6.5%/мес | DD 18.5%
     lev=10, rsi_period=7, rsi_os=37, zone_l=0.21, zone_s=0.55, window=150,
     step=0.006, levels=3, mult=2.0, tp=0.008, sweep=0.035, max_bars=43,
     cooldown=19, knife=2.79, be_move=1,
     fund_long_max=0.021, fund_short_min=-0.051, oi_gate=2,
     dxy_long_max=0.80, gold_long_max=1.07, aroon_n=25, aroon_long_min=35)
-SYMBOL_PARAMS["LTCUSDT"]["bear"] = dict(   # x8: +91% | +5.9%/мес | DD 25.3%
+SYMBOL_PARAMS["LTCUSDT"]["bear"] = dict(   # ист. x8: +91% | +5.9%/мес | DD 25.3%
     lev=8, rsi_period=7, rsi_os=39, zone_l=0.51, zone_s=0.53, window=718,
     step=0.014, levels=2, mult=1.74, tp=0.008, sweep=0.034, max_bars=189,
     knife=2.36, be_move=1,
     fund_long_max=0.0015, fund_short_min=0.0097, oi_gate=1,
     spx_long_min=-0.81, dxy_long_max=2.56, gold_long_max=5.17)
-SYMBOL_PARAMS["BTCUSDT"]["bear"] = dict(   # x12: +112% | +4.0%/мес | DD 10.2%
+SYMBOL_PARAMS["BTCUSDT"]["bear"] = dict(   # ист. x12: +112% | +4.0%/мес | DD 10.2%
     lev=12, rsi_period=7, rsi_os=30, zone_l=0.44, zone_s=0.36, window=307,
     step=0.004, levels=3, mult=2.0, tp=0.038, sweep=0.022, max_bars=163,
     cooldown=11, knife=1.89, be_move=1,
@@ -134,13 +134,13 @@ SYMBOL_PARAMS["BTCUSDT"]["bear"] = dict(   # x12: +112% | +4.0%/мес | DD 10.2
     spx_long_min=-2.41, dxy_long_max=1.90, gold_long_max=3.26,
     ma_mode=1, masf=20, masl=400,
     aroon_n=50, aroon_long_min=10, aroon_short_min=12)
-SYMBOL_PARAMS["ETHUSDT"]["bear"] = dict(   # x5: +17.5% | +2.1%/мес | DD 24.8%
+SYMBOL_PARAMS["ETHUSDT"]["bear"] = dict(   # ист. x5: +17.5% | +2.1%/мес | DD 24.8%
     # специалист не превзошёл FINAL — это FINAL-конфиг с медвежьим гейтом;
     # плечо не поднимать: уже на x8 просадка 38%
     lev=5, rsi_os=25, zone_l=0.50, zone_s=0.41, window=724, step=0.007,
     levels=3, mult=1.6, tp=0.010, sweep=0.025, max_bars=139, cooldown=48,
     knife=3.5)
-SYMBOL_PARAMS["SOLUSDT"]["bear"] = dict(   # x8: +50% | +4.9%/мес | DD 24.4%
+SYMBOL_PARAMS["SOLUSDT"]["bear"] = dict(   # ист. x8: +50% | +4.9%/мес | DD 24.4%
     lev=8, rsi_period=10, rsi_os=38, zone_l=0.49, zone_s=0.38, window=189,
     step=0.013, levels=2, mult=1.44, tp=0.008, sweep=0.035, max_bars=288,
     cooldown=16, knife=3.5, be_move=1,

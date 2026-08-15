@@ -283,9 +283,11 @@ def main():
                           base_oos=rec["base_oos"], cand_oos=rec["cand_oos"],
                           adopt=rec["adopt"])
 
-    with open("evolution7_final.json", "w", encoding="utf-8") as fh:
-        json.dump(final, fh, ensure_ascii=False, indent=2, default=float)
-    print("\nИтоги в evolution7_final.json")
+    # Последняя дыра в защите артефактов (третий круг): здесь файл открывался
+    # на запись напрямую, и первый же прогон уничтожал evolution7_final.json —
+    # единственную запись о том, как отбирались нынешние боевые конфиги.
+    out_name = e4.save_artifact("evolution7_final.json", final)
+    print(f"\nИтоги в {out_name}")
 
 
 if __name__ == "__main__":

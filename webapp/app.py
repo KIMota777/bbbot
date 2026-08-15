@@ -20,9 +20,13 @@ from flask import Flask, jsonify, render_template
 # Поправка стоит на уровне модуля, а не в блоке __main__: сайт запускают и
 # через «flask run», и через waitress/другой сервер — там __main__ чужой,
 # а печатаем мы (прогрев, ошибки биржи) всё так же из этого модуля.
+# line_buffering=True — потому что сайт запускают с перенаправлением вывода в
+# файл (webapp/srv*.log в .gitignore), а при перенаправлении поток становится
+# блочным: сообщения «битый файл данных ...» копятся в буфере килобайтами и до
+# лога не доезжают, пока сервер работает. Именно тогда они и нужны.
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
+    sys.stderr.reconfigure(encoding="utf-8", line_buffering=True)
 except Exception:
     pass
 
@@ -700,10 +704,16 @@ def get_raw_candles(symbol, interval="15"):
     disk = safe_path(os.path.dirname(os.path.abspath(__file__)),
                      f"cache_{symbol}_{interval}.json")
     if disk and os.path.exists(disk) and now - os.path.getmtime(disk) < 600:
-        with open(disk) as fh:
-            data = json.load(fh)
-        _raw_cache[key] = (now, data, 600)
-        return data
+        # Этот кэш пишет сам сайт, и до правки ниже он писался не атомарно:
+        # процесс, убитый Ctrl+C посреди json.dump (обычный способ остановить
+        # start_site.bat), оставлял файл, оборванный на середине. Прямой
+        # json.load на таком обрывке валил /api/candles и /api/sim в 500 —
+        # и не разово, а все 10 минут, пока обрывок считается свежим.
+        # Теперь непрочитанный кэш просто игнорируем и качаем историю заново.
+        data = read_json(disk)
+        if isinstance(data, list):
+            _raw_cache[key] = (now, data, 600)
+            return data
     start = int((now - RAW_DAYS * 86400) * 1000)
     deadline = now + FETCH_BUDGET
     out, cursor, full = [], int(now * 1000), False
@@ -733,8 +743,21 @@ def get_raw_candles(symbol, interval="15"):
     data = [[int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4])]
             for x in out if int(x[0]) >= start]
     if full and disk:                # на диск — только полную историю
-        with open(disk, "w") as fh:
-            json.dump(data, fh)
+        # Пишем во временный файл и переименовываем: смена имени атомарна, так
+        # что убитый посреди записи процесс оставляет либо прежний целый кэш,
+        # либо ничего — но никогда обрывок. Это лечит причину, а не симптом:
+        # чтение выше обрывок переживёт, но лучше его вообще не создавать.
+        tmp = disk + ".tmp"
+        try:
+            with open(tmp, "w") as fh:
+                json.dump(data, fh)
+            os.replace(tmp, disk)
+        except OSError as e:         # нет места/прав — работаем без кэша
+            print(f"кэш свечей {symbol}/{interval}м не сохранён: {e}")
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
     _raw_cache[key] = (now, data, 600 if full else 60)
     return data
 
