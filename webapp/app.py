@@ -330,8 +330,15 @@ def is_num(v):
     if not isinstance(v, (int, float)) or isinstance(v, bool):
         return False
     try:
-        float(v)
+        f = float(v)
     except OverflowError:
+        return False
+    # NaN и бесконечность — законные литералы для json.load, но не числа для
+    # показа. Хуже того, jsonify выводит их как NaN/Infinity, а браузерный
+    # JSON.parse такого не принимает: график молча остаётся пустым, и никто
+    # не понимает почему. Отсекаем на входе, а не после отрисовки.
+    # (f != f — проверка на NaN без импорта math: NaN не равен сам себе.)
+    if f != f or f in (float("inf"), float("-inf")):
         return False
     return True
 
@@ -413,7 +420,13 @@ def ruined_flag(data):
     # страховка на случай, если признак не проставлен: капитал в нуле или
     # минусе — это слив по определению, каким бы ключом его ни называли
     end = stats.get("final_usd")
-    return is_num(end) and end <= 0
+    if is_num(end):
+        return end <= 0
+    # NaN отдельно: is_num его больше не пропускает, а сравнение с нулём для
+    # него всегда ложно — раньше счёт с испорченным капиталом молча считался
+    # рабочим. Это ровно тот признак, ради которого всё и затевалось, поэтому
+    # неизвестность здесь трактуется как повод предупредить, а не промолчать.
+    return isinstance(end, float) and end != end
 
 
 def list_bots(modes):
@@ -441,9 +454,12 @@ def list_bots(modes):
                 # Проверяем ещё и тип: pct из недописанного файла может быть
                 # строкой, а сравнение pct >= 0 со строкой — тот же 500.
                 pct, usd = a.get("final_pct"), a.get("final_usd")
-                if is_num(pct) and usd is not None:
+                # оба числа проверяем одинаково: раньше usd проверялся только
+                # на «не None», и список в этом поле печатался как сумма денег
+                if is_num(pct) and is_num(usd):
                     sign = "+" if pct >= 0 else ""
-                    reinvest = f"💰 с реинвестом: $50 → ${usd} ({sign}{pct}%)"
+                    reinvest = (f"💰 с реинвестом: $50 → ${usd:.2f} "
+                                f"({sign}{pct}%)")
                 if a:
                     # обе просадки: закрытая (по завершённым сделкам) занижена,
                     # именно по ней когда-то выбиралось плечо
@@ -607,12 +623,19 @@ def clean_history(rows):
             outcome=outcome,
             outcome_cls=("pos" if outcome == "ТЕЙК" else
                          "neg" if outcome == "СТОП" else ""),
-            r_str="%+.1f" % r, r_cls=("pos" if r > 0 else "neg"),
+            # ноль — это ноль, а не убыток: красить его красным и ставить «+»
+            # значит показывать сделку в безубыток как проигранную
+            r_str="%+.1f" % r,
+            r_cls=("pos" if r > 0 else "neg" if r < 0 else ""),
             # None у pnl_usd — это «не записано», а не ноль: рисуем прочерк
             # без цвета, а не «+0.00» зелёным
             pnl_str=("—" if pnl is None else "%+.2f" % pnl),
-            pnl_cls=("" if pnl is None else ("pos" if pnl > 0 else "neg")),
-            cap_str=("—" if not cap else "$%.2f" % cap),
+            pnl_cls=("" if pnl is None else
+                     "pos" if pnl > 0 else "neg" if pnl < 0 else ""),
+            # капитал РОВНО ноль — это слив, а не «не записано»: через «not cap»
+            # оба случая рисовались одинаковым прочерком, и самый важный для
+            # владельца исход исчезал из таблицы
+            cap_str=("$%.2f" % cap if is_num(cap) else "—"),
             hold_h=cell(h.get("hold_h")), exit_ts=exit_ts))
     if dropped:
         print(f"signals.json: пропущено строк истории без чисел: {dropped}")
