@@ -45,12 +45,20 @@ TF = "240"
 def variants():
     V = {}
     V["база: маркет по открытию"] = xe.XCfg()
-    # 1. лимитный вход
-    V["лимит откат, жизнь 1 бар"] = xe.XCfg(entry="limit", limit_life=1)
-    V["лимит откат, жизнь 3 бара"] = xe.XCfg(entry="limit", limit_life=3)
-    V["лимит откат, жизнь 6 баров"] = xe.XCfg(entry="limit", limit_life=6)
-    V["лимит, прокол 0.15%"] = xe.XCfg(entry="limit", limit_life=3,
-                                       limit_pen=0.0015)
+    # 1. лимитный вход: заявка на откат в НАШУ пользу, отступ в долях стопа
+    V["лимит откат 0.25R, жизнь 3"] = xe.XCfg(entry="limit", limit_off=0.25,
+                                              limit_life=3)
+    V["лимит откат 0.5R, жизнь 3"] = xe.XCfg(entry="limit", limit_off=0.5,
+                                             limit_life=3)
+    V["лимит откат 0.25R, жизнь 6"] = xe.XCfg(entry="limit", limit_off=0.25,
+                                              limit_life=6)
+    V["лимит откат 0.5R, жизнь 12"] = xe.XCfg(entry="limit", limit_off=0.5,
+                                              limit_life=12)
+    V["лимит 0.25R, прокол 0.15%"] = xe.XCfg(entry="limit", limit_off=0.25,
+                                             limit_life=3, limit_pen=0.0015)
+    V["лимит 0.25R + половина на 1.5R"] = xe.XCfg(
+        entry="limit", limit_off=0.25, limit_life=3,
+        partial_R=1.5, partial_frac=0.5, trail_after_partial=1.0)
     # 2. частичная фиксация
     V["половина на 1R, остаток трейл"] = xe.XCfg(partial_R=1.0,
                                                  partial_frac=0.5,

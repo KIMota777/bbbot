@@ -38,13 +38,21 @@ class XCfg:
 
     __slots__ = ("entry", "delay", "limit_life", "limit_pen", "maker_fee",
                  "partial_R", "partial_frac", "be_R", "trail_after_partial",
-                 "time_bars", "stop_mult", "trail_always")
+                 "time_bars", "stop_mult", "trail_always", "limit_off")
 
     def __init__(self, entry="market", delay=0, limit_life=3,
                  limit_pen=0.0005, maker_fee=rdata.MAKER_FEE,
                  partial_R=0.0, partial_frac=0.5, be_R=0.0,
                  trail_after_partial=0.0, time_bars=0, stop_mult=1.0,
-                 trail_always=0.0):
+                 trail_always=0.0, limit_off=0.0):
+        # Насколько ЛУЧШЕ закрытия сигнального бара стоит заявка, в долях
+        # ширины стопа. Ноль означает «на самом закрытии» — а это на непрерывном
+        # рынке почти всегда уже маркетабельно: открытие следующего бара
+        # совпадает с закрытием предыдущего, и заявка исполняется тейкером по
+        # рынку. Без ненулевого отступа никакого «лимитного входа» нет вовсе,
+        # есть переименованный маркет. Проверено: при limit_off=0 залив 100%,
+        # мейкерских исполнений 0, числа совпадают с маркетом до знака.
+        self.limit_off = limit_off
         self.entry = entry                       # "market" | "limit"
         self.delay = delay                       # доп. баров задержки
         self.limit_life = limit_life             # сколько баров живёт заявка
@@ -63,8 +71,9 @@ class XCfg:
         if self.delay:
             p.append("delay%d" % self.delay)
         if self.entry == "limit":
-            p.append("life%d/pen%.2f%%" % (self.limit_life,
-                                           100 * self.limit_pen))
+            p.append("off%.2fR/life%d/pen%.2f%%"
+                     % (self.limit_off, self.limit_life,
+                        100 * self.limit_pen))
         if self.partial_R:
             p.append("part%.0f%%@%.1fR" % (100 * self.partial_frac,
                                            self.partial_R))
@@ -287,10 +296,12 @@ def run(bars, sig, cfg, x, start_i=0, symbol=None):
                     (ent[i] != 0 and ent[i] != pos["side"])
                 if ent[i] != 0 and ent[i] != pos["side"] and \
                         _allowed(cfg, ent[i]):
-                    order = _place(x, int(ent[i]), i, c[i], n)
+                    order = _place(x, int(ent[i]), i, c[i], n,
+                                   float(sig.stop[i]) * x.stop_mult)
                     n_placed += 1
             elif not halted and ent[i] != 0 and _allowed(cfg, ent[i]):
-                order = _place(x, int(ent[i]), i, c[i], n)
+                order = _place(x, int(ent[i]), i, c[i], n,
+                               float(sig.stop[i]) * x.stop_mult)
                 n_placed += 1
 
         if pos is None and order is None and not pending_exit:
@@ -313,15 +324,24 @@ def run(bars, sig, cfg, x, start_i=0, symbol=None):
                    n_placed, n_filled, n_maker)
 
 
-def _place(x, side, k, level, n):
+def _place(x, side, k, level, n, stop_frac=0.0):
+    """Заявка по сигналу бара k. Для лимита уровень отодвигается В НАШУ ПОЛЬЗУ.
+
+    Отступ задан в долях ширины стопа, а не в процентах цены: иначе один и тот
+    же отступ означал бы разное для BTC и DOGE и для спокойного и бурного
+    рынка. 0.25R — это «подожду четверть риска отката».
+    """
     first = k + 1 + x.delay
     if first >= n:
         return None
+    lv = float(level)
     if x.entry == "limit":
         last = min(first + x.limit_life - 1, n - 1)
+        if x.limit_off and stop_frac > 0 and np.isfinite(stop_frac):
+            lv *= (1 - side * x.limit_off * stop_frac)
     else:
         last = first
-    return dict(side=side, k=k, first_i=first, last_i=last, level=float(level))
+    return dict(side=side, k=k, first_i=first, last_i=last, level=lv)
 
 
 def _try_fill(order, i, o, h, l, slip, x):

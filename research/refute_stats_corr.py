@@ -238,7 +238,38 @@ def main():
     else:
         print("   ожидаемая настоящая связь неотличима от нуля при любом n")
 
+    # ---------------------------------------------------------------- 5 ----
+    print("\n5. «ИЗ ДВАДЦАТИ В ПЛЮСЕ ТОЛЬКО ТРИ» — насколько это редкость")
+    print("   Это НЕ двадцать независимых монеток: все двадцать торгуют одни")
+    print("   и те же пять монет в одни и те же 169 дней. Считаем честно —")
+    print("   пересобираем месяцы одновременно у всех двадцати.")
+    cnt = np.empty(N_SIM, dtype=int)
+    for s in range(N_SIM):
+        cols = []
+        while len(cols) < n_te:
+            st = int(rng.integers(0, max(1, m - BLOCK)))
+            cols.extend(range(st, min(st + BLOCK, m)))
+        blk = lnull[:, np.array(cols[:n_te])]
+        cnt[s] = int((blk.mean(axis=1) > 0).sum())
+    n_pos_obs = int((te_obs > 0).sum())
+    print("   при ЗАВЕДОМОМ отсутствии перевеса у всех: в плюсе бывает")
+    print("      медиана %d из 20, середина 90%%: от %d до %d"
+          % (int(np.median(cnt)), int(np.percentile(cnt, 5)),
+             int(np.percentile(cnt, 95))))
+    p_cnt = float((cnt <= n_pos_obs).mean())
+    print("   наблюдалось %d из 20; чистый шум даёт %d и меньше в %.0f%% "
+          "случаев" % (n_pos_obs, n_pos_obs, 100 * p_cnt))
+    if p_cnt > 0.05:
+        print("   То есть «в плюсе только три» — тоже не улика.")
+    else:
+        print("   Это уже редковато для чистого шума: %.1f%%." % (100 * p_cnt))
+    print("   (для сравнения: если бы двадцать были НЕЗАВИСИМЫ, 3 и меньше")
+    print("    из 20 при честной монетке случалось бы в 0.1%% случаев —")
+    print("    именно эта подмена и делает вывод убедительнее, чем он есть)")
+
     out = dict(r_obs=r_obs, t=t, ci=[lo, hi], spearman=r_sp,
+               n_pos_obs=n_pos_obs, p_count=p_cnt,
+               cnt_med=float(np.median(cnt)),
                null_mean=float(rs.mean()), null_sd=float(rs.std(ddof=1)),
                null_p_one=p_one, null_p_two=p_two,
                sd_month_log=sd_mean, tau_obs=tau_obs, tau_true=tau_true,
