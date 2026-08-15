@@ -16,6 +16,8 @@
 Запуск: python test_ext_data.py
 """
 
+import contextlib
+import io
 import json
 import logging
 import os
@@ -27,6 +29,7 @@ import types
 
 REPO = os.path.dirname(os.path.abspath(__file__))
 OK = [0]
+HITS = [0]      # сколько раз тест «сходил в источник» — считает kill_network
 
 
 def check(cond, name):
@@ -36,10 +39,16 @@ def check(cond, name):
 
 
 def kill_network(xd):
-    """Любое обращение к источнику = отказ источника."""
+    """Любое обращение к источнику = отказ источника (и оно считается).
+
+    Счётчик HITS нужен для проверки паузы повторных попыток: «данные
+    вернулись» и «источник не дёргали» — разные утверждения, и второе можно
+    проверить только счётом обращений.
+    """
     fake_yf = types.ModuleType("yfinance")
 
     def dead_download(*a, **k):
+        HITS[0] += 1
         raise RuntimeError("сеть отключена в тесте")
 
     fake_yf.download = dead_download
@@ -51,6 +60,7 @@ def kill_network(xd):
 
         def __getattr__(self, name):
             def boom(*a, **k):
+                HITS[0] += 1
                 raise RuntimeError("биржа недоступна в тесте")
             return boom
 
@@ -157,7 +167,28 @@ def main():
     retry_off()
     check(xd.macro_available(xd.fetch_daily_pct5()),
           "без max_age_s поведение прежнее: возраст кэша не проверяется")
+
+    # --- пауза повторных попыток на пути max_age_s ---
+    # Отдача просроченной копии с диска — это НЕ ответ источника. Пока это
+    # считалось успехом, _fetch_series сбрасывал паузу, кэш оставался
+    # просроченным, и каждый следующий вызов снова шёл в молчащий Yahoo:
+    # замер до правки — 5 вызовов подряд дали 5 обращений к источнику, а на
+    # сайте вызов приходится на каждый запрос страницы.
+    os.utime("daily_pct5.json", (old, old))
+    retry_off()
+    HITS[0] = 0
+    got = [xd.fetch_daily_pct5(max_age_s=86400) for _ in range(5)]
+    check(HITS[0] == 1,
+          f"пять вызовов на просроченном кэше — обращений к мёртвому "
+          f"источнику {HITS[0]}, остальные держит пауза RETRY_PAUSE_S")
+    check(all(xd.macro_available(g) for g in got),
+          "и все пять всё равно получили данные с диска, а не пустой ряд")
+    check(bool(xd._retry_after), "пауза действительно заведена, а не сброшена")
     os.remove("daily_pct5.json")
+    check(xd.fetch_daily_pct5(max_age_s=86400).available is False,
+          "пауза идёт, а копии на диске уже нет: пустой ряд с причиной")
+    check(HITS[0] == 1, "и источник за время паузы больше не дёргали")
+
     retry_off()
     check(xd.fetch_daily_pct5().available is False,
           "а вот удалённый заранее кэш восстановить нечем — так и теряются "
@@ -170,10 +201,50 @@ def main():
           and not os.path.exists("oi_BTCUSDT.json"),
           "пустышка funding/OI на диск не записана")
 
+    # --- ФОРМА кэша funding/OI, а не только «непусто» ---
+    # Прежде здесь стоял is_valid=bool, и словарь вместо списка пар считался
+    # годным: fetch_funding отдавал наружу словарь, а step_lookup на нём
+    # бросал ValueError — то самое исключение, которого контракт модуля
+    # обещает не допускать. Имя AAAUSDT выбрано так, чтобы файл шёл первым по
+    # алфавиту (это же понадобится ниже, в проверке describe_cache).
+    with open("funding_AAAUSDT.json", "w", encoding="utf-8") as fh:
+        json.dump({"1677283200000": 0.01}, fh)
+    retry_off()
+    got = xd.fetch_funding("AAAUSDT")
+    check(got == [], "кэш funding словарём вместо пар: пустой ряд, не словарь")
+    check(xd.step_lookup(got)(0) is None,
+          "и step_lookup на нём не бросает наружу")
+    with open("oi_AAAUSDT.json", "w", encoding="utf-8") as fh:
+        json.dump([[1729119600000, "не число"]], fh)
+    retry_off()
+    check(xd.fetch_oi("AAAUSDT") == [],
+          "кэш OI со строкой вместо числа: пустой ряд")
+    check(os.path.exists("funding_AAAUSDT.json")
+          and os.path.exists("oi_AAAUSDT.json"),
+          "негодные кэши funding/OI не удалены молча")
+
     candles = [[i * 900000, 1.0, 1.0, 1.0, 1.0] for i in range(200)]
     aux = xd.build_aux4(candles, [], [], xd.fetch_daily_pct5())
     check(len(aux["fund"]) == 200 and all(v is None for v in aux["gold5"]),
           "build_aux4 на пустых рядах: длина цела, значения None")
+
+    # --- describe_cache: инструмент проверки утверждений не должен падать ---
+    # `python ext_data.py` предлагается шапкой модуля как способ проверить
+    # заявленную глубину рядов. До правки первый же кэш неожиданной формы
+    # ронял его с KeyError: 0, и остальные файлы оставались неописанными.
+    shutil.copy(os.path.join(REPO, "funding_BTCUSDT.json"), work)
+    write_cache([1, 2, 3])          # и daily_pct5.json тоже негодной формы
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        xd.describe_cache()
+    out = buf.getvalue()
+    check("НЕГОДНАЯ ФОРМА" in out,
+          "describe_cache: негодный кэш описан строкой, а не исключением")
+    check("funding_BTCUSDT.json" in out and "3800 точек" in out,
+          "и годный файл ПОСЛЕ негодного всё равно описан (отчёт не оборван)")
+    check(out.count("НЕГОДНАЯ ФОРМА") == 3,
+          f"негодными названы все три: funding-словарь, oi-строка и "
+          f"daily_pct5 списком (найдено {out.count('НЕГОДНАЯ ФОРМА')})")
 
     os.chdir(REPO)
     shutil.rmtree(work, ignore_errors=True)

@@ -193,8 +193,12 @@ def fetch_all(sources=None, limit_per_source=40, max_age_h=48):
     names = list(sources or SOURCES)
     merged, errors = {}, {}
     for name in names:
-        if name not in SOURCES:
-            errors[name] = "неизвестный источник"
+        # имя ленты приходит от модели через MCP-инструмент, так что оно
+        # может оказаться и не строкой: это тот же «неизвестный источник»,
+        # а не повод уронить выгрузку целиком (нехешируемое имя вроде списка
+        # роняло и проверку `not in`, и запись в errors — нашёл фаззинг)
+        if not isinstance(name, str) or name not in SOURCES:
+            errors[str(name)[:60]] = "неизвестный источник"
             continue
         try:
             items = fetch_source(name, limit_per_source)

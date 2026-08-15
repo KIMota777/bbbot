@@ -56,7 +56,9 @@ MacroSeries с available=False. MacroUnavailable осталось внутрен
 удаляют соседние скрипты, поэтому неожиданная ФОРМА кэша (не тот тип ключа,
 строка вместо числа, список вместо словаря) обязана давать ровно то же
 самое — пустой ряд и ERROR, а не исключение. За это отвечают проверки формы
-в is_valid каждого ряда плюс страховка вокруг преобразования ключей в
+в is_valid каждого ряда (у funding и OI — _is_series: непустой список
+числовых пар; у макро — своя is_valid внутри fetch_daily_pct5) плюс
+страховка вокруг преобразования ключей в
 fetch_daily_pct5. Страховка ловит Exception целиком: перечень «ожидаемых»
 типов оставлял дыры (ключ float('inf') давал OverflowError мимо всех
 обработчиков), а обещание «не бросаем» не может держаться на полноте
@@ -66,6 +68,9 @@ fetch_daily_pct5. Страховка ловит Exception целиком: пер
 следует через max_age_s (см. _cache), а не удаляя файл перед вызовом:
 удаление и правило «пустышку не кэшируем» гасят друг друга, и попытка
 обновиться в момент молчания источника оставляет фильтры вовсе без данных.
+Отданная с диска просроченная копия при этом НЕ считается ответом источника:
+пауза RETRY_PAUSE_S заводится и в этом случае, иначе просроченный кэш гнал бы
+в молчащий источник по обращению на каждый запрос страницы сайта.
 
 Что при этом происходит в бою, без прикрас: bot_rsi.py получит пустые ряды,
 положит в свой суточный кэш None по всем трём макро-фильтрам (метод
@@ -75,6 +80,7 @@ RsiGridBot.get_macro) и до конца суток торгует БЕЗ них
 
 import json
 import logging
+import math
 import os
 import tempfile
 import time
@@ -117,7 +123,15 @@ class MacroSeries(dict):
 
 
 def macro_available(pct5):
-    """True, если макро-ряды действительно получены, а не пустышка."""
+    """True, если макро-ряды действительно получены, а не пустышка.
+
+    Предикат обязан ОТВЕЧАТЬ, а не бросать: его зовут ровно затем, чтобы
+    выяснить, годится ли объект в дело. Поэтому чужой тип (None из чьей-то
+    переменной, список из битого кэша) — это честное «нет», а не
+    AttributeError у вызывающего, который спрашивал про доступность данных.
+    """
+    if not isinstance(pct5, dict):
+        return False
     return (bool(getattr(pct5, "available", True))
             and all(pct5.get(k) for k in ("spx", "dxy", "gold")))
 
@@ -174,8 +188,37 @@ def _write_json(path, data, attempts=5):
         raise
 
 
+def _disk_copy(path, is_valid=None):
+    """Годные данные с диска БЕЗ единого обращения к источнику (или None).
+
+    Нужна на время паузы повторных попыток: источник трогать нельзя, но
+    лежащая рядом просроченная копия всё равно полезнее пустого ряда —
+    пустота выключает фильтры целиком, а суточной давности макро нет.
+    Читает молча: здесь любая беда с файлом означает ровно «запасного
+    варианта нет», а громкую строку в лог пишет вызывающий.
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        data = _read_json(path)
+    except Exception:
+        return None
+    if is_valid is not None and not is_valid(data):
+        return None
+    return data
+
+
 def _cache(path, builder, is_valid=None, max_age_s=None):
-    """Кэш в json. is_valid — проверка «данные вообще есть».
+    """Кэш в json. is_valid — проверка «данные есть и они нужной ФОРМЫ».
+
+    Возвращает ПАРУ (данные, причина_отката). Вторая половина пуста, когда
+    данные настоящие: только что от источника или из ещё свежего кэша. Она
+    непуста ровно в одном случае — источник не ответил и отдана прежняя
+    копия с диска. Без этого признака _fetch_series принимал такой откат за
+    успех и СБРАСЫВАЛ паузу повторных попыток: кэш-то остаётся просроченным,
+    значит следующий же вызов снова шёл в молчащий источник, и пауза на
+    пути max_age_s не работала вовсе (замер: 5 вызовов подряд = 5 обращений
+    к мёртвому источнику).
 
     Пустой результат не кэшируется НИКОГДА: иначе один сбой источника
     замораживал бы пустышку на сутки. Уже лежащий пустой кэш тоже не
@@ -201,11 +244,11 @@ def _cache(path, builder, is_valid=None, max_age_s=None):
         if is_valid is None or is_valid(data):
             age = time.time() - os.path.getmtime(path)
             if max_age_s is None or age <= max_age_s:
-                return data
+                return data, ""
             stale = data
         else:
-            log.warning("Кэш %s пуст — перестраиваем, а не используем как есть",
-                        path)
+            log.warning("Кэш %s пуст или неожиданной формы — перестраиваем, "
+                        "а не используем как есть", path)
     try:
         data = builder()
     except Exception as e:
@@ -214,18 +257,18 @@ def _cache(path, builder, is_valid=None, max_age_s=None):
         # источник молчит, но на диске есть годные данные вчерашней свежести
         log.error("Ряд %s просрочен, а источник не ответил (%s) — работаем на "
                   "прежних данных с диска, а не выключаем фильтры", path, e)
-        return stale
+        return stale, f"{type(e).__name__}: {e}"
     if is_valid is not None and not is_valid(data):
         if stale is not None:
             log.error("Ряд %s просрочен, а источник вернул пустые данные — "
                       "работаем на прежних данных с диска", path)
-            return stale
+            return stale, "источник вернул пустые данные"
         # намеренно НЕ пишем файл: пусть следующий вызов попробует снова
         raise MacroUnavailable(
             f"источник вернул пустые данные для {path} — кэш не обновлён, "
             "зависящие фильтры НЕ ПРИМЕНЯЛИСЬ")
     _write_json(path, data)
-    return data
+    return data, ""
 
 
 # Пауза перед повторным обращением к отказавшему источнику. Нужна из-за
@@ -234,6 +277,11 @@ def _cache(path, builder, is_valid=None, max_age_s=None):
 # отвечают отказом. 5 минут — данные суточные, потерять от такой задержки
 # нечего, а первая же попытка после паузы всё равно случится задолго до
 # следующей смены дня.
+# Пауза заводится на ЛЮБОЙ отказ источника, включая тот, после которого
+# вызывающий всё же получил данные с диска (просроченный кэш как запасной
+# вариант): «данные отданы» и «источник жив» — разные вещи, а просроченным
+# кэш остаётся до первого удачного ответа, так что без паузы каждый вызов
+# снова шёл бы в молчащий источник.
 RETRY_PAUSE_S = 300
 _retry_after = {}   # ключ ряда -> время, раньше которого источник не трогаем
 _last_reason = {}   # ключ ряда -> почему он в прошлый раз не ответил
@@ -251,12 +299,20 @@ def _fetch_series(key, path, builder, is_valid, empty, max_age_s=None):
     now = time.time()
     wait = _retry_after.get(key, 0.0) - now
     if wait > 0:
+        reason = _last_reason.get(key, "источник молчит")
+        # пауза запрещает трогать ИСТОЧНИК, но не диск: если прежняя копия
+        # ряда на месте, отдать её честнее, чем выключить фильтры на 5 минут
+        held = _disk_copy(path, is_valid)
+        if held is not None:
+            log.error("Ряд %s: источник не отвечает (%s), следующая попытка "
+                      "через %.0f с — отдаём прежние данные с диска",
+                      key, reason, wait)
+            return held
         log.error("Ряд %s НЕДОСТУПЕН (%s) — зависящие фильтры НЕ ПРИМЕНЯЮТСЯ; "
-                  "следующая попытка источника через %.0f с",
-                  key, _last_reason.get(key, "источник молчит"), wait)
-        return empty(_last_reason.get(key, "источник молчит"))
+                  "следующая попытка источника через %.0f с", key, reason, wait)
+        return empty(reason)
     try:
-        data = _cache(path, builder, is_valid, max_age_s)
+        data, fallback = _cache(path, builder, is_valid, max_age_s)
     except MacroUnavailable as e:
         reason = str(e)
     except Exception as e:
@@ -266,14 +322,61 @@ def _fetch_series(key, path, builder, is_valid, empty, max_age_s=None):
         log.exception("Ряд %s: сбой при загрузке", key)
         reason = f"{type(e).__name__}: {e}"
     else:
-        _retry_after.pop(key, None)
-        _last_reason.pop(key, None)
+        if not fallback:
+            _retry_after.pop(key, None)
+            _last_reason.pop(key, None)
+            return data
+        # данные есть, но взяты с диска, потому что источник молчал: это НЕ
+        # успех источника — заводим паузу, иначе следующий вызов (а на сайте
+        # это следующий запрос страницы) снова пойдёт в тот же молчащий Yahoo
+        _retry_after[key] = now + RETRY_PAUSE_S
+        _last_reason[key] = fallback
+        log.error("Ряд %s: источник не ответил (%s) — отданы прежние данные с "
+                  "диска, следующая попытка не раньше чем через %d с",
+                  key, fallback, RETRY_PAUSE_S)
         return data
     _retry_after[key] = now + RETRY_PAUSE_S
     _last_reason[key] = reason
     log.error("Ряд %s НЕДОСТУПЕН (%s) — зависящие фильтры НЕ ПРИМЕНЯЮТСЯ, "
               "кэш намеренно не обновлён", key, reason)
     return empty(reason)
+
+
+def _is_series(rows):
+    """Форма ряда funding/OI: непустой список числовых пар (ts, значение).
+
+    Раньше здесь стоял просто bool, то есть проверялось только «непусто», а
+    шапка модуля обещала проверку ФОРМЫ. Обещание было не пустой придиркой:
+    funding_*.json и oi_*.json — обычные файлы на диске, их правят руками и
+    перезаписывают соседние скрипты, а дальше ряд уходит в step_lookup и
+    dict(oi). Замер на кэше-словаре {"1677283200000": 0.01}: bool считал его
+    годным, fetch_funding возвращал словарь, и step_lookup бросал наружу
+    ValueError («too many values to unpack») — ровно то исключение, которого
+    контракт модуля обещает не допускать. Теперь такая форма читается как
+    «кэш негоден, перестрой» — как и любой другой пустой ответ источника.
+
+    NaN отсеивается намеренно: json.load его принимает (json.loads("[[NaN,1]]")
+    проходит), а в bisect по ts он ломает порядок молча.
+
+    Проверяется ВЕСЬ ряд, а не первая пара: битой обычно оказывается не
+    начало файла. Это недорого — замер 15.08.2026 на боевых кэшах: 5.0 мс на
+    oi_*.json (16000 точек) и 1.2 мс на funding_*.json (3800 точек) за одну
+    проверку, против сетевой выгрузки в десятки секунд.
+    """
+    if not isinstance(rows, list) or not rows:
+        return False
+    for r in rows:
+        if not isinstance(r, (list, tuple)) or len(r) != 2:
+            return False
+        ts, val = r
+        # bool — подкласс int, но ряд из True/False это не данные
+        if isinstance(ts, bool) or isinstance(val, bool):
+            return False
+        if not isinstance(ts, (int, float)) or not isinstance(val, (int, float)):
+            return False
+        if not math.isfinite(ts) or not math.isfinite(val):
+            return False
+    return True
 
 
 def fetch_funding(symbol, days=1200):
@@ -303,7 +406,7 @@ def fetch_funding(symbol, days=1200):
     # на всех свечах, то есть фильтр не применяется, и это видно в логе
     # покрытия рядов
     return _fetch_series(f"funding {symbol}", f"funding_{symbol}.json",
-                         build, bool, lambda why: [])
+                         build, _is_series, lambda why: [])
 
 
 def fetch_oi(symbol):
@@ -337,7 +440,7 @@ def fetch_oi(symbol):
             time.sleep(0.12)
         return sorted(set(out))
     return _fetch_series(f"OI {symbol}", f"oi_{symbol}.json",
-                         build, bool, lambda why: [])
+                         build, _is_series, lambda why: [])
 
 
 def fetch_daily_pct5(max_age_s=None):
@@ -529,27 +632,64 @@ def describe_cache():
     Существует, чтобы утверждения о глубине данных в докстроках и в docs
     можно было проверить одной командой, а не принимать на веру:
         python ext_data.py
+
+    Раз это инструмент ПРОВЕРКИ утверждений, он обязан пережить любой кэш,
+    какой найдёт на диске: иначе первый же файл неожиданной формы обрывает
+    отчёт, и остальные ряды остаются непроверенными. Замер до правки:
+    кэш-словарь вместо списка пар ронял всю функцию с KeyError: 0 —
+    строки по пяти годным файлам после него уже не печатались. Теперь
+    негодный файл — это одна строка «НЕГОДНАЯ ФОРМА», ровно то, что о нём
+    думает и is_valid соответствующего ряда.
     """
     import datetime
     import glob as _glob
 
     def day(ts):
-        return datetime.datetime.fromtimestamp(
-            ts, datetime.timezone.utc).date().isoformat()
+        try:
+            return datetime.datetime.fromtimestamp(
+                ts, datetime.timezone.utc).date().isoformat()
+        except Exception:
+            # дата вне календаря — не повод обрывать отчёт по остальным рядам
+            return f"?({ts})"
+
+    def read(path):
+        try:
+            return _read_json(path), ""
+        except Exception as e:
+            return None, f"{type(e).__name__}: {e}"
 
     for path in sorted(_glob.glob("funding_*.json") + _glob.glob("oi_*.json")):
-        rows = _read_json(path)
+        rows, err = read(path)
+        if err:
+            print(f"{path:<26} НЕ ЧИТАЕТСЯ: {err}")
+            continue
         if not rows:
             print(f"{path:<26} ПУСТО")
+            continue
+        if not _is_series(rows):
+            print(f"{path:<26} НЕГОДНАЯ ФОРМА — fetch_* перестроит этот кэш")
             continue
         print(f"{path:<26} {len(rows):>6} точек  "
               f"{day(rows[0][0] / 1000)} -> {day(rows[-1][0] / 1000)}")
     if os.path.exists("daily_pct5.json"):
-        raw = _read_json("daily_pct5.json")
+        raw, err = read("daily_pct5.json")
+        if err:
+            print(f"{'daily_pct5.json':<26} НЕ ЧИТАЕТСЯ: {err}")
+            return
+        if not isinstance(raw, dict):
+            print(f"{'daily_pct5.json':<26} НЕГОДНАЯ ФОРМА "
+                  f"({type(raw).__name__} вместо словаря рядов)")
+            return
         for key in ("spx", "dxy", "gold"):
-            days = sorted(int(d) for d in (raw.get(key) or {}))
-            if not days:
+            m = raw.get(key)
+            if not isinstance(m, dict) or not m:
                 print(f"daily_pct5.json [{key}]      ПУСТО — фильтр не применяется")
+                continue
+            try:
+                days = sorted(int(d) for d in m)
+            except Exception as e:
+                print(f"daily_pct5.json [{key}]      НЕГОДНАЯ ФОРМА: "
+                      f"{type(e).__name__} на ключе дня")
                 continue
             print(f"daily_pct5.json [{key:<4}] {len(days):>6} дней   "
                   f"{day(days[0])} -> {day(days[-1])}")

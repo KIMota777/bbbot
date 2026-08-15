@@ -150,8 +150,19 @@ def news_list_sources() -> dict:
 def news_fetch_headlines(sources: list[str] | None = None,
                          max_age_h: float = 24.0,
                          limit: int = 60) -> dict:
-    limit = max(1, min(int(limit), 200))
-    max_age_h = max(1.0, min(float(max_age_h), 168.0))
+    # Аргументы инструментов приходят от модели, а не из кода: тип может
+    # оказаться каким угодно. Свой ответ «вот что не так» полезнее чужой
+    # трассировки — остальные инструменты здесь отвечают именно так, а
+    # фаззинг по типам показал, что эти трое отвечали исключением.
+    if sources is not None and not isinstance(sources, list):
+        return {"ошибка": "sources — список имён лент (см. news_list_sources)",
+                "новостей": 0}
+    try:
+        limit = max(1, min(int(limit), 200))
+        max_age_h = max(1.0, min(float(max_age_h), 168.0))
+    except (TypeError, ValueError):
+        return {"ошибка": "limit и max_age_h должны быть числами",
+                "новостей": 0}
     items, errors = newsfeed.fetch_all(sources=sources, max_age_h=max_age_h)
     known = {r["id"] for r in news_state.load().get("items", [])}
     out = []
@@ -213,7 +224,9 @@ def news_submit_scores(items: list[dict]) -> dict:
         "обнуляются, и панель на сайте показывает нули."),
     annotations=RO)
 def news_background(symbol: str | None = None) -> dict:
-    syms = [symbol.upper()] if symbol else list(news_state.BETA)
+    # str() намеренно: монета приходит от модели, и не-строка должна получить
+    # тот же внятный ответ «неизвестная монета», что и опечатка в названии
+    syms = [str(symbol).upper()] if symbol else list(news_state.BETA)
     bad = [s for s in syms if s not in news_state.BETA]
     if bad:
         return {"ошибка": f"неизвестная монета: {bad[0]}. "
@@ -233,11 +246,11 @@ def news_background(symbol: str | None = None) -> dict:
         "глазами, а не принимать на веру."),
     annotations=RO)
 def news_preview_effect(symbol: str, side: str = "L") -> dict:
-    symbol = symbol.upper()
-    if symbol not in config.SYMBOL_PARAMS:
+    symbol = str(symbol).upper()      # см. news_background: не-строка = ошибка
+    if symbol not in config.SYMBOL_PARAMS:      # с внятным текстом, а не AttributeError
         return {"ошибка": f"нет бота для {symbol}. "
                           f"Доступны: {sorted(config.SYMBOL_PARAMS)}"}
-    side = side.upper()
+    side = str(side).upper()
     if side not in ("L", "S"):
         return {"ошибка": "side должен быть 'L' (лонг) или 'S' (шорт)"}
     p = config.SYMBOL_PARAMS[symbol]["final"]
@@ -282,12 +295,17 @@ def news_preview_effect(symbol: str, side: str = "L") -> dict:
         "предпросмотре, торговля от этого не меняется никак."),
     annotations=DESTRUCTIVE)
 def news_clear(ids: list[str] | None = None, clear_all: bool = False) -> dict:
+    if ids is not None and not isinstance(ids, list):
+        return {"ошибка": "ids — список идентификаторов новостей",
+                "удалено": 0}
     st = news_state.load()
     before = len(st.get("items", []))
     if clear_all:
         st["items"] = []
     elif ids:
-        drop = set(ids)
+        # map(str) — чтобы нехешируемый элемент в списке не ронял инструмент:
+        # id новостей это строки, всё прочее просто ничему не совпадёт
+        drop = set(map(str, ids))
         st["items"] = [r for r in st["items"] if r.get("id") not in drop]
     else:
         return {"ошибка": "укажи ids или clear_all=true", "удалено": 0}

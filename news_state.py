@@ -79,8 +79,11 @@ DEFAULT_BETA = 0.60
 # Поэтому конкретные числа того стресс-теста больше ничего не подтверждают —
 # см. docs/NEWS_STRATEGY.md, раздел 5. Сохранён только вывод, который от чисел
 # не зависит: растянутый тейк держит позицию дольше и чаще доводит её до
-# стопа, поэтому потолок растяжения вдвое ниже остальных — ошибиться в
-# сторону жадности дороже, чем в сторону осторожности.
+# стопа, поэтому потолок растяжения (+15%) вдвое ниже потолка ужатия тейка
+# (30%) и более чем вдвое ниже потолка поджатия стопа (35%) — ошибиться в
+# сторону жадности дороже, чем в сторону осторожности. Формулировка сверена
+# с docs/NEWS_STRATEGY.md, раздел 5: «вдвое ниже остальных» было неточно,
+# потолки разные.
 MAX_TP_STRETCH = 0.15    # тейк можно растянуть не более чем на +15%
 MAX_TP_SHRINK = 0.30     # и ужать не более чем на -30%
 MAX_SL_TIGHTEN = 0.35    # стоп можно подтянуть максимум на 35% пути к входу
@@ -328,6 +331,27 @@ def background(symbol, path=None, now_ms=None):
 
 # --- влияние фона на сделку (единственная точка, где фон трогает торговлю) ---
 
+def _bg_num(bg, key):
+    """Число из фона или 0.0 — «фона нет» вместо исключения в пути сделки.
+
+    Три функции ниже — единственное место, где фон трогает торговлю, и звать
+    их предстоит из цикла сопровождения позиции. Сам фон приходит из json,
+    который пишет MCP-сервер: неполная, чужая или недописанная запись должна
+    означать ровно «влияния нет» — то же самое, что пустой фон, — а не
+    KeyError посреди сопровождения открытой сделки. Фаззинг по типам ловил
+    здесь и KeyError (bg без ключей), и TypeError (нечисловые значения).
+
+    Коэффициенты k/heat_max/index_min намеренно НЕ подстраховываются: они
+    приходят из config.py, то есть от нас самих, и опечатка в них должна
+    падать громко, а не молча отключать реакцию.
+    """
+    try:
+        v = float(bg.get(key, 0.0))
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+    return v if math.isfinite(v) else 0.0
+
+
 def tp_multiplier(bg, side, k):
     """Множитель к тейку. k — сила реакции (0 = фон не влияет вообще).
 
@@ -337,7 +361,8 @@ def tp_multiplier(bg, side, k):
     if not k:
         return 1.0
     sgn = 1.0 if side == "L" else -1.0
-    aligned = _clamp(bg["index"] * sgn, -1.0, 1.0)   # +1 попутный, -1 встречный
+    aligned = _clamp(_bg_num(bg, "index") * sgn,
+                     -1.0, 1.0)                      # +1 попутный, -1 встречный
     if aligned >= 0:
         mult = 1.0 + k * MAX_TP_STRETCH * aligned
     else:
@@ -359,18 +384,19 @@ def sl_tighten_fraction(bg, side, k):
     if not k:
         return 0.0
     sgn = 1.0 if side == "L" else -1.0
-    against = max(0.0, -_clamp(bg["index"] * sgn, -1.0, 1.0))
-    drive = max(against, 0.5 * bg["heat"])
+    against = max(0.0, -_clamp(_bg_num(bg, "index") * sgn, -1.0, 1.0))
+    drive = max(against, 0.5 * _bg_num(bg, "heat"))
     return _clamp(k * MAX_SL_TIGHTEN * drive, 0.0, MAX_SL_TIGHTEN)
 
 
 def entry_veto(bg, side, heat_max, index_min):
     """(вето?, причина). heat_max=0/index_min=0 -> фон входы не запрещает."""
-    if heat_max and bg["heat"] > heat_max:
-        return True, f"накал новостей {bg['heat']:.2f} > {heat_max:.2f}"
+    heat = _bg_num(bg, "heat")
+    if heat_max and heat > heat_max:
+        return True, f"накал новостей {heat:.2f} > {heat_max:.2f}"
     if index_min:
         sgn = 1.0 if side == "L" else -1.0
-        aligned = bg["index"] * sgn
+        aligned = _bg_num(bg, "index") * sgn
         if aligned < -abs(index_min):
             return True, (f"встречный новостной фон {aligned:+.2f} < "
                           f"{-abs(index_min):+.2f}")

@@ -41,6 +41,42 @@ MONTH_MS = 30 * 86400 * 1000
 POP, GENS = 32, 12
 ELITE = 4
 
+
+def save_artifact(name, data, log=print):
+    """Запись результатов волны БЕЗ затирания артефакта прошлого прогона.
+
+    Зачем. Файлы *_winners.json / *_final.json — единственное, что осталось от
+    волн 08.2026: конфиги в config.py отбирались протекавшей схемой, и доказать
+    это можно только их собственными записями (например, отзыв вердикта по SOL
+    в evolution11.py прямо ссылается на записанный там adopt:true). Прогон,
+    который открывает тот же файл на запись, уничтожает доказательство, на
+    которое ссылается текст.
+
+    Правило простое: существующий файл не трогаем, новый пишем рядом с меткой
+    времени и ГРОМКО говорим об этом. Молчать нельзя ещё и потому, что
+    следующие волны читают короткое имя (v3 читает evolution2_winners.json,
+    v6 — evolution5_winners.json и evolution4_winners.json, v7 —
+    evolution6_winners.json): пока файл не переименован руками, они возьмут
+    СТАРЫЙ результат.
+
+    Живёт здесь, а не в evolution4, потому что ранние волны (v1/v2/v3) импорт
+    evolution4 сделать не могут — он сам импортирует их, вышла бы петля. До
+    четвёртого круга защита стояла только на поздних волнах, и первый же запуск
+    v1/v2/v3 стирал их артефакты. e4.save_artifact — псевдоним этой функции.
+    """
+    if not os.path.exists(name):
+        with open(name, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2, default=float)
+        return name
+    stem, ext = os.path.splitext(name)
+    out = f"{stem}_{time.strftime('%Y%m%d-%H%M%S')}{ext}"
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2, default=float)
+    log(f"ВНИМАНИЕ: {name} уже существует — это артефакт прошлого прогона, он "
+        f"НЕ переписан. Результаты этого прогона в {out}. Волны, которые читают "
+        f"{name}, возьмут СТАРЫЙ файл, пока имя не заменено вручную")
+    return out
+
 # Ограничение направления сделок: "B" = оба, "L" = только лонг, "S" = только шорт
 DIRECTION = "B"
 
@@ -418,9 +454,8 @@ def main():
         winners[sym] = dict(genome=g_win,
                             oos=stats(r_win), oos_ruined=r_win["ruined"])
 
-    with open("evolution_winners.json", "w", encoding="utf-8") as fh:
-        json.dump(winners, fh, ensure_ascii=False, indent=2, default=float)
-    print("\nПобедители сохранены в evolution_winners.json")
+    out = save_artifact("evolution_winners.json", winners)
+    print(f"\nПобедители сохранены в {out}")
 
 
 if __name__ == "__main__":

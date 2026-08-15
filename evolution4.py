@@ -26,7 +26,9 @@ OOS-окнах, включая те, что лежат внутри его со�
     гонку, выбрасывая из неё всех, кто честно торговал (choose_winner);
   * АРТЕФАКТЫ прошлых прогонов больше не переписываются (save_artifact):
     *_winners.json — единственное доказательство того, как отбирались нынешние
-    боевые конфиги.
+    боевые конфиги. Сама функция живёт в evolution.py (ранние волны импортируют
+    только его), и через неё пишут ВСЕ волны — v1, v2, v3 и поздние; здесь
+    оставлен псевдоним, потому что зовут её по имени e4.save_artifact.
 
 Правки действуют ТОЛЬКО НА БУДУЩИЕ прогоны: конфиги, которые сейчас стоят в
 config.py, отобраны по старой схеме, и никакая правка протокола их задним
@@ -45,10 +47,7 @@ config.py, отобраны по старой схеме, и никакая пр
                  (бегство в защиту). 6=выкл.
 """
 
-import json
-import os
 import random
-import time
 
 import evolution as ev
 import evolution2 as e2
@@ -98,36 +97,11 @@ CURRENT = {
 }
 
 
-def save_artifact(name, data, log=print):
-    """Запись результатов волны БЕЗ затирания артефакта прошлого прогона.
-
-    Зачем. Файлы *_winners.json / *_final.json — единственное, что осталось от
-    волн 08.2026: конфиги в config.py отбирались протекавшей схемой, и доказать
-    это можно только их собственными записями (например, отзыв вердикта по SOL
-    в evolution11.py прямо ссылается на записанный там adopt:true). Прогон,
-    который открывает тот же файл на запись, уничтожает доказательство, на
-    которое ссылается текст. Защита была половинчатой: evolution11.py берёг
-    evolution11_final.json, а evolution11_winners.json переписывался этим же
-    прогоном из e4._run_version_body.
-
-    Правило простое: существующий файл не трогаем, новый пишем рядом с меткой
-    времени и ГРОМКО говорим об этом. Молчать нельзя ещё и потому, что
-    следующие волны читают короткое имя (v6 читает evolution5_winners.json и
-    evolution4_winners.json, v7 — evolution6_winners.json): пока файл не
-    переименован руками, они возьмут СТАРЫЙ результат.
-    """
-    if not os.path.exists(name):
-        with open(name, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, ensure_ascii=False, indent=2, default=float)
-        return name
-    stem, ext = os.path.splitext(name)
-    out = f"{stem}_{time.strftime('%Y%m%d-%H%M%S')}{ext}"
-    with open(out, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, ensure_ascii=False, indent=2, default=float)
-    log(f"ВНИМАНИЕ: {name} уже существует — это артефакт прошлого прогона, он "
-        f"НЕ переписан. Результаты этого прогона в {out}. Волны, которые читают "
-        f"{name}, возьмут СТАРЫЙ файл, пока имя не заменено вручную")
-    return out
+# Запись артефакта без затирания прошлого прогона переехала в evolution.py:
+# ранние волны (v1/v2/v3) не могут импортировать evolution4 — он сам их
+# импортирует, — а защита нужна и им. Имя e4.save_artifact сохранено: его
+# зовут v6, v9, v10, v11, v12.
+save_artifact = ev.save_artifact
 
 
 def make_filter4(g, aux):
@@ -737,6 +711,13 @@ def _run_version_body(genes, off, make_f, aux_builder, tag, base_src,
         # смещён в сторону конфигов, удобных для lev_sel (то есть лучший
         # конфиг для lev_final мы могли не вывести), но числа валидации,
         # экзамена и ворот считаются на боевом плече и ничего не завышают.
+        # lev_cur — плечо, на котором ФАКТИЧЕСКИ выбран нынешний pick. Раньше
+        # оно обновлялось в конце КАЖДОГО прохода, включая последний, — и после
+        # цикла lev_cur всегда совпадал с плечом победителя. Из-за этого
+        # lev_settled выходил True при любом исходе, предупреждение ниже было
+        # недостижимо, а вместе с ним и пересчёт экзамена: неустоявшийся случай
+        # молча отдавал баллы, посчитанные на ПРЕДЫДУЩЕМ плече. На последнем
+        # проходе перевыбора уже не будет, поэтому и плечо выбора не двигаем.
         lev_cur, base_cur, pick, lev_win = lev_sel, base_sc, None, None
         for attempt in range(LEV_PASSES):
             pick = choose_winner(
@@ -749,13 +730,16 @@ def _run_version_body(genes, off, make_f, aux_builder, tag, base_src,
                 break
             print(f"  плечо победителя x{lev_win['lev']} != плеча выбора "
                   f"x{lev_cur} — ПЕРЕВЫБОР победителя на x{lev_win['lev']}")
+            if attempt + 1 == LEV_PASSES:
+                break          # проходы кончились: pick остаётся выбранным на
+                               # lev_cur, и это расхождение видно ниже
             lev_cur = lev_win["lev"]
             base_cur = [score_on(base, wi, lev_cur) for wi in range(len(oos))]
         g_win = pick["genome"]
         lev_final = lev_win["lev"]
         lev_settled = lev_final == lev_cur
         if not lev_settled:
-            print(f"  ВНИМАНИЕ: за {LEV_PASSES} проходов плечо не устоялось "
+            print(f"  ВНИМАНИЕ: плечо не устоялось за {LEV_PASSES} прох. "
                   f"(выбор шёл на x{lev_cur}, лестница победителя даёт "
                   f"x{lev_final}). Экзамен и ворота считаются на x{lev_final} — "
                   f"на том, что уходит в конфиг, — но ВЫБИРАЛСЯ этот кандидат "

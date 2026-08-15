@@ -434,6 +434,12 @@ def run_symbol(sym, aux_builder):
     # Фитнес GA остаётся на lev_sel: он решает, КОГО предложили, а не ЧЕМ его
     # меряют; перезапуск генетики на каждом плече — часы счёта и петля без
     # конца (новый пул -> новый победитель -> новое плечо).
+    # lev_cur — плечо, на котором ФАКТИЧЕСКИ выбран нынешний pick, и на
+    # последнем проходе его двигать нельзя: перевыбора уже не будет. Пока
+    # обновление стояло в конце каждого прохода, после цикла lev_cur всегда
+    # совпадал с плечом победителя, lev_settled выходил True при любом исходе,
+    # а пересчёт экзамена на новом плече не срабатывал никогда — в json уезжали
+    # баллы, посчитанные на ПРЕДЫДУЩЕМ плече, под видом баллов боевого.
     lev_cur, base_cur, pick, lev_win = lev_sel, base_sc, None, None
     for attempt in range(e4.LEV_PASSES):
         pick = e4.choose_winner(
@@ -446,13 +452,16 @@ def run_symbol(sym, aux_builder):
         print(f"  плечо победителя x{lev_win['lev']} != плеча выбора "
               f"x{lev_cur} — ПЕРЕВЫБОР победителя на x{lev_win['lev']}",
               flush=True)
+        if attempt + 1 == e4.LEV_PASSES:
+            break              # проходы кончились: pick выбран на lev_cur,
+                               # расхождение с lev_win видно ниже
         lev_cur = lev_win["lev"]
         base_cur = [score_on(base, wi, lev_cur) for wi in range(len(oos))]
     g_win = pick["genome"]
     lev = lev_win["lev"]
     lev_settled = lev == lev_cur
     if not lev_settled:
-        print(f"  ВНИМАНИЕ: за {e4.LEV_PASSES} проходов плечо не устоялось "
+        print(f"  ВНИМАНИЕ: плечо не устоялось за {e4.LEV_PASSES} прох. "
               f"(выбор шёл на x{lev_cur}, лестница победителя даёт x{lev}); "
               f"экзамен, ворота и конфиг считаются на x{lev}, но ВЫБИРАЛСЯ "
               f"кандидат на другом плече", flush=True)

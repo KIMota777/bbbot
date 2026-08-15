@@ -270,9 +270,9 @@ def main():
         results[sym] = dict(base_oos=base_mean, v3_oos=mean,
                             improved=bool(mean > base_mean), genome=g_win)
 
-    with open("evolution3_winners.json", "w", encoding="utf-8") as fh:
-        json.dump(results, fh, ensure_ascii=False, indent=2, default=float)
-    print("\nИтоги в evolution3_winners.json")
+    # артефакт прошлого прогона не переписывается (ev.save_artifact)
+    out = ev.save_artifact("evolution3_winners.json", results)
+    print(f"\nИтоги в {out}")
 
 
 if __name__ == "__main__":

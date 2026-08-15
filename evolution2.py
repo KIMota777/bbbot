@@ -21,7 +21,6 @@
 """
 
 import itertools
-import json
 import random
 import statistics
 import time
@@ -730,9 +729,11 @@ def main():
             baseline_oos=base_mean, candidate_oos=mean,
             adopt=bool(mean > base_mean), genome=g_win)
 
-    with open("evolution2_winners.json", "w", encoding="utf-8") as fh:
-        json.dump(results, fh, ensure_ascii=False, indent=2, default=float)
-    print("\nИтоги в evolution2_winners.json")
+    # артефакт прошлого прогона не переписывается (ev.save_artifact): на
+    # evolution2_winners.json ссылается v3, и он же — единственная запись о том,
+    # как отбирались нынешние конфиги
+    out = ev.save_artifact("evolution2_winners.json", results)
+    print(f"\nИтоги в {out}")
 
 
 if __name__ == "__main__":
