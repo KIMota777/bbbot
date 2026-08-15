@@ -24,6 +24,19 @@
   .stats { color:var(--accent); font-size:13.5px; font-weight:600; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
   #chart { height:440px; }
+  .chartbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+              margin:0 0 10px; }
+  .cb-lab { color:var(--muted); font-size:12px; margin-right:2px; }
+  .cb-sep { width:1px; height:18px; background:var(--line,#2a2e35);
+            margin:0 8px; }
+  .tfbtn, .zbtn { background:#22252b; color:#c9ccd3; border:1px solid #2f333b;
+                  border-radius:6px; padding:4px 10px; font-size:13px;
+                  cursor:pointer; font-family:inherit; }
+  .tfbtn:hover, .zbtn:hover { background:#2b2f37; color:#fff; }
+  .tfbtn.active { background:#3a6ea5; border-color:#4a86c5; color:#fff; }
+  .tfbtn.own { border-color:#46C186; }
+  .tfbtn:focus-visible, .zbtn:focus-visible { outline:2px solid #4a86c5;
+                                              outline-offset:1px; }
   h3 { margin:0 0 8px; font-size:15px; }
   p { margin:6px 0; max-width:75ch; }
   .muted { color:var(--muted); }
@@ -100,8 +113,21 @@
 
   <div class="card">
     <h3>{{ coin }}/USDT и сделки бота <span class="muted" id="trange"></span></h3>
+    <div class="chartbar">
+      <span class="cb-lab">Таймфрейм</span>
+      {% for t in chart_tfs %}
+      <button class="tfbtn{% if t.own %} own{% endif %}" data-tf="{{ t.tf }}"
+              title="{% if t.own %}на этом таймфрейме бот принимает решения{% else %}только вид графика; решения бот принимает на своём{% endif %}">{{ t.label }}{% if t.own %} ●{% endif %}</button>
+      {% endfor %}
+      <span class="cb-sep"></span>
+      <span class="cb-lab">Масштаб</span>
+      <button class="zbtn" id="zoomIn" title="приблизить">+</button>
+      <button class="zbtn" id="zoomOut" title="отдалить">−</button>
+      <button class="zbtn" id="zoomFit" title="показать всё">⤢ всё</button>
+      <span class="cb-lab" id="tfNote"></span>
+    </div>
     <div id="chart"></div>
-    <p class="muted" style="font-size:12px">▲ вход в лонг · ▼ вход в шорт · оранжевая точка — докупка сеткой · ● закрытие цикла (цвет = знак PnL). График показывает ~90 дней; колёсиком мыши — зум, тянуть — прокрутка.</p>
+    <p class="muted" style="font-size:12px">▲ вход в лонг · ▼ вход в шорт · оранжевая точка — докупка сеткой · ● закрытие цикла (цвет = знак PnL). Колёсиком мыши — зум, тянуть — прокрутка, двойной клик — показать всё. Точкой ● помечен таймфрейм самого бота: остальные меняют только вид графика, сделки на них те же.</p>
   </div>
 
   <div class="card">
@@ -201,8 +227,14 @@ const series = chart.addCandlestickSeries({
   wickUpColor: "#46C186", wickDownColor: "#E06B5E", borderVisible: false,
 });
 
+// Таймфрейм ГРАФИКА. Меняет только вид: бот принимает решения на своём,
+// OWN_TF, и сделки на любом масштабе одни и те же — переносится лишь сетка,
+// к которой их привязывают.
+const OWN_TF = "{{ interval_min|default(15) }}";
+let TF = OWN_TF;
+
 async function load() {
-  const candles = await (await fetch(`/api/candles/${SYM}/${MODE}`)).json();
+  const candles = await (await fetch(`/api/candles/${SYM}/${MODE}?tf=${TF}`)).json();
   if (!candles.length) {   // биржа не ответила — не роняем страницу, ждём следующей попытки
     document.getElementById("trange").textContent =
       "(данные греются, обновите страницу через минуту)";
@@ -212,12 +244,14 @@ async function load() {
   chart.timeScale().fitContent();
   const t0 = new Date(candles[0].time * 1000), t1 = new Date(candles.at(-1).time * 1000);
   document.getElementById("trange").textContent =
-    `(${t0.toLocaleDateString("ru")} — ${t1.toLocaleDateString("ru")})`;
+    `(${t0.toLocaleDateString("ru")} — ${t1.toLocaleDateString("ru")}, ${candles.length} свечей)`;
 
   const tr = await (await fetch(`/api/trades/${SYM}/${MODE}`)).json();
   const sim = await (await fetch(`/api/sim/${SYM}/${MODE}`)).json();
   const minT = candles[0].time;
-  const BAR = {{ interval_min|default(15) }} * 60; // время маркера = время его свечи
+  // время маркера = время ЕГО свечи на ТЕКУЩЕМ таймфрейме: иначе на крупных
+  // барах сделки легли бы между свечами и библиотека их не показала бы
+  const BAR = Number(TF) * 60;
   const snap = t => Math.floor(t / BAR) * BAR;
   const markers = [];
   const pushEv = (t, e, live) => {
@@ -269,6 +303,43 @@ async function load() {
   document.getElementById("logtail").textContent =
     st.tail.length ? st.tail.join("") : "Лог пуст — бот ещё не запускался.";
 }
+// --- переключатель таймфрейма и масштаб ---
+// Зум у библиотеки есть из коробки (колесо, перетаскивание), но кнопки нужны:
+// на тачпаде и на телефоне колеса нет, а «показать всё» после ручной прокрутки
+// иначе не вернуть.
+function markTf() {
+  for (const b of document.querySelectorAll(".tfbtn")) {
+    b.classList.toggle("active", b.dataset.tf === TF);
+  }
+  const note = document.getElementById("tfNote");
+  note.textContent = TF === OWN_TF
+    ? "" : "· вид графика, решения бот принимает на своём таймфрейме";
+}
+
+for (const b of document.querySelectorAll(".tfbtn")) {
+  b.onclick = () => {
+    if (b.dataset.tf === TF) return;
+    TF = b.dataset.tf;
+    markTf();
+    document.getElementById("trange").textContent = "(грузим…)";
+    load();
+  };
+}
+
+// шаг зума — четверть видимого диапазона с каждой стороны
+function zoom(factor) {
+  const ts = chart.timeScale();
+  const r = ts.getVisibleLogicalRange();
+  if (!r) return;
+  const mid = (r.from + r.to) / 2, half = (r.to - r.from) / 2 * factor;
+  ts.setVisibleLogicalRange({ from: mid - half, to: mid + half });
+}
+document.getElementById("zoomIn").onclick = () => zoom(0.6);
+document.getElementById("zoomOut").onclick = () => zoom(1.7);
+document.getElementById("zoomFit").onclick = () => chart.timeScale().fitContent();
+el.addEventListener("dblclick", () => chart.timeScale().fitContent());
+
+markTf();
 load();
 setInterval(load, 60000);
 

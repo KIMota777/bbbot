@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
 # Консоль Windows — cp866, и в ней нет ни тире «—», ни «ёлочек», ни эмодзи,
 # которыми полны наши сообщения. Без этой поправки print падает с
@@ -1026,11 +1026,23 @@ def bot_page(symbol, mode):
         usage=meta.get("usage", ""), core=STRATEGY_CORE,
         ruined=ruined_flag(data), dd=an.get("max_dd"),
         dd_float=an.get("max_dd_float"), trades=an.get("trades"),
+        # таймфреймы для переключателя над графиком; свой (боевой) помечаем,
+        # чтобы было видно, на каком бот на самом деле принимает решения
+        chart_tfs=[dict(tf=t, label=CHART_TF_LABELS[t], own=(t == interval))
+                   for t in CHART_TFS],
         params=p, dry_run=config.DRY_RUN)
 
 
 CANDLE_DAYS = 90    # окно графика ("с мая" с запасом)
 RAW_DAYS = 130      # + тёплый старт симуляции (окна до 877 свечей, EMA, режим)
+
+# Таймфреймы, которые можно выбрать на графике бота: значение — во сколько раз
+# шире брать окно, чтобы на экране осталось сопоставимое число свечей. На 15m
+# 90 дней — это 8640 баров, а на 4ч столько же дней дадут всего 540, и график
+# выглядит обрубком. Ключи — минуты строкой, как их понимает Bybit и как их
+# проверяет get_raw_candles (там стоит isdigit).
+CHART_TFS = {"5": 0.35, "15": 1, "60": 3, "240": 8}
+CHART_TF_LABELS = {"5": "5м", "15": "15м", "60": "1ч", "240": "4ч"}
 _raw_cache = {}     # (symbol,interval) -> (fetched_at, candles, ttl_сек)
 # Запись кэша на диск — по одному потоку за раз. На Windows переименование
 # поверх файла, который в тот же миг переименовывает сосед, даёт «отказано в
@@ -1122,7 +1134,10 @@ def get_raw_candles(symbol, interval="15"):
                 for c in data):
             _raw_cache[key] = (now, data, 600)
             return data
-    start = int((now - RAW_DAYS * 86400) * 1000)
+    # окно качаем под таймфрейм: на крупных барах те же 130 дней дали бы
+    # несколько сотен свечей, и график был бы обрубком (см. CHART_TFS)
+    raw_days = RAW_DAYS * CHART_TFS.get(str(interval), 1)
+    start = int((now - raw_days * 86400) * 1000)
     deadline = now + FETCH_BUDGET
     out, cursor, full = [], int(now * 1000), False
     for _ in range(20):
@@ -1160,8 +1175,19 @@ def get_raw_candles(symbol, interval="15"):
 def api_candles(symbol, mode):
     if not valid_symbol(symbol) or not valid_mode(mode):
         return jsonify([]), 404
-    raw = get_raw_candles(symbol, bot_interval(symbol, mode))
-    start = (time.time() - CANDLE_DAYS * 86400) * 1000
+    # Таймфрейм графика можно сменить с витрины (?tf=), не трогая таймфрейм
+    # САМОГО бота: на 15-минутных барах трёхлетнюю историю глазами не окинуть,
+    # а на 4-часовых видно форму движения. Сделки при этом остаются теми же —
+    # меняется только сетка, на которую их кладут (маркер снапится к бару).
+    # Значение проверяем по белому списку: строка из URL уходит в имя файла
+    # кэша и в запрос к бирже.
+    tf = request.args.get("tf") or bot_interval(symbol, mode)
+    if tf not in CHART_TFS:
+        tf = bot_interval(symbol, mode)
+    # на крупных барах окно шире: 60 дней 4-часовых баров — это всего 360 свечей
+    days = CANDLE_DAYS * CHART_TFS[tf]
+    raw = get_raw_candles(symbol, tf)
+    start = (time.time() - days * 86400) * 1000
     return jsonify([
         dict(time=c[0] // 1000, open=c[1], high=c[2], low=c[3], close=c[4])
         for c in raw if c[0] >= start])
