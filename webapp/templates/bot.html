@@ -109,7 +109,8 @@
   <div class="card" id="analyticsCard" style="display:none">
     <h3>📊 Аналитика за 3.2 года <span class="muted">(реинвест от $50, маржа 25% капитала)</span></h3>
     <div class="kpi" id="an_tiles"></div>
-    <h3 style="margin-top:14px">Капитал, $ <span class="muted" id="an_final"></span></h3>
+    <h3 style="margin-top:14px">Капитал, $ <span class="muted" id="an_final"></span>
+      <span class="muted" id="an_till" style="font-weight:400"></span></h3>
     <div class="mini" id="eqChart"></div>
     <h3 style="margin-top:14px">Просадка от пика, % <span class="muted">(красная — по закрытым сделкам, оранжевая — плавающая, с переоценкой открытых циклов)</span></h3>
     <div class="mini" id="ddChart"></div>
@@ -287,6 +288,20 @@ async function loadFinalStats() {
 }
 loadFinalStats();
 
+// Библиотеке графиков нужны строго возрастающие отметки времени: пара точек с
+// одинаковым временем ломает её индекс, и весь холст остаётся пустым — падает
+// она внутри своего цикла перерисовки, куда наш try/catch не достаёт. Так уже
+// сломалась долларовая кривая на /pnl. Здесь такой же нормализатор, чтобы
+// одна кривая с повтором не гасила все три графика аналитики.
+const normPts = pts => {
+  const m = new Map();
+  for (const p of (pts || [])) {
+    if (!Array.isArray(p) || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+    m.set(p[0], p[1]);
+  }
+  return [...m.keys()].sort((a, b) => a - b).map(t => ({ time: t, value: m.get(t) }));
+};
+
 function miniChart(id) {
   const c = LightweightCharts.createChart(document.getElementById(id), {
     layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
@@ -337,7 +352,22 @@ async function loadAnalytics() {
   const eqS = eqC.addAreaSeries({ lineColor: "#E3A83E", lineWidth: 2,
     topColor: "rgba(227,168,62,.25)", bottomColor: "rgba(227,168,62,0)",
     priceLineVisible: false });
-  eqS.setData(d.equity.map(p => ({ time: p[0], value: p[1] })));
+  const eq = normPts(d.equity);
+  eqS.setData(eq);
+  // кружок на конце: у BTC всего 58 сделок за 3.2 года, линия обрывается
+  // задолго до правого края — без пометки это читается как недогруженный график
+  if (eq.length) {
+    eqS.setMarkers([{ time: eq[eq.length - 1].time, position: "inBar",
+      color: "#E3A83E", shape: "circle" }]);
+    // у слитого счёта линия обрывается не «потому что сделки кончились»,
+    // а потому что кончился капитал — путать эти две причины нельзя
+    const wiped = s.ruined || s.final_usd <= 0;
+    document.getElementById("an_till").textContent =
+      `· ${eq.length} точек, последняя ` +
+      new Date(eq[eq.length - 1].time * 1000).toLocaleDateString("ru") +
+      (wiped ? " — здесь прогон оборвался: счёт слит"
+             : " — дальше линии нет, потому что больше не было сделок");
+  }
   eqC.timeScale().fitContent();
 
   const ddC = miniChart("ddChart");
@@ -347,17 +377,17 @@ async function loadAnalytics() {
     const ddF = ddC.addAreaSeries({ lineColor: "#E3A83E", lineWidth: 1,
       topColor: "rgba(227,168,62,0)", bottomColor: "rgba(227,168,62,.25)",
       priceLineVisible: false });
-    ddF.setData(d.drawdown_float.map(p => ({ time: p[0], value: p[1] })));
+    ddF.setData(normPts(d.drawdown_float));
   }
   const ddS = ddC.addLineSeries({ color: "#E06B5E", lineWidth: 1,
     priceLineVisible: false });
-  ddS.setData(d.drawdown.map(p => ({ time: p[0], value: p[1] })));
+  ddS.setData(normPts(d.drawdown));
   ddC.timeScale().fitContent();
 
   const moC = miniChart("moChart");
   const moS = moC.addHistogramSeries({ priceLineVisible: false });
-  moS.setData(d.monthly.map(p => ({ time: p[0], value: p[1],
-    color: p[1] >= 0 ? "#46C186" : "#E06B5E" })));
+  moS.setData(normPts(d.monthly).map(p =>
+    ({ time: p.time, value: p.value, color: p.value >= 0 ? "#46C186" : "#E06B5E" })));
   moC.timeScale().fitContent();
 }
 loadAnalytics();

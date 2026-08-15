@@ -254,15 +254,29 @@ def main():
     pts_cons = [[t0, round(total0, 2)]]
     raw_cons = [total0]
     peak_pf, dd_pf_float = total0, 0.0
-    for ts, key, pnl, worst in merged:
-        # плавающая просадка портфеля: в момент худшей точки цикла остальные
-        # рукава стоят столько же, поэтому достаточно подменить один
-        low = sum(sleeves.values()) - sleeves[key] \
-            + sleeves[key] * (1 + worst / BT_BASE)
-        dd_pf_float = max(dd_pf_float, (peak_pf - low) / peak_pf)
-        sleeves[key] *= (1 + pnl / BT_BASE)
+    # Точку ставим ОДНУ на отметку времени, а не одну на событие. Две стратегии
+    # закрывают цикл на одном 15-минутном баре регулярно (события всех рукавов
+    # слиты в общий ряд), и раньше это давало две точки с одинаковым ts.
+    # Кривую это не искажало, но библиотеке графиков нужен строго возрастающий
+    # ряд: на дубле она падала внутри своего цикла перерисовки и гасила ВЕСЬ
+    # холст — долларовый график /pnl не рисовался вовсе. Внутри отметки времени
+    # события применяем по очереди (просадка считается по каждому), а в ряд
+    # отдаём итог после последнего из них.
+    # имя n занято: это число стратегий, оно нужно ниже в формуле ребаланса
+    i, n_ev = 0, len(merged)
+    while i < n_ev:
+        ts = merged[i][0]
+        while i < n_ev and merged[i][0] == ts:
+            _ts, key, pnl, worst = merged[i]
+            # плавающая просадка портфеля: в момент худшей точки цикла остальные
+            # рукава стоят столько же, поэтому достаточно подменить один
+            low = sum(sleeves.values()) - sleeves[key] \
+                + sleeves[key] * (1 + worst / BT_BASE)
+            dd_pf_float = max(dd_pf_float, (peak_pf - low) / peak_pf)
+            sleeves[key] *= (1 + pnl / BT_BASE)
+            peak_pf = max(peak_pf, sum(sleeves.values()))
+            i += 1
         total_now = sum(sleeves.values())
-        peak_pf = max(peak_pf, total_now)
         pts_cons.append([ts, round(total_now, 2)])
         raw_cons.append(total_now)
     # Подпись портфеля считается из ФАКТИЧЕСКОГО состава. Была зашита строкой

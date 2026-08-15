@@ -333,9 +333,21 @@ def main():
                         prod.append(f)
                         if m.group(1).strip():
                             with_arg.append(f)
-    check(len(prod) == 16,
-          f"продакшен-вызовов fetch_daily_pct5 ровно 16, как написано в шапке "
-          f"(найдено {len(prod)})")
+    # Число берём ИЗ САМОЙ шапки ext_data.py, а не держим здесь копию: иначе
+    # два числа живут в разных файлах и расходятся молча. Так проверка звучит
+    # как «докстрока не врёт» — и падает ровно тогда, когда её пора обновить,
+    # а не тогда, когда кто-то добавил в проект законный новый скрипт.
+    with open(os.path.join(REPO, "ext_data.py"), encoding="utf-8") as fh:
+        head = fh.read()
+    claim = _re.search(r"(\d+)\s+продакшен-вызов", head)
+    check(claim is not None,
+          "в шапке ext_data.py есть утверждение о числе продакшен-вызовов")
+    if claim:
+        said = int(claim.group(1))
+        check(len(prod) == said,
+              f"шапка ext_data.py обещает {said} продакшен-вызовов "
+              f"fetch_daily_pct5, а в исходниках их {len(prod)} "
+              f"({sorted(set(prod))}) — обновите число в шапке")
     check(not with_arg,
           f"и ни один из них не передаёт max_age_s — путь прошлого круга в бою "
           f"не задействован (нашлись: {sorted(set(with_arg))})")

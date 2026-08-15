@@ -46,6 +46,11 @@
   .tgl.on { color:var(--accent); border-color:var(--accent); }
   .note { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--accent);
     border-radius:8px; padding:11px 15px; font-size:13px; color:var(--muted); max-width:84ch; }
+  /* если график всё-таки не нарисовался — владелец должен увидеть причину,
+     а не пустой прямоугольник, как было с долларовой кривой */
+  .charterr { display:none; background:#3a1414; border:1px solid #8a2b2b;
+    border-radius:8px; padding:10px 14px; margin-bottom:10px; font-size:13px; color:#ffb3b3; }
+  .chip .till { color:var(--muted); font-size:11.5px; }
 </style>
 </head>
 <body>
@@ -64,12 +69,13 @@
         <button class="tgl" id="tglPct">% от старта</button>
       </div>
     </div>
+    <div class="charterr" id="chartErr"></div>
     <div id="chart"></div>
   </div>
 
   <div class="card">
     <div class="legend" id="legend"></div>
-    <p class="hint" style="margin:10px 0 0">DD — просадка: первое число по закрытым сделкам, <i style="color:#E3A83E;font-style:normal">второе</i> — плавающая, с переоценкой ещё открытых циклов (она глубже, и именно она — настоящий риск; плечо ботов выбиралось по первой). «💀 СЧЁТ СЛИТ» — прогон оборвался: капитала не хватило на очередной убыток. Пересчёт: <code>python build_pnl_curves.py</code></p>
+    <p class="hint" style="margin:10px 0 0">DD — просадка: первое число по закрытым сделкам, <i style="color:#E3A83E;font-style:normal">второе</i> — плавающая, с переоценкой ещё открытых циклов (она глубже, и именно она — настоящий риск; плечо ботов выбиралось по первой). «💀 СЧЁТ СЛИТ» — прогон оборвался: капитала не хватило на очередной убыток. «по ДД.ММ.ГГГГ» — дата последней точки: линия заканчивается кружком там, где у стратегии закончились сделки (у BTC их всего 58 за 3.2 года, у SOL прогон обрывается на сливе). Обрыв линии — это конец данных, а не сбой графика. Пересчёт: <code>python build_pnl_curves.py</code></p>
   </div>
 
   <div class="note">
@@ -78,6 +84,23 @@
 </div>
 
 <script>
+// Пустой график молчит: библиотека роняет исключение внутри своего цикла
+// перерисовки (requestAnimationFrame), наш try/catch туда не достаёт, и
+// владелец видит просто чёрный прямоугольник. Ловим на уровне окна и
+// показываем причину прямо на странице.
+function showChartErr(msg) {
+  const box = document.getElementById("chartErr");
+  if (!box || box.style.display === "block") return;
+  box.style.display = "block";
+  box.textContent = "⛔ График не отрисовался: " + msg +
+    ". Обновите страницу; если повторяется — пересчитайте кривые " +
+    "(python build_pnl_curves.py).";
+}
+window.addEventListener("error", ev =>
+  showChartErr((ev.error && ev.error.message) || ev.message || "неизвестная ошибка"));
+window.addEventListener("unhandledrejection", ev =>
+  showChartErr(String((ev.reason && ev.reason.message) || ev.reason)));
+
 const el = document.getElementById("chart");
 const chart = LightweightCharts.createChart(el, {
   layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
@@ -98,6 +121,25 @@ const fmtVal = v => mode === "usd" ? fmtUsd(v) : fmtPct(v);
 // определению, каким бы ключом его ни называли
 const isRuined = s => !!s.ruined || s.final_usd <= 0;
 
+// ПОЧЕМУ это здесь. Библиотеке графиков нужны строго возрастающие отметки
+// времени. Две точки с ОДИНАКОВЫМ временем ломают её внутренний индекс, и при
+// первой же отрисовке она бросает "Value is null" изнутри своего цикла
+// перерисовки — не из нашего кода. В результате падал не один ряд, а весь
+// холст: долларовая кривая /pnl не рисовалась вообще (0 закрашенных пикселей),
+// а после клика по «% от старта» появлялась — отсюда и жалоба «графики по
+// долларам не работают». В кривой портфеля pf_cons таких пар две.
+// Схлопываем: при совпадении времени оставляем ПОСЛЕДНЕЕ значение — именно оно
+// стоит в итоговых цифрах ряда, и так же трактует повтор сама библиотека.
+const normPoints = pts => {
+  const m = new Map();
+  for (const p of pts) {
+    if (!Array.isArray(p) || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+    m.set(p[0], p[1]);
+  }
+  return [...m.keys()].sort((a, b) => a - b).map(t => [t, m.get(t)]);
+};
+const fmtDate = t => new Date(t * 1000).toLocaleDateString("ru");
+
 async function load() {
   const d = await (await fetch("/api/pnl_curves")).json();
   const legend = document.getElementById("legend");
@@ -114,11 +156,19 @@ async function load() {
       priceLineVisible: false,
       lastValueVisible: false, crosshairMarkerRadius: 3,
     });
-    s._usd = s.points.map(p => ({ time: p[0], value: p[1] }));
-    s._pct = s.points.map(p => ({ time: p[0],
+    const pts = normPoints(s.points);
+    s._usd = pts.map(p => ({ time: p[0], value: p[1] }));
+    s._pct = pts.map(p => ({ time: p[0],
       value: +((p[1] / start - 1) * 100).toFixed(2) }));
     s._start = start;
+    s._till = pts.length ? pts[pts.length - 1][0] : null;
     line.setData(s._usd);
+    // точка на конце линии: без неё обрыв кривой (у BTC сделки кончаются
+    // раньше всех, у SOL — на сливе) читается как «график не дорисовался»
+    if (s._till !== null) {
+      line.setMarkers([{ time: s._till, position: "inBar",
+        color: s.color, shape: "circle" }]);
+    }
 
     const chip = document.createElement("div");
     chip.className = "chip" + (isPf ? " pf" : "") + (isRuined(s) ? " ruined" : "");
@@ -129,6 +179,7 @@ async function load() {
     chip.innerHTML = `<span class="sw" style="background:${s.color}"></span>
       <span>${s.label}</span>${isRuined(s) ? '<span class="skull">💀 СЧЁТ СЛИТ</span>' : ""}
       <span class="dd">DD ${s.dd}% / <i>${s.dd_float == null ? "н/д" : s.dd_float + "%"}</i></span>
+      <span class="till">${s._till === null ? "" : "по " + fmtDate(s._till)}</span>
       <b class="${s.final_pct >= 0 ? "pos" : "neg"}"></b>`;
     const valEl = chip.querySelector("b");
     valEl.textContent = fmtUsd(s.final_usd);
@@ -151,7 +202,9 @@ async function load() {
   }
   const strat = d.series.filter(s => s.group === "bot" || s.group === "signal");
   const best = strat.slice().sort((a, b) => b.final_usd - a.final_usd)[0];
-  tiles.insertAdjacentHTML("beforeend", `<div class="tile">
+  // без кривых плитки строить не из чего: раньше тут падало на best.final_usd
+  // и вместе с плитками умирал весь остаток разметки страницы
+  if (best) tiles.insertAdjacentHTML("beforeend", `<div class="tile">
     <div class="v pos">${fmtUsd(best.final_usd)}</div>
     <div class="l">лучшая одиночная: ${best.label} (из $50)</div>
   </div>`);
@@ -210,7 +263,9 @@ async function load() {
   bUsd.onclick = () => setMode("usd");
   bPct.onclick = () => setMode("pct");
 }
-load();
+// сорванный запрос к API тоже должен быть виден на странице, а не только
+// в консоли разработчика, куда владелец не заглядывает
+load().catch(e => showChartErr(String(e && e.message || e)));
 </script>
 </body>
 </html>
