@@ -75,6 +75,10 @@ def one_task(task):
             degenerate += 1
             continue
         tapes[tuple(p[k] for k in keys)] = protocol.Tape(res)
+        # кривая капитала по барам больше не нужна — она весит больше всего
+        # остального вместе взятого, а лента из неё уже сделана
+        res.eq_v = res.eq_t = None
+        del res, sig
     if not tapes:
         return dict(strategy=name, symbol=sym, tf=tf, ok=False,
                     reason="ни одного рабочего сочетания",
@@ -141,7 +145,7 @@ def main():
 
     t0 = time.time()
     rows = []
-    with Pool(a.jobs) as pool:
+    with Pool(a.jobs, maxtasksperchild=8) as pool:
         for i, r in enumerate(pool.imap_unordered(one_task, tasks, 1), 1):
             if r:
                 rows.append(r)

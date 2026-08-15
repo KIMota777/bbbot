@@ -477,8 +477,18 @@ def s_sweep_reclaim(bars, p):
 
 # --- самопроверка -----------------------------------------------------------
 
+CUTS = (0.35, 0.6, 0.85)
+
+
 def _causal_check(name, bars, limit=24, seed=0):
-    """Проверить причинность всей сетки (или 24 случайных сочетаний из неё)."""
+    """Причинность всей сетки (или 24 случайных сочетаний) в ТРЁХ точках среза.
+
+    Одной точки мало, и вот почему. Проверка портит бары после среза и сверяет
+    сигналы до него — значит заглядывание на H баров вперёд видно только на
+    последних H барах перед срезом. Сигналы структуры редкие: на десяти барах
+    перед конкретным срезом их может не оказаться вовсе, и утечка проскочит по
+    случайности. Три разных среза делают такую удачу маловероятной.
+    """
     import random
 
     import engine
@@ -489,7 +499,8 @@ def _causal_check(name, bars, limit=24, seed=0):
     if total > limit:
         combos = random.Random(seed).sample(combos, limit)
     for pp in combos:
-        engine.assert_causal(lambda b, q=pp: s.build(b, q), bars)
+        for cut in CUTS:
+            engine.assert_causal(lambda b, q=pp: s.build(b, q), bars, cut=cut)
     return total, len(combos)
 
 
@@ -518,11 +529,15 @@ DEMO = {
 }
 
 
+_ABBR = [("n", "n"), ("k", "k"), ("pen", "p"), ("depth", "d"), ("big", "b"),
+         ("tol", "t"), ("kmin", "q"), ("look", "lk"), ("reach", "rc"),
+         ("min_leg", "lg"), ("rr", "rr"), ("stop_atr", "s"),
+         ("trail_atr", "tr"), ("exit_mixed", "x")]
+
+
 def _short(p):
-    keys = [k for k in ("n", "k", "pen", "depth", "big", "tol", "kmin", "look",
-                        "reach", "min_leg", "rr", "stop_atr", "trail_atr",
-                        "exit_mixed") if k in p]
-    return " ".join("%s=%g" % (k, p[k]) for k in keys)
+    """Подпись сочетания, влезающая в колонку отчёта."""
+    return " ".join("%s%g" % (ab, p[k]) for k, ab in _ABBR if k in p)
 
 
 if __name__ == "__main__":
@@ -538,15 +553,21 @@ if __name__ == "__main__":
           % (sum(strat.REG[nm].n_combos() for nm in ORDER), len(ORDER),
              len(bars.t)))
 
-    print("\n1. Причинность (случайные 24 сочетания при большой сетке)")
+    print("\n1. Причинность: срезы %s, при сетке больше 24 — случайные 24 "
+          "(seed=0)" % ", ".join("%g" % x for x in CUTS))
     for nm in ORDER:
         t0 = time.time()
         total, done = _causal_check(nm, bars)
-        print("  + %-14s сетка %3d, проверено %2d, %.1f с"
-              % (nm, total, done, time.time() - t0))
+        print("  + %-14s сетка %3d, проверено %2d x %d срезов, %.1f с"
+              % (nm, total, done, len(CUTS), time.time() - t0))
 
-    print("\n2. Показательные прогоны (риск 1%%, плечо<=10, тейкер, фандинг)")
+    print("\n2. Показательные прогоны (риск 1%, плечо<=10, тейкер, фандинг)")
+    print("   Колонка «брутто» — тот же сигнал без комиссии, проскальзывания "
+          "и фандинга.\n   Она отвечает на вопрос, чего стоит сама гипотеза, "
+          "отдельно от стоимости\n   её исполнения: без неё убыток нечем "
+          "объяснить и не с чем сравнить.")
     cfg = engine.Cfg()
+    raw = engine.Cfg(fee=0.0, slip_mult=0.0, funding=False)
     for nm in ORDER:
         s = strat.REG[nm]
         print("  %s — %s" % (nm, s.note.split("\n")[0][:70]))
@@ -554,5 +575,8 @@ if __name__ == "__main__":
             res = engine.run(bars, s.build(bars, pp), cfg)
             sm = metrics.summarize(res, n_trials=s.n_combos(),
                                    label=_short(pp))
-            print("    " + metrics.brief(sm) + " | DSR %.2f" % sm["dsr"])
+            gr = metrics.summarize(engine.run(bars, s.build(bars, pp), raw))
+            print("    %s | DSR %.2f | брутто %s Ш %+5.2f | держ %3.0f бар"
+                  % (metrics.brief(sm), sm["dsr"], metrics.fmt_pct(gr["ret"]),
+                     gr["sharpe"], sm["avg_hold"]))
     print("\nВсё зелено: заглядывания в будущее нет ни в одном сочетании.")

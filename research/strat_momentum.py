@@ -37,6 +37,7 @@
 import numpy as np
 
 import ind
+import rdata
 import strat
 from engine import Signals
 
@@ -262,7 +263,7 @@ def s_vol_adj_mom(bars, p):
 @strat.register("accel", "momentum", {
     "n": [24, 48, 96, 168],
     "lag": [12, 24, 48],                   # с чем сравниваем импульс
-    "need_sign": [0, 1],                   # требовать ли ещё и m > 0
+    "trend_only": [0, 1],                  # требовать ли ещё и m > 0
     "stop_atr": [2.0, 3.0],
     "atr_n": [14],
 }, "вторая производная: важен не сам импульс, а его рост")
@@ -278,7 +279,7 @@ def s_accel(bars, p):
 
     Обратная сторона ровно там же. Вторая производная — это разность двух
     зашумлённых величин, и шума в ней вдвое больше. Ускорение мечется, входов
-    получается много, комиссия набегает быстро. Отсюда параметр need_sign: при
+    получается много, комиссия набегает быстро. Отсюда параметр trend_only: при
     единице требуется не только рост импульса, но и его положительность — то
     есть ускорение внутри уже существующего тренда, а не разгон из ниоткуда.
     Сравнение нуля и единицы прямо отвечает на вопрос, нужен ли этому семейству
@@ -288,7 +289,7 @@ def s_accel(bars, p):
     m = _log_mom(bars.c, int(p["n"]))
     a = m - _shift(m, int(p["lag"]))
     up, dn = a > 0, a < 0
-    if p["need_sign"]:
+    if p["trend_only"]:
         up = up & (m > 0)
         dn = dn & (m < 0)
     e = np.zeros(n, dtype=np.int8)
@@ -360,47 +361,118 @@ def s_mom_continuation(bars, p):
 NAMES = ["tsmom", "roc_thresh", "multi_mom", "vol_adj_mom", "accel",
          "mom_continuation"]
 
-# Показательные сочетания для прогона: по одному короткому, одному среднему и
-# одному длинному горизонту плюс крайний случай. Выбраны ДО того, как увидены
-# числа, — иначе это была бы витрина, а не проверка.
+# Показательные сочетания: короткий горизонт, средний, длинный и один
+# крайний случай на каждую стратегию. Выбраны ДО того, как увидены числа, —
+# иначе это была бы витрина, а не проверка. Все точки взяты из своих сеток.
 SHOWCASE = {
     "tsmom": [
-        dict(n=24, stop_atr=3.0, trail_atr=0.0, persist=0, atr_n=14),
-        dict(n=168, stop_atr=3.0, trail_atr=0.0, persist=0, atr_n=14),
-        dict(n=168, stop_atr=3.0, trail_atr=0.0, persist=1, atr_n=14),
-        dict(n=336, stop_atr=4.0, trail_atr=4.0, persist=0, atr_n=14),
+        ("сутки", dict(n=24, stop_atr=3.0, trail_atr=0.0, persist=0, atr_n=14)),
+        ("неделя", dict(n=168, stop_atr=3.0, trail_atr=0.0, persist=0,
+                        atr_n=14)),
+        ("неделя, без пауз", dict(n=168, stop_atr=3.0, trail_atr=0.0,
+                                  persist=1, atr_n=14)),
+        ("две недели, трейл", dict(n=336, stop_atr=4.0, trail_atr=4.0,
+                                   persist=0, atr_n=14)),
     ],
     "roc_thresh": [
-        dict(n=12, thr=0.005, stop_atr=2.0, rr=0.0, atr_n=14),
-        dict(n=48, thr=0.02, stop_atr=3.0, rr=0.0, atr_n=14),
-        dict(n=96, thr=0.04, stop_atr=3.0, rr=0.0, atr_n=14),
-        dict(n=96, thr=0.04, stop_atr=3.0, rr=2.0, atr_n=14),
+        ("12ч, порог 0.5%", dict(n=12, thr=0.005, stop_atr=2.0, rr=0.0,
+                                 atr_n=14)),
+        ("двое суток, 2%", dict(n=48, thr=0.02, stop_atr=3.0, rr=0.0,
+                                atr_n=14)),
+        ("четверо суток, 4%", dict(n=96, thr=0.04, stop_atr=3.0, rr=0.0,
+                                   atr_n=14)),
+        ("то же, но с тейком", dict(n=96, thr=0.04, stop_atr=3.0, rr=2.0,
+                                    atr_n=14)),
     ],
     "multi_mom": [
-        dict(base=56, need=3, stop_atr=3.0, trail_atr=0.0, atr_n=14),
-        dict(base=168, need=3, stop_atr=3.0, trail_atr=0.0, atr_n=14),
-        dict(base=168, need=2, stop_atr=3.0, trail_atr=0.0, atr_n=14),
-        dict(base=252, need=3, stop_atr=4.0, trail_atr=4.0, atr_n=14),
+        ("56ч, согласны все", dict(base=56, need=3, stop_atr=3.0,
+                                   trail_atr=0.0, atr_n=14)),
+        ("неделя, согласны все", dict(base=168, need=3, stop_atr=3.0,
+                                      trail_atr=0.0, atr_n=14)),
+        ("неделя, большинство", dict(base=168, need=2, stop_atr=3.0,
+                                     trail_atr=0.0, atr_n=14)),
+        ("10 суток, трейл", dict(base=252, need=3, stop_atr=4.0,
+                                 trail_atr=4.0, atr_n=14)),
     ],
     "vol_adj_mom": [
-        dict(n=48, thr=0.75, vol_n=96, stop_atr=2.5, voltarget=0.0, atr_n=14),
-        dict(n=168, thr=1.25, vol_n=96, stop_atr=3.5, voltarget=0.0, atr_n=14),
-        dict(n=168, thr=1.25, vol_n=96, stop_atr=3.5, voltarget=0.05, atr_n=14),
-        dict(n=336, thr=0.75, vol_n=168, stop_atr=3.5, voltarget=0.0, atr_n=14),
+        ("двое суток, 0.75s", dict(n=48, thr=0.75, vol_n=96, stop_atr=2.5,
+                                   voltarget=0.0, atr_n=14)),
+        ("неделя, 1.25s", dict(n=168, thr=1.25, vol_n=96, stop_atr=3.5,
+                               voltarget=0.0, atr_n=14)),
+        ("то же + размер", dict(n=168, thr=1.25, vol_n=96, stop_atr=3.5,
+                                voltarget=0.05, atr_n=14)),
+        ("две недели, 0.75s", dict(n=336, thr=0.75, vol_n=168, stop_atr=3.5,
+                                   voltarget=0.0, atr_n=14)),
     ],
     "accel": [
-        dict(n=24, lag=12, need_sign=0, stop_atr=3.0, atr_n=14),
-        dict(n=96, lag=24, need_sign=0, stop_atr=3.0, atr_n=14),
-        dict(n=96, lag=24, need_sign=1, stop_atr=3.0, atr_n=14),
-        dict(n=168, lag=48, need_sign=1, stop_atr=3.0, atr_n=14),
+        ("сутки, лаг 12ч", dict(n=24, lag=12, trend_only=0, stop_atr=3.0,
+                                atr_n=14)),
+        ("4 суток, лаг 24ч", dict(n=96, lag=24, trend_only=0, stop_atr=3.0,
+                                  atr_n=14)),
+        ("то же, по тренду", dict(n=96, lag=24, trend_only=1, stop_atr=3.0,
+                                  atr_n=14)),
+        ("неделя, лаг 48ч", dict(n=168, lag=48, trend_only=1, stop_atr=3.0,
+                                 atr_n=14)),
     ],
     "mom_continuation": [
-        dict(n=24, mom_n=96, exit_n=12, stop_atr=2.5, trail_atr=0.0, atr_n=14),
-        dict(n=48, mom_n=336, exit_n=24, stop_atr=3.5, trail_atr=0.0, atr_n=14),
-        dict(n=96, mom_n=336, exit_n=24, stop_atr=3.5, trail_atr=0.0, atr_n=14),
-        dict(n=96, mom_n=336, exit_n=24, stop_atr=3.5, trail_atr=4.0, atr_n=14),
+        ("канал 24ч, имп 4д", dict(n=24, mom_n=96, exit_n=12, stop_atr=2.5,
+                                   trail_atr=0.0, atr_n=14)),
+        ("канал 48ч, имп 2н", dict(n=48, mom_n=336, exit_n=24, stop_atr=3.5,
+                                   trail_atr=0.0, atr_n=14)),
+        ("канал 96ч, имп 2н", dict(n=96, mom_n=336, exit_n=24, stop_atr=3.5,
+                                   trail_atr=0.0, atr_n=14)),
+        ("то же, с трейлом", dict(n=96, mom_n=336, exit_n=24, stop_atr=3.5,
+                                  trail_atr=4.0, atr_n=14)),
     ],
 }
+
+
+# --- находка, без которой все числа ниже читаются неверно -------------------
+#
+# ЕДИНИЦЫ ФАНДИНГА В ФАЙЛАХ funding_*.json — ПРОЦЕНТЫ, А НЕ ДОЛИ.
+#
+# В файле лежит 0.01 там, где ставка равна 0.01% за восемь часов. Медиана по
+# BTC — 0.0067, то есть 0.0067% за расчёт, около 7% годовых: ровно то, что
+# бывает на бирже. А rdata.funding_paid умножает объём позиции на это число
+# как на долю, и получается 0.67% за восемь часов, то есть 735% годовых.
+# Ошибка ровно в сто раз, и она подтверждается не догадкой, а комментарием в
+# самом движке: «при ставке 0.01% на 8 часов набегает ~11% годовых».
+#
+# Для быстрых стратегий это почти незаметно, а импульс держит позицию сутками
+# и неделями — он платит эту выдумку полностью. Одна сделка multi_mom, взявшая
+# BTC от 26700 до 42200, показывает убыток 22 тысячи при объёме девять тысяч:
+# рынок дал +58%, а начисленный фандинг съел втрое больше всей позиции.
+#
+# И это ещё безобидная половина. Опаснее вторая: шорт фандинг не платит, а
+# ПОЛУЧАЕТ, тоже в сто раз больше положенного. Значит ошибка не просто портит
+# числа, она переставляет местами победителей — стратегия с перевесом в шорт
+# получает подарок из воздуха и выходит в лидеры. Проверено на соседнем
+# семействе: rsi_mr на train BTC показывает +31%, но её торговый итог равен
+# -8107 долларов, а сверху начислено +11249 долларов выдуманного фандинга.
+# Пока единицы не поправлены, сравнивать семейства между собой нельзя вообще.
+#
+# Чужие файлы трогать нельзя, поэтому здесь ставка НЕ исправляется. Вместо
+# этого самопроверка печатает две картины: как считает движок сейчас и как
+# было бы при верных единицах. Разница между ними — цена этой ошибки.
+FUNDING_UNIT_FIX = 100.0
+
+
+def true_funding(res, div=FUNDING_UNIT_FIX):
+    """Фандинг сделок прогона в правильных единицах, в долларах.
+
+    Считается тем же способом, что и в rdata.funding_paid, только ставка
+    делится на сто. Без сложных процентов — нужен порядок величины, а не
+    вторая кривая капитала.
+    """
+    ft, fv = rdata.load_funding(res.symbol)
+    tot = 0.0
+    for tr in res.trades:
+        i0 = int(np.searchsorted(ft, tr.t_in, "right"))
+        i1 = int(np.searchsorted(ft, tr.t_out, "right"))
+        if i1 > i0:
+            rate = float(fv[i0:i1].sum()) / div
+            tot += tr.notional * rate * (1.0 if tr.side > 0 else -1.0)
+    return tot
 
 
 def _sample(combos, k=24, seed=0):
@@ -451,16 +523,35 @@ if __name__ == "__main__":
     print("\n%s\n" % ("ВСЕ ЧИСТЫ: будущее не подглядывается." if not failed
                       else "ПРОВАЛОВ: %d" % failed))
 
-    print("ПОКАЗАТЕЛЬНЫЕ ПРОГОНЫ (train, BTCUSDT 1ч, риск 1%% на сделку,")
-    print("издержки и фандинг включены; DSR — поправка на %d попыток)\n" % total)
-    cfg = Cfg()
+    ft, fv = rdata.load_funding("BTCUSDT")
+    print("ЕДИНИЦЫ ФАНДИНГА")
+    print("  медиана ставки в файле: %.6f" % float(np.median(fv)))
+    print("  движок считает её долей   -> %6.0f%% годовых (так не бывает)"
+          % (np.median(fv) * 3 * 365 * 100))
+    print("  на деле это проценты      -> %6.1f%% годовых (так и бывает)\n"
+          % (np.median(fv) * 3 * 365))
+
+    print("ПОКАЗАТЕЛЬНЫЕ ПРОГОНЫ (train, BTCUSDT 1ч, риск 1% на сделку,")
+    print("издержки на месте; DSR — поправка на %d попыток).\n" % total)
+    print("  «как есть»  — фандинг по движку, то есть завышенный в 100 раз;")
+    print("  «единицы»   — фандинг выключен, а рядом его ЧЕСТНАЯ цена в долях")
+    print("                стартового капитала: столько он забрал бы на самом")
+    print("                деле. Правда лежит на этой, второй строке.\n")
+    cfg_as_is = Cfg()
+    cfg_nofund = Cfg(funding=False)
     for nm in NAMES:
         s = strat.REG[nm]
-        for pp in SHOWCASE[nm]:
-            res = engine.run(bt, s.build(bt, pp), cfg)
-            sm = metrics.summarize(res, n_trials=total,
-                                   label="%s %s" % (nm[:9], _short(pp)))
-            print(metrics.brief(sm) + " | DSR %.2f" % sm["dsr"])
+        print("--- %s (сетка %d) ---" % (nm, s.n_combos()))
+        for tag, pp in SHOWCASE[nm]:
+            sig = s.build(bt, pp)
+            r1 = engine.run(bt, sig, cfg_as_is)
+            s1 = metrics.summarize(r1, n_trials=total, label=tag)
+            print("как есть | " + metrics.brief(s1) + " | DSR %.2f" % s1["dsr"])
+            r2 = engine.run(bt, sig, cfg_nofund)
+            s2 = metrics.summarize(r2, n_trials=total, label=tag)
+            tf = true_funding(r2) / r2.start_equity
+            print("единицы  | " + metrics.brief(s2) + " | DSR %.2f | фанд %s"
+                  % (s2["dsr"], metrics.fmt_pct(-tf)))
         print("")
 
     raise SystemExit(1 if failed else 0)

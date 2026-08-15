@@ -39,25 +39,26 @@ class Tape:
     счёт как раз внутри сделки.
     """
 
-    __slots__ = ("t_in", "t_out", "ret", "eq_low", "side", "reason", "mae",
-                 "mfe", "bars")
+    # Только четыре ряда. Причины выхода, MAE/MFE и стороны в ленте не
+    # хранятся намеренно: при переборе в памяти живут разом сотни лент, и
+    # список питоновских строк на каждую сделку съедал больше, чем все числа
+    # вместе взятые. Всё это доступно из полного прогона, когда он нужен —
+    # у финалистов, а не у двадцати шести тысяч кандидатов.
+    __slots__ = ("t_in", "t_out", "ret", "eq_low")
 
     def __init__(self, res):
         tr = res.trades
         n = len(tr)
-        self.t_in = np.array([t.t_in for t in tr], dtype=np.int64)
-        self.t_out = np.array([t.t_out for t in tr], dtype=np.int64)
-        self.ret = np.zeros(n)
-        self.eq_low = np.ones(n)
+        self.t_in = np.fromiter((t.t_in for t in tr), np.int64, n)
+        self.t_out = np.fromiter((t.t_out for t in tr), np.int64, n)
+        ret = np.empty(n)
+        low = np.empty(n)
         for k, t in enumerate(tr):
             before = t.equity_after - t.pnl
-            self.ret[k] = t.pnl / before if before > 1e-9 else -1.0
-            self.eq_low[k] = min(t.eq_low, 1.0 + self.ret[k])
-        self.side = np.array([t.side for t in tr], dtype=np.int8)
-        self.reason = [t.reason for t in tr]
-        self.mae = np.array([t.mae for t in tr])
-        self.mfe = np.array([t.mfe for t in tr])
-        self.bars = np.array([t.i_out - t.i_in for t in tr], dtype=np.int64)
+            ret[k] = t.pnl / before if before > 1e-9 else -1.0
+            low[k] = min(t.eq_low, 1.0 + ret[k])
+        self.ret = ret
+        self.eq_low = low
 
     def window(self, t0, t1):
         return np.flatnonzero((self.t_in >= t0) & (self.t_in < t1))

@@ -110,17 +110,30 @@ class Bars:
 
 
 def load_bars(symbol, tf="60"):
+    """Свечи из двоичного кэша, а при его отсутствии — из JSON с созданием кэша.
+
+    Двоичный кэш здесь не про удобство, а про возможность считать вообще:
+    разбор семимегабайтного JSON занимает под сотню мегабайт временных
+    объектов, и тринадцать процессов перебора одновременно упирались в память.
+    np.load читает готовый массив без разбора текста.
+    """
     key = ("bars", symbol, str(tf))
     if key in _CACHE:
         return _CACHE[key]
-    path = os.path.join(DATA, "ohlcv_%s_%s.json" % (symbol, tf))
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            "нет %s — сначала research/fetch_ohlcv.py" % path)
-    with open(path) as fh:
-        rows = json.load(fh)
-    rows = [r for r in rows if HIST_START_MS <= r[0] <= HIST_END_MS]
-    b = Bars(symbol, tf, rows)
+    npy = os.path.join(DATA, "ohlcv_%s_%s.npy" % (symbol, tf))
+    if os.path.exists(npy):
+        arr = np.load(npy)
+    else:
+        path = os.path.join(DATA, "ohlcv_%s_%s.json" % (symbol, tf))
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                "нет %s — сначала research/fetch_ohlcv.py" % path)
+        with open(path) as fh:
+            rows = json.load(fh)
+        arr = np.array([r for r in rows if HIST_START_MS <= r[0] <= HIST_END_MS],
+                       dtype=np.float64)
+        np.save(npy, arr)
+    b = Bars(symbol, tf, arr)
     _check_grid(b)
     _CACHE[key] = b
     return b
