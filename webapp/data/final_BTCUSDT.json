@@ -2,349 +2,349 @@
   "symbol": "BTCUSDT",
   "lev": 15,
   "interval": "15",
-  "period_start": "2023-05-30",
-  "period_end": "2026-07-23",
+  "period_start": "2023-06-21",
+  "period_end": "2026-08-14",
   "overall": {
-    "ret": 140.2,
-    "trades": 60,
-    "wr": 70.0,
-    "dd": 12.6,
-    "med": 0.99,
+    "ret": 133.3,
+    "trades": 57,
+    "wr": 70.2,
+    "dd": 10.1,
+    "med": 1.03,
     "p25": 0.0,
-    "pos_share": 50,
+    "pos_share": 53,
     "ruined": false
   },
   "years": [
     {
-      "period": "2023-07..2024-07",
-      "ret": 56.6,
-      "trades": 22,
-      "wr": 68.2,
-      "dd": 8.6,
+      "period": "2023-08..2024-08",
+      "ret": 64.1,
+      "trades": 20,
+      "wr": 70.0,
+      "dd": 8.9,
       "ruined": false
     },
     {
-      "period": "2024-07..2025-07",
-      "ret": 58.5,
-      "trades": 16,
-      "wr": 75.0,
-      "dd": 4.4,
-      "ruined": false
-    },
-    {
-      "period": "2025-07..2026-07",
-      "ret": 4.2,
+      "period": "2024-08..2025-08",
+      "ret": 49.4,
       "trades": 15,
-      "wr": 66.7,
-      "dd": 21.2,
+      "wr": 73.3,
+      "dd": 4.8,
+      "ruined": false
+    },
+    {
+      "period": "2025-08..2026-08",
+      "ret": -2.2,
+      "trades": 14,
+      "wr": 64.3,
+      "dd": 22.6,
       "ruined": false
     }
   ],
   "months": [
     {
-      "start": "2023-05-30",
-      "end": "2023-06-29",
-      "ret_usdt": 1.98,
-      "ret_pct": 9.9,
+      "start": "2023-06-21",
+      "end": "2023-07-21",
+      "ret_usdt": 3.399,
+      "ret_pct": 17.0,
       "trades": 4,
       "wins": 3
     },
     {
-      "start": "2023-06-29",
-      "end": "2023-07-29",
-      "ret_usdt": 2.2,
-      "ret_pct": 11.0,
+      "start": "2023-07-21",
+      "end": "2023-08-20",
+      "ret_usdt": 1.01,
+      "ret_pct": 5.05,
+      "trades": 4,
+      "wins": 3
+    },
+    {
+      "start": "2023-08-20",
+      "end": "2023-09-19",
+      "ret_usdt": 1.589,
+      "ret_pct": 7.94,
       "trades": 3,
       "wins": 2
     },
     {
-      "start": "2023-07-29",
-      "end": "2023-08-28",
-      "ret_usdt": 1.007,
-      "ret_pct": 5.04,
-      "trades": 5,
-      "wins": 3
-    },
-    {
-      "start": "2023-08-28",
-      "end": "2023-09-27",
-      "ret_usdt": 1.613,
-      "ret_pct": 8.06,
-      "trades": 2,
-      "wins": 2
-    },
-    {
-      "start": "2023-09-27",
-      "end": "2023-10-27",
+      "start": "2023-09-19",
+      "end": "2023-10-19",
       "ret_usdt": 1.914,
       "ret_pct": 9.57,
       "trades": 2,
       "wins": 2
     },
     {
-      "start": "2023-10-27",
-      "end": "2023-11-26",
+      "start": "2023-10-19",
+      "end": "2023-11-18",
       "ret_usdt": 0.0,
       "ret_pct": 0.0,
       "trades": 0,
       "wins": 0
     },
     {
-      "start": "2023-11-26",
-      "end": "2023-12-26",
+      "start": "2023-11-18",
+      "end": "2023-12-18",
       "ret_usdt": 0.0,
       "ret_pct": 0.0,
       "trades": 0,
       "wins": 0
     },
     {
-      "start": "2023-12-26",
-      "end": "2024-01-25",
-      "ret_usdt": 2.722,
-      "ret_pct": 13.61,
+      "start": "2023-12-18",
+      "end": "2024-01-17",
+      "ret_usdt": 2.675,
+      "ret_pct": 13.37,
       "trades": 3,
       "wins": 2
     },
     {
-      "start": "2024-01-25",
-      "end": "2024-02-24",
+      "start": "2024-01-17",
+      "end": "2024-02-16",
       "ret_usdt": -2.27,
       "ret_pct": -11.35,
       "trades": 1,
       "wins": 0
     },
     {
-      "start": "2024-02-24",
-      "end": "2024-03-25",
+      "start": "2024-02-16",
+      "end": "2024-03-17",
       "ret_usdt": 0.0,
       "ret_pct": 0.0,
       "trades": 0,
       "wins": 0
     },
     {
-      "start": "2024-03-25",
-      "end": "2024-04-24",
-      "ret_usdt": 5.562,
-      "ret_pct": 27.81,
+      "start": "2024-03-17",
+      "end": "2024-04-16",
+      "ret_usdt": 5.465,
+      "ret_pct": 27.32,
       "trades": 2,
       "wins": 2
     },
     {
-      "start": "2024-04-24",
-      "end": "2024-05-24",
-      "ret_usdt": 0.846,
-      "ret_pct": 4.23,
+      "start": "2024-04-16",
+      "end": "2024-05-16",
+      "ret_usdt": 0.795,
+      "ret_pct": 3.98,
       "trades": 2,
       "wins": 1
     },
     {
-      "start": "2024-05-24",
-      "end": "2024-06-23",
+      "start": "2024-05-16",
+      "end": "2024-06-15",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2024-06-15",
+      "end": "2024-07-15",
+      "ret_usdt": -0.494,
+      "ret_pct": -2.47,
+      "trades": 4,
+      "wins": 2
+    },
+    {
+      "start": "2024-07-15",
+      "end": "2024-08-14",
+      "ret_usdt": 3.142,
+      "ret_pct": 15.71,
+      "trades": 3,
+      "wins": 3
+    },
+    {
+      "start": "2024-08-14",
+      "end": "2024-09-13",
+      "ret_usdt": 0.388,
+      "ret_pct": 1.94,
+      "trades": 1,
+      "wins": 1
+    },
+    {
+      "start": "2024-09-13",
+      "end": "2024-10-13",
+      "ret_usdt": 4.231,
+      "ret_pct": 21.15,
+      "trades": 3,
+      "wins": 3
+    },
+    {
+      "start": "2024-10-13",
+      "end": "2024-11-12",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2024-11-12",
+      "end": "2024-12-12",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2024-12-12",
+      "end": "2025-01-11",
       "ret_usdt": -0.001,
-      "ret_pct": -0.01,
+      "ret_pct": -0.0,
       "trades": 1,
       "wins": 0
     },
     {
-      "start": "2024-06-23",
-      "end": "2024-07-23",
-      "ret_usdt": -0.079,
-      "ret_pct": -0.39,
-      "trades": 4,
-      "wins": 3
+      "start": "2025-01-11",
+      "end": "2025-02-10",
+      "ret_usdt": 2.73,
+      "ret_pct": 13.65,
+      "trades": 1,
+      "wins": 1
     },
     {
-      "start": "2024-07-23",
-      "end": "2024-08-22",
-      "ret_usdt": 2.802,
-      "ret_pct": 14.01,
-      "trades": 2,
+      "start": "2025-02-10",
+      "end": "2025-03-12",
+      "ret_usdt": 1.638,
+      "ret_pct": 8.19,
+      "trades": 3,
       "wins": 2
     },
     {
-      "start": "2024-08-22",
-      "end": "2024-09-21",
-      "ret_usdt": 0.395,
-      "ret_pct": 1.97,
-      "trades": 1,
-      "wins": 1
-    },
-    {
-      "start": "2024-09-21",
-      "end": "2024-10-21",
-      "ret_usdt": 4.281,
-      "ret_pct": 21.41,
-      "trades": 3,
-      "wins": 3
-    },
-    {
-      "start": "2024-10-21",
-      "end": "2024-11-20",
-      "ret_usdt": 0.0,
-      "ret_pct": 0.0,
-      "trades": 0,
-      "wins": 0
-    },
-    {
-      "start": "2024-11-20",
-      "end": "2024-12-20",
-      "ret_usdt": 0.0,
-      "ret_pct": 0.0,
-      "trades": 0,
-      "wins": 0
-    },
-    {
-      "start": "2024-12-20",
-      "end": "2025-01-19",
-      "ret_usdt": 2.776,
-      "ret_pct": 13.88,
-      "trades": 2,
-      "wins": 1
-    },
-    {
-      "start": "2025-01-19",
-      "end": "2025-02-18",
-      "ret_usdt": 0.0,
-      "ret_pct": 0.0,
-      "trades": 0,
-      "wins": 0
-    },
-    {
-      "start": "2025-02-18",
-      "end": "2025-03-20",
-      "ret_usdt": 1.706,
-      "ret_pct": 8.53,
-      "trades": 4,
-      "wins": 3
-    },
-    {
-      "start": "2025-03-20",
-      "end": "2025-04-19",
-      "ret_usdt": 1.188,
+      "start": "2025-03-12",
+      "end": "2025-04-11",
+      "ret_usdt": 1.187,
       "ret_pct": 5.94,
+      "trades": 3,
+      "wins": 3
+    },
+    {
+      "start": "2025-04-11",
+      "end": "2025-05-11",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2025-05-11",
+      "end": "2025-06-10",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2025-06-10",
+      "end": "2025-07-10",
+      "ret_usdt": -1.455,
+      "ret_pct": -7.27,
+      "trades": 2,
+      "wins": 0
+    },
+    {
+      "start": "2025-07-10",
+      "end": "2025-08-09",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2025-08-09",
+      "end": "2025-09-08",
+      "ret_usdt": 1.162,
+      "ret_pct": 5.81,
+      "trades": 1,
+      "wins": 1
+    },
+    {
+      "start": "2025-09-08",
+      "end": "2025-10-08",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2025-10-08",
+      "end": "2025-11-07",
+      "ret_usdt": 2.001,
+      "ret_pct": 10.0,
       "trades": 2,
       "wins": 2
     },
     {
-      "start": "2025-04-19",
-      "end": "2025-05-19",
-      "ret_usdt": 0.0,
-      "ret_pct": 0.0,
-      "trades": 0,
-      "wins": 0
-    },
-    {
-      "start": "2025-05-19",
-      "end": "2025-06-18",
-      "ret_usdt": -1.417,
-      "ret_pct": -7.09,
-      "trades": 1,
-      "wins": 0
-    },
-    {
-      "start": "2025-06-18",
-      "end": "2025-07-18",
-      "ret_usdt": -0.037,
-      "ret_pct": -0.19,
-      "trades": 1,
-      "wins": 0
-    },
-    {
-      "start": "2025-07-18",
-      "end": "2025-08-17",
-      "ret_usdt": 1.184,
-      "ret_pct": 5.92,
-      "trades": 1,
-      "wins": 1
-    },
-    {
-      "start": "2025-08-17",
-      "end": "2025-09-16",
-      "ret_usdt": 0.0,
-      "ret_pct": 0.0,
-      "trades": 0,
-      "wins": 0
-    },
-    {
-      "start": "2025-09-16",
-      "end": "2025-10-16",
-      "ret_usdt": 1.193,
-      "ret_pct": 5.96,
-      "trades": 1,
-      "wins": 1
-    },
-    {
-      "start": "2025-10-16",
-      "end": "2025-11-15",
-      "ret_usdt": -1.749,
-      "ret_pct": -8.74,
-      "trades": 2,
-      "wins": 1
-    },
-    {
-      "start": "2025-11-15",
-      "end": "2025-12-15",
-      "ret_usdt": -1.677,
-      "ret_pct": -8.39,
-      "trades": 2,
-      "wins": 1
-    },
-    {
-      "start": "2025-12-15",
-      "end": "2026-01-14",
-      "ret_usdt": 2.641,
-      "ret_pct": 13.2,
+      "start": "2025-11-07",
+      "end": "2025-12-07",
+      "ret_usdt": -4.262,
+      "ret_pct": -21.31,
       "trades": 3,
       "wins": 1
     },
     {
-      "start": "2026-01-14",
-      "end": "2026-02-13",
+      "start": "2025-12-07",
+      "end": "2026-01-06",
+      "ret_usdt": 2.59,
+      "ret_pct": 12.95,
+      "trades": 3,
+      "wins": 1
+    },
+    {
+      "start": "2026-01-06",
+      "end": "2026-02-05",
+      "ret_usdt": 0.0,
+      "ret_pct": 0.0,
+      "trades": 0,
+      "wins": 0
+    },
+    {
+      "start": "2026-02-05",
+      "end": "2026-03-07",
       "ret_usdt": -3.308,
       "ret_pct": -16.54,
       "trades": 2,
       "wins": 1
     },
     {
-      "start": "2026-02-13",
-      "end": "2026-03-15",
+      "start": "2026-03-07",
+      "end": "2026-04-06",
+      "ret_usdt": 1.16,
+      "ret_pct": 5.8,
+      "trades": 1,
+      "wins": 1
+    },
+    {
+      "start": "2026-04-06",
+      "end": "2026-05-06",
+      "ret_usdt": 0.389,
+      "ret_pct": 1.94,
+      "trades": 1,
+      "wins": 1
+    },
+    {
+      "start": "2026-05-06",
+      "end": "2026-06-05",
       "ret_usdt": 0.0,
       "ret_pct": 0.0,
       "trades": 0,
       "wins": 0
     },
     {
-      "start": "2026-03-15",
-      "end": "2026-04-14",
-      "ret_usdt": 1.578,
-      "ret_pct": 7.89,
-      "trades": 2,
-      "wins": 2
+      "start": "2026-06-05",
+      "end": "2026-07-05",
+      "ret_usdt": 0.025,
+      "ret_pct": 0.13,
+      "trades": 1,
+      "wins": 1
     },
     {
-      "start": "2026-04-14",
-      "end": "2026-05-14",
-      "ret_usdt": 0.0,
-      "ret_pct": 0.0,
-      "trades": 0,
-      "wins": 0
-    },
-    {
-      "start": "2026-05-14",
-      "end": "2026-06-13",
-      "ret_usdt": 0.0,
-      "ret_pct": 0.0,
-      "trades": 0,
-      "wins": 0
-    },
-    {
-      "start": "2026-06-13",
-      "end": "2026-07-13",
-      "ret_usdt": 0.985,
-      "ret_pct": 4.93,
-      "trades": 2,
-      "wins": 2
+      "start": "2026-07-05",
+      "end": "2026-08-04",
+      "ret_usdt": 0.96,
+      "ret_pct": 4.8,
+      "trades": 1,
+      "wins": 1
     }
   ],
-  "generated_at": "2026-07-27 01:30"
+  "generated_at": "2026-08-15 12:06"
 }
