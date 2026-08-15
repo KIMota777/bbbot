@@ -268,8 +268,11 @@ META = {
               "именно по ней (правило «просадка ≤20%»), которому этот конфиг "
               "теперь не удовлетворяет. Рост доходности относительно прежних "
               "+148.3% НЕ ОБЪЯСНЁН и требует прогона на том же окне: правки "
-              "движка могут делать результат только хуже. На 57 сделках за "
-              "3.2 года любая оценка статистически хрупкая.",
+              "движка могут делать результат только хуже. И главное: итог "
+              "держится на горстке сделок — без одной лучшей он +184.5%, без "
+              "трёх лучших +120.0%. На 57 сделках за 3.2 года это не «лучший "
+              "бот портфеля», а выборка, где несколько удачных входов решают "
+              "всё; повторяемость такого результата ничем не подтверждена.",
         usage="Главный бот BTC. Плечо x15 — самое высокое в портфеле, оправдано "
               "устойчиво низкой просадкой. Запуск: python bot_rsi.py BTC"),
     ("ETHUSDT", "final"): dict(
@@ -313,6 +316,26 @@ def read_json(path, default=None):
         return default
 
 
+def is_num(v):
+    """Число, которым можно считать и которое можно форматировать.
+
+    bool исключён нарочно: True прошёл бы как 1 и нарисовался бы как «1%».
+    """
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def stats_block(data):
+    """Раздел stats предпосчёта — словарём, чем бы он ни оказался в файле.
+
+    Тот же класс дефекта, что и «или пустой словарь» выше: конструкция
+    data.get("stats") or {} ловит None и пустоту, но пропускает валидный JSON
+    не того типа. Недописанный analytics_*.json вполне может отдать
+    stats:"" или stats:[], и следующее же обращение .get() роняет страницу.
+    """
+    st = data.get("stats") if isinstance(data, dict) else None
+    return st if isinstance(st, dict) else {}
+
+
 def load_analytics(key):
     """Предпосчёт build_analytics.py (webapp/data/analytics_<key>.json) или {}.
 
@@ -333,15 +356,13 @@ def ruined_flag(data):
     """
     if not isinstance(data, dict):
         return False
-    stats = data.get("stats")
-    if not isinstance(stats, dict):
-        stats = {}
+    stats = stats_block(data)
     if data.get("ruined") or stats.get("ruined"):
         return True
     # страховка на случай, если признак не проставлен: капитал в нуле или
     # минусе — это слив по определению, каким бы ключом его ни называли
     end = stats.get("final_usd")
-    return isinstance(end, (int, float)) and end <= 0
+    return is_num(end) and end <= 0
 
 
 def list_bots(modes):
@@ -361,13 +382,15 @@ def list_bots(modes):
             if mode == "final":
                 data = load_analytics(f"bot_{sym}")
                 ruined = ruined_flag(data)
-                a = data.get("stats") or {}
+                a = stats_block(data)
                 # Ключей может не быть: пересборка данных идёт в несколько
                 # проходов, и между ними файл — валидный JSON с неполным stats.
                 # Раньше здесь стоял прямой доступ a["final_pct"], и главная
                 # страница падала в 500 ровно в момент пересчёта.
+                # Проверяем ещё и тип: pct из недописанного файла может быть
+                # строкой, а сравнение pct >= 0 со строкой — тот же 500.
                 pct, usd = a.get("final_pct"), a.get("final_usd")
-                if pct is not None and usd is not None:
+                if is_num(pct) and usd is not None:
                     sign = "+" if pct >= 0 else ""
                     reinvest = f"💰 с реинвестом: $50 → ${usd} ({sign}{pct}%)"
                 if a:
@@ -454,8 +477,12 @@ def setup_numbers(rec, data):
     аналитики ниже на странице. Строка отбора остаётся только там, где
     предпосчёта ещё нет, и тогда подписана явно.
     """
-    st = rec.get("stats") or {}
-    a = (data or {}).get("stats") or {}
+    # оба раздела берём через проверку типа: и signal_setups.json, и
+    # analytics_*.json переписываются на ходу, и «stats» в них может оказаться
+    # чем угодно — обращение .get() к строке роняет обе страницы сетапов
+    st = rec.get("stats") if isinstance(rec, dict) else None
+    st = st if isinstance(st, dict) else {}
+    a = stats_block(data)
     if a.get("final_pct") is not None:
         return dict(src="реинвест от $50, маржа 25% капитала (предпосчёт)",
                     ret=a.get("final_pct"), n=a.get("trades"), wr=a.get("wr"),
@@ -468,11 +495,37 @@ def setup_numbers(rec, data):
                 hold=st.get("avg_hold_h"), lev=rec.get("rec_lev"))
 
 
+def clean_history(rows):
+    """Строки истории сигналов, которые таблица вообще может показать.
+
+    signals.json пишет живой advisor.py, и обрывок записи даёт валидный JSON
+    со строкой там, где ждём число. Такая строка роняет страницу дважды:
+    сначала сортировка по exit_ts (сравнить строку с числом нельзя), потом
+    формат «%+.1f» у R. Показать её всё равно нечем, поэтому пропускаем такую
+    строку и говорим об этом в лог — молча терять данные хуже, чем шумно.
+    """
+    if not isinstance(rows, list):
+        return []
+    out, dropped = [], 0
+    for h in rows:
+        ok = (isinstance(h, dict) and is_num(h.get("exit_ts"))
+              and is_num(h.get("r"))
+              and all(h.get(k) is None or is_num(h.get(k))
+                      for k in ("pnl_usd", "capital_after")))
+        if ok:
+            out.append(h)
+        else:
+            dropped += 1
+    if dropped:
+        print(f"signals.json: пропущено строк истории без чисел: {dropped}")
+    return out
+
+
 @app.route("/signals")
 def signals_page():
     # оба файла читаем через read_json: страница со списком сетапов не должна
     # падать в 500, пока advisor.py дописывает signals.json
-    setups = load_signal_setups()
+    setups, _ready = load_signal_setups()
     state = read_json(os.path.join(FINAL_DATA_DIR, "signals.json"), {})
     if not isinstance(state, dict):     # обрывок записи мог дать список/число
         state = {}
@@ -487,17 +540,27 @@ def signals_page():
     # каждую половину файла проверяем отдельно: недописанный signals.json
     # может отдать не то, что мы ждём, а шаблон на этом молча споткнётся
     act = state.get("active")
-    act = act if isinstance(act, dict) else {}
+    # каждый активный сигнал — тоже отдельная проверка: шаблон гонит его
+    # signal_ts/hold_until через деление на 1000, и строка вместо числа даёт
+    # ровно тот же 500, что и список вместо словаря уровнем выше
+    act = {k: v for k, v in act.items()
+           if isinstance(v, dict) and is_num(v.get("signal_ts"))
+           and is_num(v.get("hold_until"))} if isinstance(act, dict) else {}
     hist_all = state.get("history")
-    hist = sorted((h for h in hist_all if isinstance(h, dict)),
-                  key=lambda h: h.get("exit_ts", 0),
+    hist = sorted(clean_history(hist_all),
+                  key=lambda h: h["exit_ts"],
                   reverse=True)[:40] if isinstance(hist_all, list) else []
+    # капитал сетапа шаблон форматирует как «%.2f» и умножает на 0.25 —
+    # значит числом обязано быть КАЖДОЕ значение, а не только сам раздел
+    caps = state.get("capital")
+    caps = {k: v for k, v in caps.items()
+            if is_num(v)} if isinstance(caps, dict) else {}
     adv_log = os.path.join(BOT_DIR, "advisor.log")
     running = (os.path.exists(adv_log) and
                time.time() - os.path.getmtime(adv_log) < 180)
     return render_template("signals.html", setups=setups, ru=RU_SETUPS,
                            active=act, history=hist,
-                           capitals=state.get("capital") or {},
+                           capitals=caps,
                            running=running, stats=stats, ruined=ruined,
                            # ни один сетап не прошёл приёмку — это состояние
                            # портфеля, а не мелочь в карточке: говорим вверху
@@ -547,17 +610,46 @@ def _btc_signal_data(wait=FETCH_BUDGET):
 
 
 def load_signal_setups():
-    """Параметры сетапов или {}. Обрывок записи может оказаться не словарём —
-    тогда страница просто скажет «параметры ещё не готовы»."""
-    data = read_json(os.path.join(BOT_DIR, "signal_setups.json"), {})
-    return data if isinstance(data, dict) else {}
+    """(сетапы, прочитан_ли_файл).
+
+    Второе значение нужно, чтобы отличить «сетапов нет» от «файл прямо сейчас
+    переписывается»: пользователю это два совершенно разных сообщения.
+
+    Значения проверяем по одному, а не только верхний уровень. Проверки
+    isinstance(data, dict) мало: обрывок записи даёт валидный JSON, где вместо
+    словаря параметров лежит строка или число, — а дальше и обработчик, и
+    шаблон обращаются к сетапу как к словарю, и обе страницы падают в 500.
+    """
+    data = read_json(os.path.join(BOT_DIR, "signal_setups.json"))
+    if not isinstance(data, dict):
+        return {}, False
+    setups = {k: v for k, v in data.items() if isinstance(v, dict)}
+    if len(setups) != len(data):
+        print("signal_setups.json: пропущены сетапы, параметры которых не словарь")
+    return setups, True
+
+
+def setups_unavailable():
+    """Честный текст вместо «нет такого сетапа», когда сетап-то есть.
+
+    Пока evolution9.py переписывает signal_setups.json, ссылка со страницы
+    сигналов ведёт в 404 «Нет такого сетапа» — а это враньё: сетап никуда не
+    девался, просто файл в этот миг нечитаем. Владелец решил бы, что страница
+    разбора пропала навсегда, и полез бы её искать.
+    """
+    return ("Параметры сетапов сейчас недоступны: файл signal_setups.json "
+            "переписывается отбором или повреждён. Сетап никуда не делся — "
+            "обновите страницу через минуту.")
 
 
 @app.route("/signal/<name>")
 def signal_page(name):
-    setups = load_signal_setups()
+    setups, ready = load_signal_setups()
     rec = setups.get(name)
     if not rec:
+        # 404 оставляем только для действительно несуществующего адреса
+        if not ready or name in RU_SETUPS:
+            return setups_unavailable(), 503
         return "Нет такого сетапа", 404
     # то же, что у ботов: слив счёта и просадки — из предпосчёта, прямо в
     # разметку, не полагаясь на JS. Все числа шапки идут одним набором из
@@ -578,17 +670,28 @@ def api_signal_chart(name):
     cached = _sig_chart_cache.get(name)
     if cached and time.time() - cached[0] < 1800:
         return jsonify(cached[1])
-    setups = load_signal_setups()
+    setups, ready = load_signal_setups()
     rec = setups.get(name)
     if not rec:
+        if not ready or name in RU_SETUPS:
+            return jsonify(dict(candles=[], trades=[], active=None, warming=True,
+                                note=setups_unavailable())), 503
         return jsonify(dict(error="нет сетапа")), 404
+    # геном — единственное, без чего движок не запустится; в недописанном
+    # файле его может не быть или он может быть не словарём
+    if not isinstance(rec.get("genome"), dict):
+        return jsonify(dict(candles=[], trades=[], active=None, warming=True,
+                            note=setups_unavailable())), 503
+    lev = rec.get("rec_lev", 15)
+    if not is_num(lev):                 # плечо уходит в арифметику движка
+        lev = 15
     import signal_engine as se
     d = _btc_signal_data()
     if d is None:                       # история ещё качается — не держим страницу
         return jsonify(dict(candles=[], trades=[], active=None, warming=True,
                             note="Данные греются, обновите страницу через минуту")), 503
     r = se.run_setup(name, rec["genome"], d["c4"], d["ctx"], d["c15"],
-                     d["ts15"], rec.get("rec_lev", 15))
+                     d["ts15"], lev)
     candles = [dict(time=c[0] // 1000, open=c[1], high=c[2], low=c[3],
                     close=c[4]) for c in d["c4"]]
     trades = [dict(entry_ts=t["entry_ts"] // 1000, exit_ts=t["exit_ts"] // 1000,
@@ -639,13 +742,34 @@ def api_analytics(key):
 @app.route("/api/pnl_curves")
 def api_pnl_curves():
     p = os.path.join(FINAL_DATA_DIR, "pnl_curves.json")
-    return jsonify(read_json(p, dict(series=[])) or dict(series=[]))
+    data = read_json(p)
+    # тот же класс: «или пустой ответ» не спасает от валидного JSON не того
+    # типа. Страница /pnl перебирает data.series — без списка там ничего не
+    # нарисуется, поэтому отдаём честно пустой набор кривых
+    if not isinstance(data, dict) or not isinstance(data.get("series"), list):
+        return jsonify(dict(series=[]))
+    return jsonify(data)
 
 
 @app.route("/evolution")
 def evolution_page():
     path = os.path.join(FINAL_DATA_DIR, "evolution_timeline.json")
-    timeline = read_json(path, {}) or {}
+    raw = read_json(path, {})
+    # «read_json(...) or {}» ловило None и пустоту, но НЕ ловило валидный JSON
+    # не того типа: список/строка/число проходили дальше, и шаблон падал в 500
+    # на timeline.get(). Проверяем тип, а не «не пусто».
+    # То же на уровень ниже: волну шаблон рисует как число (форматирует ret и
+    # сравнивает его с нулём), поэтому берём только те волны, у которых ret
+    # действительно число — иначе страница снова 500, только глубже.
+    timeline = {}
+    if isinstance(raw, dict):
+        for sym, d in raw.items():
+            if not isinstance(d, dict) or not isinstance(d.get("waves"), list):
+                continue
+            waves = [w for w in d["waves"]
+                     if isinstance(w, dict) and is_num(w.get("ret"))]
+            if waves:
+                timeline[sym] = dict(d, waves=waves)
     coins = {sym: sym.replace("USDT", "") for sym in config.SYMBOL_PARAMS}
     return render_template("evolution.html", timeline=timeline, coins=coins)
 
@@ -661,7 +785,7 @@ def bot_page(symbol, mode):
     # аналитики на JS: если скрипт не отработал, владелец всё равно обязан
     # увидеть, что счёт слит
     data = load_analytics(f"bot_{symbol}") if mode == "final" else {}
-    an = data.get("stats") or {}
+    an = stats_block(data)
     return render_template(
         "bot.html", symbol=symbol, coin=symbol.replace("USDT", ""),
         mode=mode, mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
@@ -711,7 +835,11 @@ def get_raw_candles(symbol, interval="15"):
         # и не разово, а все 10 минут, пока обрывок считается свежим.
         # Теперь непрочитанный кэш просто игнорируем и качаем историю заново.
         data = read_json(disk)
-        if isinstance(data, list):
+        # список — ещё не свечи: дальше каждую строку сравнивают с временем и
+        # считают по ней симуляцию, поэтому проверяем и форму строки
+        if isinstance(data, list) and all(
+                isinstance(c, list) and len(c) == 5 and all(is_num(x) for x in c)
+                for c in data):
             _raw_cache[key] = (now, data, 600)
             return data
     start = int((now - RAW_DAYS * 86400) * 1000)
@@ -747,7 +875,14 @@ def get_raw_candles(symbol, interval="15"):
         # что убитый посреди записи процесс оставляет либо прежний целый кэш,
         # либо ничего — но никогда обрывок. Это лечит причину, а не симптом:
         # чтение выше обрывок переживёт, но лучше его вообще не создавать.
-        tmp = disk + ".tmp"
+        # имя временного файла — своё у каждого потока и процесса. С общим
+        # именем «путь + .tmp» атомарности не выходит: dev-сервер многопоточный,
+        # рядом крутится фоновый прогрев, и два потока пишут в ОДИН временный
+        # файл одновременно — второй os.replace переносит на место кэша
+        # перемешанные куски, то есть ровно тот обрывок, от которого мы и
+        # уходили. Плюс чужой os.remove в обработчике ошибки сносил бы
+        # временный файл соседа.
+        tmp = f"{disk}.{os.getpid()}.{threading.get_ident()}.tmp"
         try:
             with open(tmp, "w") as fh:
                 json.dump(data, fh)

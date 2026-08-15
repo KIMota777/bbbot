@@ -1243,6 +1243,58 @@ class RsiGridBot:
             self.day_start_balance = self.virtual_balance
             self.day_pnl = 0.0
 
+    def unrealized(self, price):
+        """Плавающий PnL открытой позиции по текущей цене, USDT.
+
+        Считается по той же средней и тому же объёму, что и реальный выход:
+        (цена - средняя) * объём для лонга и наоборот для шорта. Издержки
+        будущего выхода сюда не входят — они станут известны при закрытии,
+        и завышать минус заранее не нужно.
+        """
+        if not self.pos:
+            return 0.0
+        avg, qty = self.avg_entry()
+        sgn = 1 if self.pos["side"] == "L" else -1
+        return sgn * (price - avg) * qty
+
+    def float_risk_check(self, price):
+        """Следит за плавающим минусом ОТКРЫТОЙ позиции, а не только за
+        закрытыми циклами.
+
+        Зачем отдельно от risk_limits: капитал бота (virtual_balance) меняется
+        только в finish_cycle, поэтому позиция может уйти глубоко в минус, а
+        стоп по просадке и дневной лимит этого не заметят вовсе. Биржа же
+        ликвидирует именно по плавающему минусу.
+
+        По умолчанию это только громкое предупреждение: порог остановки
+        (FLOAT_DD_HALT_FRACTION) выключен, потому что общий порог просадки
+        подбирался под закрытую метрику. Владелец включает его осознанно.
+        """
+        if not self.pos or self.virtual_balance <= 0:
+            return
+        pnl = self.unrealized(price)
+        if pnl >= 0:
+            return
+        frac = -pnl / self.virtual_balance
+        halt_at = config.FLOAT_DD_HALT_FRACTION
+        if halt_at > 0 and frac >= halt_at and not self.halted:
+            self.halted = True
+            msg = (f"плавающий минус {pnl:+.2f} USDT = {frac:.1%} капитала "
+                   f"при пороге {halt_at:.0%} — новые входы ОСТАНОВЛЕНЫ "
+                   f"(открытая позиция продолжает вестись)")
+            self.log.error("СТОП ПО ПЛАВАЮЩЕЙ ПРОСАДКЕ: %s", msg)
+            self.notifier.send(msg, key="float_halt")
+            self.save_state()
+            return
+        alert_at = config.FLOAT_DD_ALERT_FRACTION
+        if alert_at > 0 and frac >= alert_at:
+            self.log.warning("ПЛАВАЮЩИЙ МИНУС: %+.2f USDT = %.1f%% капитала "
+                             "(средняя %s, цена %s)", pnl, frac * 100,
+                             self.rp(self.avg_entry()[0]), self.rp(price))
+            self.notifier.send(
+                f"плавающий минус {pnl:+.2f} USDT = {frac:.1%} капитала",
+                key="float_dd", min_gap=config.FLOAT_DD_ALERT_GAP_SEC)
+
     def risk_limits(self):
         """Дневной лимит потерь и стоп по просадке — после каждого цикла.
 
@@ -1753,6 +1805,9 @@ class RsiGridBot:
         zone_pos = (c - r_low) / rng
         self.log.info("Свеча: %s | RSI %.1f | зона %.0f%% | ATR %.2f%%",
                       self.rp(c), rsi_now, zone_pos * 100, atr * 100)
+        # плавающий минус проверяем ДО ведения позиции: закрытие по стопу или
+        # таймауту ниже сделает pos=None, и предупредить будет уже не о чем
+        self.float_risk_check(c)
 
         if self.pos:
             if self.pos.get("closed_seen_ts"):
