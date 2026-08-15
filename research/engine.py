@@ -106,7 +106,7 @@ class Signals:
 class Trade:
     __slots__ = ("side", "i_in", "i_out", "t_in", "t_out", "px_in", "px_out",
                  "qty", "notional", "pnl", "fees", "funding", "reason",
-                 "mae", "mfe", "equity_after")
+                 "mae", "mfe", "equity_after", "eq_low")
 
     def __init__(self, **kw):
         for k, v in kw.items():
@@ -220,6 +220,7 @@ def run(bars, sig, cfg, start_i=0, symbol=None):
                         "ext": px, "lev": lev,
                         "liq": _liq_price(side, px, max(lev, 1e-9), maint),
                         "mae": 0.0, "mfe": 0.0, "notional": notional,
+                        "eq_before": equity, "eq_low": equity,
                     }
                     cash -= fee
                     equity = cash
@@ -268,6 +269,13 @@ def run(bars, sig, cfg, start_i=0, symbol=None):
             favor = (h[i] - pos["avg"]) if s > 0 else (pos["avg"] - l[i])
             pos["mae"] = min(pos["mae"], adverse / pos["avg"])
             pos["mfe"] = max(pos["mfe"], favor / pos["avg"])
+            # худший плавающий капитал за время удержания — по экстремуму бара,
+            # а не по закрытию: просадка случается внутри бара, и мерить её по
+            # закрытиям значит не увидеть именно те ямы, из-за которых
+            # закрывают счёт
+            worst_eq = cash + adverse * pos["qty"] - pos["funding"]
+            if worst_eq < pos["eq_low"]:
+                pos["eq_low"] = worst_eq
             if hit is None and cfg.max_bars and i - pos["i_in"] >= cfg.max_bars:
                 hit, px_out = "время", c[i] * (1 - s * slip)
             if hit is not None:
@@ -355,7 +363,9 @@ def _close(pos, px_out, i, t_out, reason, trades, ref, liq=False, cfg=None,
         side=s, i_in=pos["i_in"], i_out=i, t_in=pos["t_in"], t_out=t_out,
         px_in=pos["avg"], px_out=px_out, qty=qty, notional=pos["notional"],
         pnl=pnl, fees=pos["fees"] + fee_out, funding=fund, reason=reason,
-        mae=pos["mae"], mfe=pos["mfe"], equity_after=0.0))
+        mae=pos["mae"], mfe=pos["mfe"], equity_after=0.0,
+        eq_low=min(pos.get("eq_low", pos["eq_before"]), pos["eq_before"] + pnl)
+        / max(pos["eq_before"], 1e-9)))
 
 
 def _finish(trades, eq_i, eq_v, cfg, bars, t, ruined):
