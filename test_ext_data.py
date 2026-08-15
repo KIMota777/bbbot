@@ -246,8 +246,104 @@ def main():
           f"негодными названы все три: funding-словарь, oi-строка и "
           f"daily_pct5 списком (найдено {out.count('НЕГОДНАЯ ФОРМА')})")
 
+    # --- describe_cache обязан говорить и о ПРОПАЖЕ файлов ---
+    # Инструмент зовут, чтобы увидеть, какие ряды есть. Пропажа daily_pct5.json
+    # — самое важное, что он может сообщить: именно её устраивает bot_rsi.py,
+    # удаляя кэш перед обновлением. Прежде при отсутствии файла не печаталось
+    # ничего, и пустой отчёт читался как «всё в порядке».
+    empty_dir = tempfile.mkdtemp(prefix="test_ext_data_empty_")
+    os.chdir(empty_dir)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        xd.describe_cache()
+    out = buf.getvalue()
+    check("daily_pct5.json" in out and "НЕТ ФАЙЛА" in out,
+          "describe_cache в пустой папке говорит, что daily_pct5.json нет")
+    check("НЕТ ФАЙЛОВ" in out,
+          "и что кэшей funding/OI тоже нет — а не молчит")
+    os.chdir(work)
+    shutil.rmtree(empty_dir, ignore_errors=True)
+
+    # --- symbol, который невозможно превратить в строку ---
+    # Имя файла кэша собиралось прямо из symbol (f"funding_{symbol}.json") ДО
+    # входа в _fetch_series, то есть до всякой защиты. Объект с падающим
+    # __str__ ронял fetch_* наружу мимо контракта «ни одна fetch_* не бросает».
+    class BadStr:
+        def __str__(self):
+            raise ArithmeticError("падаю в __str__")
+
+        __repr__ = __str__
+
+    retry_off()
+    check(xd.fetch_funding(BadStr()) == [] and xd.fetch_oi(BadStr()) == [],
+          "symbol с падающим __str__: пустой ряд, а не ArithmeticError наружу")
+    # symbol попадает В ИМЯ ФАЙЛА, поэтому разделители пути тоже не имя монеты
+    check(xd.fetch_funding("../evil") == [] and xd.fetch_oi("a/b") == [],
+          "symbol с разделителем пути отвергнут, кэш мимо папки не пишется")
+    check(not os.path.exists(os.path.join(os.path.dirname(work), "evil.json")),
+          "и никакого файла за пределами рабочей папки не появилось")
+
+    # --- целое из сотен цифр: json такое кладёт совершенно законно ---
+    # math.isfinite приводит его к float и бросает OverflowError. _is_series
+    # зовут не только внутри общего try (fetch_*), но и напрямую — из
+    # step_lookup и describe_cache, где ловить некому.
+    huge = 10 ** 400
+    check(xd._is_series([[huge, 1.0]]) is False,
+          "_is_series на целом из 400 цифр: негоден, а не OverflowError")
+    check(xd.step_lookup([[huge, 1.0]])(0) is None,
+          "и step_lookup на таком ряде отвечает None, а не падает")
+    check(xd.step_lookup({"1": 2})(0) is None,
+          "step_lookup на кэше-словаре: None вместо ValueError при распаковке")
+    check(xd.step_lookup([(1, 2.0), (3, 4.0)])("не время") is None,
+          "step_lookup с несравнимым ts: None вместо TypeError из bisect")
+
+    # --- build_aux4 переживает любой ряд ---
+    # Его зовут восемь скриптов бэктеста без try, а ряды приходят и от fetch_*
+    # (которые при молчащем источнике отдают пустышку), и прямо из json.
+    aux = xd.build_aux4(candles, "не ряд", {"a": 1}, None, label=BadStr())
+    check(len(aux["fund"]) == 200 and all(v is None for v in aux["spx5"]),
+          "build_aux4 на мусорных рядах: длина цела, значения None")
+    aux = xd.build_aux4([[0, 1.0], "мусор", [1800000, 1.0]], [], [],
+                        xd.MacroSeries())
+    check(len(aux["fund"]) == 3,
+          "свеча-мусор внутри списка не обрывает разбор остальных")
+
     os.chdir(REPO)
     shutil.rmtree(work, ignore_errors=True)
+
+    # --- утверждение шапки «max_age_s в бою не использует никто» ---
+    # Проверки выше показывают, что путь max_age_s РАБОТАЕТ. Но шапка модуля
+    # утверждает и другое: что в бою по нему никто не ходит. Такое утверждение
+    # протухает молча, поэтому оно тоже считается запуском, а не принимается
+    # на веру. Когда bot_rsi.py перейдёт на max_age_s, эта проверка упадёт —
+    # и это правильно: значит пора переписать шапку ext_data.py.
+    import re as _re
+    pat = _re.compile(r"\bfetch_daily_pct5\s*\(([^)]*)\)")
+    prod, with_arg = [], []
+    for root, dirs, files in os.walk(REPO):
+        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", "venv")]
+        for f in files:
+            if not f.endswith(".py") or f == "ext_data.py" or \
+                    f.startswith("test_"):
+                continue
+            with open(os.path.join(root, f), encoding="utf-8",
+                      errors="replace") as fh:
+                for line in fh:
+                    for m in pat.finditer(line):
+                        prod.append(f)
+                        if m.group(1).strip():
+                            with_arg.append(f)
+    check(len(prod) == 16,
+          f"продакшен-вызовов fetch_daily_pct5 ровно 16, как написано в шапке "
+          f"(найдено {len(prod)})")
+    check(not with_arg,
+          f"и ни один из них не передаёт max_age_s — путь прошлого круга в бою "
+          f"не задействован (нашлись: {sorted(set(with_arg))})")
+    with open(os.path.join(REPO, "bot_rsi.py"), encoding="utf-8") as fh:
+        bot_src = fh.read()
+    check("os.remove(cache_file)" in bot_src,
+          "bot_rsi.get_macro по-прежнему УДАЛЯЕТ daily_pct5.json — то самое, "
+          "от чего max_age_s должен избавить (правка ждёт своего круга)")
 
     # --- числа покрытия из шапки модуля: проверяем, а не верим ---
     # Пауза перед повтором обязана быть сброшена ИМЕННО ЗДЕСЬ: выше мы нарочно

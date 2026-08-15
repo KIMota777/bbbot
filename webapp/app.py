@@ -320,8 +320,59 @@ def is_num(v):
     """Число, которым можно считать и которое можно форматировать.
 
     bool исключён нарочно: True прошёл бы как 1 и нарисовался бы как «1%».
+
+    Целые в JSON не ограничены разрядностью: строка из четырёхсот цифр —
+    законный int, но во float он не переводится, и «%+.1f» от него падает
+    OverflowError. Такое число ничем не лучше строки: показать его как деньги
+    всё равно нельзя. Проверяем переводимость прямо здесь, чтобы дальше по
+    коду об этом можно было не помнить.
     """
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return False
+    try:
+        float(v)
+    except OverflowError:
+        return False
+    return True
+
+
+def num(v, default=None):
+    """Значение, если это число, иначе default.
+
+    Правило всего файла: в шаблон уходит уже ПРИГОДНОЕ значение. Проверять
+    тип в шаблоне нельзя — Jinja не умеет отказываться на полпути, и первая же
+    строка «%.2f» от списка кладёт всю страницу.
+    """
+    return v if is_num(v) else default
+
+
+def cell(v, dash="—"):
+    """Значение для ячейки таблицы: скаляр — как есть, остальное — прочерк.
+
+    Файлы данных пишут другие программы, и на месте цены может оказаться
+    список или словарь. Падения от этого не будет — Jinja нарисует «{'a': 1}»,
+    — но владелец читает эту таблицу как отчёт о деньгах, и мусор в ней хуже
+    честного прочерка. bool тоже прочерк: True в колонке цены нарисуется как
+    «True», и это не цена.
+    """
+    if v is None or isinstance(v, bool) or not isinstance(v, (str, int, float)):
+        return dash
+    return v
+
+
+def fmt_ts(ms, dash="—"):
+    """Время из миллисекунд или прочерк.
+
+    Проверки «это число» тут мало: 1e20 и −1 — числа, но time.localtime на них
+    падает (OverflowError, а на Windows ещё и OSError на отрицательных), и
+    падает не где-нибудь, а внутри отрисовки КАЖДОЙ строки истории.
+    """
+    if not is_num(ms):
+        return dash
+    try:
+        return time.strftime("%d.%m %H:%M", time.localtime(ms / 1000))
+    except (ValueError, OSError, OverflowError):
+        return dash
 
 
 def stats_block(data):
@@ -431,9 +482,17 @@ def news_panel():
                 continue
             bg = news_state.background(sym)
             p = config.SYMBOL_PARAMS[sym].get("final") or {}
+            # index и heat шаблон форматирует («%+.2f») и сравнивает с порогом.
+            # Фон собирает news_state из файла новостей — то есть значение
+            # приходит извне, и не числом оно роняет ГЛАВНУЮ страницу. Свой
+            # try/except внизу этого не ловит: падение происходит позже, уже
+            # в отрисовке шаблона.
+            index, heat = num(bg.get("index")), num(bg.get("heat"))
+            if index is None or heat is None:
+                continue
             rows.append(dict(
-                coin=sym.replace("USDT", ""), index=bg["index"],
-                heat=bg["heat"], n=bg["n"], stale=bg["stale"],
+                coin=sym.replace("USDT", ""), index=index,
+                heat=heat, n=cell(bg.get("n"), 0), stale=bg.get("stale"),
                 active=bool(p.get("news_tp_k") or p.get("news_sl_k") or
                             p.get("news_heat_max") or p.get("news_index_min"))))
         return dict(rows=rows, any_active=any(r["active"] for r in rows),
@@ -483,41 +542,114 @@ def setup_numbers(rec, data):
     st = rec.get("stats") if isinstance(rec, dict) else None
     st = st if isinstance(st, dict) else {}
     a = stats_block(data)
+    # Здесь всё до единого — числа (доход, сделки, винрейт, просадки, плечо),
+    # и шаблон рисует их как «{{ st.ret }}» с запасным «?». Значит «?» обязано
+    # появляться и тогда, когда в файле на месте доходности лежит список или
+    # строка, а не только когда ключа нет вовсе.
+    def one(src, **kw):
+        return dict(src=src, **{k: num(v) for k, v in kw.items()})
     if a.get("final_pct") is not None:
-        return dict(src="реинвест от $50, маржа 25% капитала (предпосчёт)",
-                    ret=a.get("final_pct"), n=a.get("trades"), wr=a.get("wr"),
-                    dd=a.get("max_dd"), dd_float=a.get("max_dd_float"),
-                    hold=a.get("avg_hold_h"), lev=a.get("lev"))
-    return dict(src="числа отбора, фиксированная маржа $5 — предпосчёт "
-                    "по этому сетапу ещё не собран",
-                ret=st.get("ret"), n=st.get("n"), wr=st.get("wr"),
-                dd=st.get("dd"), dd_float=None,
-                hold=st.get("avg_hold_h"), lev=rec.get("rec_lev"))
+        return one("реинвест от $50, маржа 25% капитала (предпосчёт)",
+                   ret=a.get("final_pct"), n=a.get("trades"), wr=a.get("wr"),
+                   dd=a.get("max_dd"), dd_float=a.get("max_dd_float"),
+                   hold=a.get("avg_hold_h"), lev=a.get("lev"))
+    return one("числа отбора, фиксированная маржа $5 — предпосчёт "
+               "по этому сетапу ещё не собран",
+               ret=st.get("ret"), n=st.get("n"), wr=st.get("wr"),
+               dd=st.get("dd"), dd_float=None,
+               hold=st.get("avg_hold_h"), lev=rec.get("rec_lev"))
 
 
 def clean_history(rows):
-    """Строки истории сигналов, которые таблица вообще может показать.
+    """Строки истории сигналов, ГОТОВЫЕ к печати: все числа уже отформатированы.
 
     signals.json пишет живой advisor.py, и обрывок записи даёт валидный JSON
-    со строкой там, где ждём число. Такая строка роняет страницу дважды:
+    со строкой там, где ждём число. Такая строка роняла страницу дважды:
     сначала сортировка по exit_ts (сравнить строку с числом нельзя), потом
-    формат «%+.1f» у R. Показать её всё равно нечем, поэтому пропускаем такую
-    строку и говорим об этом в лог — молча терять данные хуже, чем шумно.
+    формат «%+.1f» у R. Показать её всё равно нечем, поэтому пропускаем и
+    говорим об этом в лог — молча терять данные хуже, чем шумно.
+
+    Дальше по строке шаблон делал ещё три вещи, каждая из которых умела
+    падать, и ни одну эта проверка не закрывала:
+      * ru.get(h.setup, h.setup) — setup уходил КЛЮЧОМ словаря названий, а
+        список и словарь ключом быть не могут (TypeError: unhashable);
+      * «%+.2f» от pnl_usd — а pnl_usd со значением None здесь ПРОПУСКАЛСЯ
+        нарочно: ключ есть, значение None, формат падает;
+      * fmt_ts(h.exit_ts) — is_num проходит и 1e20, а localtime на нём падает.
+    Поэтому отсюда наружу выходит строка, в которой печатать уже нечего:
+    и текст, и класс цвета посчитаны здесь, в коде.
     """
     if not isinstance(rows, list):
         return []
     out, dropped = [], 0
     for h in rows:
-        ok = (isinstance(h, dict) and is_num(h.get("exit_ts"))
-              and is_num(h.get("r"))
-              and all(h.get(k) is None or is_num(h.get(k))
-                      for k in ("pnl_usd", "capital_after")))
-        if ok:
-            out.append(h)
-        else:
+        if not isinstance(h, dict):
             dropped += 1
+            continue
+        exit_ts, r = h.get("exit_ts"), h.get("r")
+        cap, pnl = h.get("capital_after"), h.get("pnl_usd")
+        if not (is_num(exit_ts) and is_num(r)):
+            dropped += 1
+            continue
+        if not (cap is None or is_num(cap)) or not (pnl is None or is_num(pnl)):
+            dropped += 1
+            continue
+        # setup — ключ словаря RU_SETUPS. Нехешируемое (список, словарь) сюда
+        # пускать нельзя даже ради «показать как есть».
+        setup = h.get("setup")
+        setup_ru = (RU_SETUPS.get(setup, setup)
+                    if isinstance(setup, str) else "—")
+        outcome = cell(h.get("outcome"))
+        out.append(dict(
+            ts_str=fmt_ts(exit_ts), setup_ru=setup_ru,
+            side=cell(h.get("side")), entry=cell(h.get("entry")),
+            stop=cell(h.get("stop")), tp=cell(h.get("tp")),
+            outcome=outcome,
+            outcome_cls=("pos" if outcome == "ТЕЙК" else
+                         "neg" if outcome == "СТОП" else ""),
+            r_str="%+.1f" % r, r_cls=("pos" if r > 0 else "neg"),
+            # None у pnl_usd — это «не записано», а не ноль: рисуем прочерк
+            # без цвета, а не «+0.00» зелёным
+            pnl_str=("—" if pnl is None else "%+.2f" % pnl),
+            pnl_cls=("" if pnl is None else ("pos" if pnl > 0 else "neg")),
+            cap_str=("—" if not cap else "$%.2f" % cap),
+            hold_h=cell(h.get("hold_h")), exit_ts=exit_ts))
     if dropped:
         print(f"signals.json: пропущено строк истории без чисел: {dropped}")
+    return out
+
+
+def clean_active(act):
+    """Активные сигналы, приведённые к виду, который шаблон точно нарисует.
+
+    Проверки signal_ts/hold_until мало: у сигнала с маржой шаблон считал
+    risk_1r * 3 и форматировал результат. risk_1r никто не проверял — и
+    сигнал с текстовым или отсутствующим риском (обычное дело, если advisor.py
+    как раз дописывает запись) клал всю страницу сигналов. Считаем цель здесь:
+    в шаблоне арифметике не место.
+    """
+    if not isinstance(act, dict):
+        return {}
+    out = {}
+    for k, v in act.items():
+        if not isinstance(k, str) or not isinstance(v, dict):
+            continue
+        sig_ts, hold_until = v.get("signal_ts"), v.get("hold_until")
+        if not (is_num(sig_ts) and is_num(hold_until)):
+            continue
+        margin, risk = num(v.get("margin")), num(v.get("risk_1r"))
+        # блок про деньги показываем, только если ОБА числа на месте: половина
+        # («маржа $5, риск —») хуже, чем его отсутствие
+        if margin is None or risk is None:
+            margin = risk = risk3 = None
+        else:
+            risk3 = round(risk * 3, 2)
+        out[k] = dict(
+            entry=cell(v.get("entry")), stop=cell(v.get("stop")),
+            stop_pct=cell(v.get("stop_pct")), tp=cell(v.get("tp")),
+            tp_pct=cell(v.get("tp_pct")), lev=cell(v.get("lev")),
+            margin=margin, risk_1r=risk, risk_3r=risk3,
+            signal_str=fmt_ts(sig_ts), hold_str=fmt_ts(hold_until))
     return out
 
 
@@ -525,7 +657,7 @@ def clean_history(rows):
 def signals_page():
     # оба файла читаем через read_json: страница со списком сетапов не должна
     # падать в 500, пока advisor.py дописывает signals.json
-    setups, _ready = load_signal_setups()
+    setups, status = load_signal_setups()
     state = read_json(os.path.join(FINAL_DATA_DIR, "signals.json"), {})
     if not isinstance(state, dict):     # обрывок записи мог дать список/число
         state = {}
@@ -537,24 +669,19 @@ def signals_page():
         data = load_analytics(f"sig_{nm}")
         stats[nm] = setup_numbers(rec, data)
         ruined[nm] = ruined_flag(data)
-    # каждую половину файла проверяем отдельно: недописанный signals.json
-    # может отдать не то, что мы ждём, а шаблон на этом молча споткнётся
-    act = state.get("active")
-    # каждый активный сигнал — тоже отдельная проверка: шаблон гонит его
-    # signal_ts/hold_until через деление на 1000, и строка вместо числа даёт
-    # ровно тот же 500, что и список вместо словаря уровнем выше
-    act = {k: v for k, v in act.items()
-           if isinstance(v, dict) and is_num(v.get("signal_ts"))
-           and is_num(v.get("hold_until"))} if isinstance(act, dict) else {}
-    hist_all = state.get("history")
-    hist = sorted(clean_history(hist_all),
-                  key=lambda h: h["exit_ts"],
-                  reverse=True)[:40] if isinstance(hist_all, list) else []
-    # капитал сетапа шаблон форматирует как «%.2f» и умножает на 0.25 —
-    # значит числом обязано быть КАЖДОЕ значение, а не только сам раздел
-    caps = state.get("capital")
-    caps = {k: v for k, v in caps.items()
-            if is_num(v)} if isinstance(caps, dict) else {}
+    # обе половины файла приводим к готовому виду в КОДЕ: шаблон только
+    # печатает то, что ему дали, и не умеет падать ни на одном значении
+    act = clean_active(state.get("active"))
+    hist = sorted(clean_history(state.get("history")),
+                  key=lambda h: h["exit_ts"], reverse=True)[:40]
+    # капитал сетапа шаблон форматировал как «%.2f» и умножал на 0.25 — теперь
+    # обе строки считаются здесь, из значения, которое точно число
+    raw_caps = state.get("capital")
+    raw_caps = raw_caps if isinstance(raw_caps, dict) else {}
+    caps = {}
+    for nm in setups:
+        c = num(raw_caps.get(nm), 50.0)
+        caps[nm] = dict(cap="%.2f" % c, next="%.2f" % (c * 0.25))
     adv_log = os.path.join(BOT_DIR, "advisor.log")
     running = (os.path.exists(adv_log) and
                time.time() - os.path.getmtime(adv_log) < 180)
@@ -562,12 +689,13 @@ def signals_page():
                            active=act, history=hist,
                            capitals=caps,
                            running=running, stats=stats, ruined=ruined,
+                           # честная причина пустого списка: «отбор не
+                           # запускали» и «файл повреждён» — разные новости
+                           setups_note="" if setups else setups_unavailable(status),
                            # ни один сетап не прошёл приёмку — это состояние
                            # портфеля, а не мелочь в карточке: говорим вверху
                            none_passed=bool(setups) and not any(
-                               r.get("enabled", True) for r in setups.values()),
-                           fmt_ts=lambda ms: time.strftime(
-                               "%d.%m %H:%M", time.localtime(ms / 1000)))
+                               r.get("enabled", True) for r in setups.values()))
 
 
 _sig_chart_cache = {}
@@ -610,46 +738,98 @@ def _btc_signal_data(wait=FETCH_BUDGET):
 
 
 def load_signal_setups():
-    """(сетапы, прочитан_ли_файл).
+    """(сетапы, состояние файла: "ok" | "missing" | "bad").
 
-    Второе значение нужно, чтобы отличить «сетапов нет» от «файл прямо сейчас
-    переписывается»: пользователю это два совершенно разных сообщения.
+    Состояние нужно, чтобы отличить три РАЗНЫЕ новости: «файл читается»,
+    «файла нет вовсе» и «файл сейчас переписывается или повреждён». Раньше
+    последние две сливались в одну, и на свежей копии, где отбор ни разу не
+    запускали, сайт рассказывал про повреждение файла, которого никогда не
+    существовало.
 
     Значения проверяем по одному, а не только верхний уровень. Проверки
     isinstance(data, dict) мало: обрывок записи даёт валидный JSON, где вместо
     словаря параметров лежит строка или число, — а дальше и обработчик, и
     шаблон обращаются к сетапу как к словарю, и обе страницы падают в 500.
     """
-    data = read_json(os.path.join(BOT_DIR, "signal_setups.json"))
+    path = os.path.join(BOT_DIR, "signal_setups.json")
+    if not os.path.exists(path):
+        return {}, "missing"
+    data = read_json(path)
     if not isinstance(data, dict):
-        return {}, False
-    setups = {k: v for k, v in data.items() if isinstance(v, dict)}
+        return {}, "bad"
+    setups = {k: v for k, v in data.items()
+              if isinstance(k, str) and isinstance(v, dict)}
     if len(setups) != len(data):
         print("signal_setups.json: пропущены сетапы, параметры которых не словарь")
-    return setups, True
+    return setups, "ok"
 
 
-def setups_unavailable():
+def setups_unavailable(status):
     """Честный текст вместо «нет такого сетапа», когда сетап-то есть.
 
     Пока evolution9.py переписывает signal_setups.json, ссылка со страницы
-    сигналов ведёт в 404 «Нет такого сетапа» — а это враньё: сетап никуда не
+    сигналов вела в 404 «Нет такого сетапа» — а это враньё: сетап никуда не
     девался, просто файл в этот миг нечитаем. Владелец решил бы, что страница
     разбора пропала навсегда, и полез бы её искать.
+
+    Но и обратное враньё не годится: на свежей копии файла нет вообще, и
+    рассказ про «переписывается или повреждён» посылает искать поломку там,
+    где её нет. Причин три — и текстов тоже три.
     """
-    return ("Параметры сетапов сейчас недоступны: файл signal_setups.json "
-            "переписывается отбором или повреждён. Сетап никуда не делся — "
-            "обновите страницу через минуту.")
+    if status == "missing":
+        return ("Параметров сетапов ещё нет: файл signal_setups.json не "
+                "создан — отбор (evolution9.py) на этой копии ни разу не "
+                "запускали. Это не поломка: запусти отбор, и страница "
+                "заработает.")
+    if status == "bad":
+        return ("Параметры сетапов сейчас недоступны: файл signal_setups.json "
+                "переписывается отбором или повреждён. Сетап никуда не делся — "
+                "обновите страницу через минуту.")
+    return ("Файл signal_setups.json прочитан, но этого сетапа в нём нет: "
+            "последний отбор его не сохранил. Список доступных сетапов — "
+            "на странице сигналов.")
+
+
+# Гены, которыми движок НАРЕЗАЕТ списки: целое неотрицательное и ничего
+# другого. Дробное окно или отрицательный возраст уровня — это не «другая
+# стратегия», это TypeError в глубине signal_engine.
+GENOME_INT = ("rsi_idx", "window", "age", "drop_days", "hold_days")
+# Гены-множители: годится любое число.
+GENOME_NUM = ("zone", "rsi_os", "buf_atr", "stop_cap", "poke_atr",
+              "drop_frac", "cooldown")
+
+
+def genome_problem(g, n_rsi):
+    """Человеческое описание того, чем геном не годен, или "" если годен.
+
+    Возвращаем именно текст, а не False: он уходит на страницу и в лог, и по
+    нему сразу видно, какой ген испорчен, — иначе владелец видит «график не
+    рисуется» и не знает, куда смотреть.
+    """
+    if not isinstance(g, dict):
+        return "это не набор параметров"
+    for k in GENOME_INT:
+        v = g.get(k)
+        if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+            return f"ген {k} должен быть целым неотрицательным, а он {v!r}"
+    if g["rsi_idx"] >= n_rsi:           # номер периода RSI — индекс в списке
+        return f"ген rsi_idx={g['rsi_idx']} за пределами списка периодов RSI"
+    if g["window"] < 1 or g["hold_days"] < 1:
+        return "окно уровней и срок удержания не могут быть нулевыми"
+    for k in GENOME_NUM:
+        if not is_num(g.get(k)):
+            return f"ген {k} должен быть числом, а он {g.get(k)!r}"
+    return ""
 
 
 @app.route("/signal/<name>")
 def signal_page(name):
-    setups, ready = load_signal_setups()
+    setups, status = load_signal_setups()
     rec = setups.get(name)
     if not rec:
         # 404 оставляем только для действительно несуществующего адреса
-        if not ready or name in RU_SETUPS:
-            return setups_unavailable(), 503
+        if status != "ok" or name in RU_SETUPS:
+            return setups_unavailable(status), 503
         return "Нет такого сетапа", 404
     # то же, что у ботов: слив счёта и просадки — из предпосчёта, прямо в
     # разметку, не полагаясь на JS. Все числа шапки идут одним набором из
@@ -670,28 +850,46 @@ def api_signal_chart(name):
     cached = _sig_chart_cache.get(name)
     if cached and time.time() - cached[0] < 1800:
         return jsonify(cached[1])
-    setups, ready = load_signal_setups()
+    setups, status = load_signal_setups()
     rec = setups.get(name)
     if not rec:
-        if not ready or name in RU_SETUPS:
+        if status != "ok" or name in RU_SETUPS:
             return jsonify(dict(candles=[], trades=[], active=None, warming=True,
-                                note=setups_unavailable())), 503
+                                note=setups_unavailable(status))), 503
         return jsonify(dict(error="нет сетапа")), 404
-    # геном — единственное, без чего движок не запустится; в недописанном
-    # файле его может не быть или он может быть не словарём
-    if not isinstance(rec.get("genome"), dict):
-        return jsonify(dict(candles=[], trades=[], active=None, warming=True,
-                            note=setups_unavailable())), 503
     lev = rec.get("rec_lev", 15)
     if not is_num(lev):                 # плечо уходит в арифметику движка
         lev = 15
     import signal_engine as se
+    # Геном — единственное, без чего движок не запустится. Проверки
+    # isinstance(genome, dict) МАЛО: движок берёт из него window, age,
+    # hold_days как длины (ими нарезают списки — нужен целый неотрицательный),
+    # rsi_idx как номер периода RSI, остальное — как множители. Пустой словарь
+    # давал KeyError, строка вместо числа — TypeError, и оба прилетали
+    # пятисоткой на график сетапа.
+    bad = genome_problem(rec.get("genome"), len(se.RSI_SET))
+    if bad:
+        return jsonify(dict(candles=[], trades=[], active=None, warming=True,
+                            note=f"Параметры сетапа «{name}» негодны: {bad}. "
+                                 "Файл signal_setups.json переписывается "
+                                 "отбором или повреждён.")), 503
     d = _btc_signal_data()
     if d is None:                       # история ещё качается — не держим страницу
         return jsonify(dict(candles=[], trades=[], active=None, warming=True,
                             note="Данные греются, обновите страницу через минуту")), 503
-    r = se.run_setup(name, rec["genome"], d["c4"], d["ctx"], d["c15"],
-                     d["ts15"], lev)
+    try:
+        r = se.run_setup(name, rec["genome"], d["c4"], d["ctx"], d["c15"],
+                         d["ts15"], lev)
+    except Exception as e:              # noqa: BLE001 — страховка поверх проверки
+        # Проверка выше знает про имена генов, но не про их сочетания: набор
+        # значений, каждое из которых по отдельности законно, всё равно может
+        # завести движок в тупик. График — не то место, ради которого стоит
+        # ронять страницу целиком.
+        print(f"движок не смог посчитать сетап {name}: {e!r}")
+        return jsonify(dict(candles=[], trades=[], active=None, warming=True,
+                            note=f"Движок не смог посчитать сетап «{name}» "
+                                 "на текущих параметрах — смотри консоль "
+                                 "сайта.")), 503
     candles = [dict(time=c[0] // 1000, open=c[1], high=c[2], low=c[3],
                     close=c[4]) for c in d["c4"]]
     trades = [dict(entry_ts=t["entry_ts"] // 1000, exit_ts=t["exit_ts"] // 1000,
@@ -809,6 +1007,53 @@ _raw_cache = {}     # (symbol,interval) -> (fetched_at, candles, ttl_сек)
 _disk_lock = threading.Lock()
 
 
+def save_disk_cache(disk, data, symbol, interval):
+    """Записать кэш свечей атомарно. True — записан, False — не вышло.
+
+    Пишем во временный файл и переименовываем: смена имени атомарна, так что
+    убитый посреди записи процесс оставляет либо прежний целый кэш, либо
+    ничего — но никогда обрывок. Это лечит причину, а не симптом: чтение выше
+    обрывок переживёт, но лучше его вообще не создавать.
+
+    С ОБЩИМ именем «путь + .tmp» атомарности не выходило: dev-сервер
+    многопоточный, рядом крутится фоновый прогрев, и несколько потоков писали
+    в ОДИН временный файл одновременно — а чужой os.remove в обработчике
+    ошибки сносил временный файл соседа. На стенде (8 потоков, 10 раундов)
+    кэш после такой гонки не оставался целым НИ РАЗУ. Поэтому имя временного
+    файла своё у каждого потока И каждого процесса.
+
+    Замок _disk_lock общий, но только внутри ЭТОГО процесса, и другого замка
+    у нас нет: вторая копия сайта (проверочная на своём порту рядом с рабочей)
+    про него не знает. На Windows переименование поверх файла, который сосед в
+    тот же миг переименовывает, даёт «отказано в доступе». Данные при этом
+    целы — остаётся вариант соседа, — вся беда в шуме: в лог сыпалось «кэш не
+    сохранён» там, где кэш на самом деле есть. Отсюда повторы: чужое
+    переименование длится миллисекунды. Функция вынесена отдельно ещё и
+    затем, чтобы это можно было проверить запуском нескольких процессов, а не
+    только пообещать в комментарии.
+    """
+    tmp = f"{disk}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with _disk_lock:
+            with open(tmp, "w") as fh:
+                json.dump(data, fh)
+            for attempt in range(5):
+                try:
+                    os.replace(tmp, disk)
+                    return True
+                except PermissionError:   # сосед переименовывает прямо сейчас
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
+    except OSError as e:             # нет места/прав — работаем без кэша
+        print(f"кэш свечей {symbol}/{interval}м не сохранён: {e}")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    return False
+
+
 def bot_interval(symbol, mode):
     p = config.SYMBOL_PARAMS.get(symbol, {}).get(mode) or {}
     return str(p.get("interval", "15"))
@@ -875,31 +1120,7 @@ def get_raw_candles(symbol, interval="15"):
     data = [[int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4])]
             for x in out if int(x[0]) >= start]
     if full and disk:                # на диск — только полную историю
-        # Пишем во временный файл и переименовываем: смена имени атомарна, так
-        # что убитый посреди записи процесс оставляет либо прежний целый кэш,
-        # либо ничего — но никогда обрывок. Это лечит причину, а не симптом:
-        # чтение выше обрывок переживёт, но лучше его вообще не создавать.
-        # С ОБЩИМ именем «путь + .tmp» атомарности не выходило: dev-сервер
-        # многопоточный, рядом крутится фоновый прогрев, и несколько потоков
-        # писали в ОДИН временный файл одновременно — а чужой os.remove в
-        # обработчике ошибки сносил временный файл соседа. На стенде (8 потоков,
-        # 10 раундов) кэш после такой гонки не оставался целым НИ РАЗУ.
-        # Имя временного файла — своё у каждого потока и процесса (общего
-        # имени мало и внутри одного процесса, и когда рядом работает вторая
-        # копия сайта), а сама пара «запись + переименование» идёт под общим
-        # замком: одновременные переименования на Windows друг другу мешают.
-        tmp = f"{disk}.{os.getpid()}.{threading.get_ident()}.tmp"
-        try:
-            with _disk_lock:
-                with open(tmp, "w") as fh:
-                    json.dump(data, fh)
-                os.replace(tmp, disk)
-        except OSError as e:         # нет места/прав — работаем без кэша
-            print(f"кэш свечей {symbol}/{interval}м не сохранён: {e}")
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+        save_disk_cache(disk, data, symbol, interval)
     _raw_cache[key] = (now, data, 600 if full else 60)
     return data
 

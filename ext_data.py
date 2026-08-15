@@ -72,6 +72,14 @@ fetch_daily_pct5. Страховка ловит Exception целиком: пер
 пауза RETRY_PAUSE_S заводится и в этом случае, иначе просроченный кэш гнал бы
 в молчащий источник по обращению на каждый запрос страницы сайта.
 
+НО В БОЮ ЭТИМ ПУТЁМ ПОКА НЕ ПОЛЬЗУЕТСЯ НИКТО, и умалчивать об этом нельзя:
+все 16 продакшен-вызовов fetch_daily_pct5 (замер счётом по исходникам
+15.08.2026, включая сайт и бота) идут без аргумента, а bot_rsi.get_macro
+по-прежнему УДАЛЯЕТ daily_pct5.json старше суток. То есть описанное выше —
+готовая, покрытая тестом возможность, а не работающее сегодня поведение.
+Что именно надо поменять в bot_rsi.py, чтобы она заработала, написано в
+докстроке fetch_daily_pct5.
+
 Что при этом происходит в бою, без прикрас: bot_rsi.py получит пустые ряды,
 положит в свой суточный кэш None по всем трём макро-фильтрам (метод
 RsiGridBot.get_macro) и до конца суток торгует БЕЗ них. Единственный
@@ -103,6 +111,20 @@ class MacroUnavailable(RuntimeError):
     """
 
 
+def _safe_str(v, default=""):
+    """str() чужого объекта, которое не роняет вызывающего.
+
+    Нужно потому, что приведение к строке — не безобидная операция: у чужого
+    объекта __str__ может бросить что угодно. Ровно так fetch_funding и
+    fetch_oi нарушали контракт модуля: имя файла кэша собиралось из symbol
+    ДО всякой защиты.
+    """
+    try:
+        return str(v)
+    except Exception:
+        return default
+
+
 class MacroSeries(dict):
     """{'spx': {...}, 'dxy': {...}, 'gold': {...}} + признак доступности.
 
@@ -116,10 +138,15 @@ class MacroSeries(dict):
     __slots__ = ("available", "reason")
 
     def __init__(self, mapping=None, available=True, reason=""):
-        super().__init__(mapping if mapping is not None
-                         else {"spx": {}, "dxy": {}, "gold": {}})
-        self.available = available
-        self.reason = reason
+        # не словарь — значит рядов нет: dict(5) и dict("abc") бросали
+        # TypeError/ValueError прямо из конструктора, а MacroSeries строят и в
+        # обработчике сбоя, где падать уже некуда. Пустые ряды при этом
+        # безопасны сами по себе: macro_available на них даёт False.
+        if not isinstance(mapping, dict):
+            mapping = {"spx": {}, "dxy": {}, "gold": {}}
+        super().__init__(mapping)
+        self.available = bool(available)
+        self.reason = _safe_str(reason)
 
 
 def macro_available(pct5):
@@ -359,9 +386,13 @@ def _is_series(rows):
     проходит), а в bisect по ts он ломает порядок молча.
 
     Проверяется ВЕСЬ ряд, а не первая пара: битой обычно оказывается не
-    начало файла. Это недорого — замер 15.08.2026 на боевых кэшах: 5.0 мс на
-    oi_*.json (16000 точек) и 1.2 мс на funding_*.json (3800 точек) за одну
-    проверку, против сетевой выгрузки в десятки секунд.
+    начало файла. Это недорого — замер 15.08.2026 на всех десяти боевых
+    кэшах, медиана 200 проверок каждого файла: 4.8-5.3 мс на oi_*.json
+    (16000 точек) и 1.13-1.14 мс на funding_*.json (3800 точек). Числа даны
+    вилкой намеренно: разброс между повторными прогонами (4.5-9.4 мс на одном
+    и том же файле) больше разницы между монетами, и точность до десятой доли
+    миллисекунды здесь была бы выдуманной. Порядок величины и есть весь
+    смысл: миллисекунды против десятков секунд сетевой выгрузки.
     """
     if not isinstance(rows, list) or not rows:
         return False
@@ -374,13 +405,51 @@ def _is_series(rows):
             return False
         if not isinstance(ts, (int, float)) or not isinstance(val, (int, float)):
             return False
-        if not math.isfinite(ts) or not math.isfinite(val):
+        try:
+            if not math.isfinite(ts) or not math.isfinite(val):
+                return False
+        except OverflowError:
+            # целое из сотен цифр: math.isfinite приводит его к float и не
+            # может. json такое число кладёт в файл совершенно законно, а
+            # _is_series зовут и напрямую (step_lookup, describe_cache), где
+            # общего try вокруг нет. Меткой времени или ценой это всё равно
+            # быть не может — значит ряд негоден
             return False
     return True
 
 
+def _cache_symbol(symbol, who):
+    """Имя монеты, годное для имени файла кэша, либо None.
+
+    Две причины, обе подтверждены запуском.
+
+    1. Имя файла собиралось прямо из symbol (f"funding_{symbol}.json") ДО
+       входа в _fetch_series, то есть до всякой защиты. Объект, у которого
+       падает __str__, ронял fetch_funding и fetch_oi наружу мимо контракта
+       «ни одна fetch_* не бросает» — на нём и споткнулось утверждение о нуле
+       исключений на 75 тысячах вызовов.
+    2. symbol попадает В ИМЯ ФАЙЛА. Значение вроде "../secrets" писало бы кэш
+       мимо папки репозитория. Сейчас имена монет приходят из config.py, то
+       есть от нас, но защита имени файла не должна держаться на этом.
+
+    Негодное имя = пустой ряд и строка ERROR, то есть ровно то же, что
+    молчащий источник: зависящие фильтры не применяются, и это видно в логе.
+    """
+    s = _safe_str(symbol, default="")
+    if not s or len(s) > 32 or not all(c.isalnum() or c in "_-" for c in s):
+        # печатаем ТИП, а не значение: у значения может падать __str__
+        log.error("%s: %s не годится как имя монеты — пустой ряд, зависящие "
+                  "фильтры НЕ ПРИМЕНЯЮТСЯ", who, type(symbol).__name__)
+        return None
+    return s
+
+
 def fetch_funding(symbol, days=1200):
     """[(ts_ms, rate_%за8ч)] по возрастанию."""
+    symbol = _cache_symbol(symbol, "fetch_funding")
+    if symbol is None:
+        return []
+
     def build():
         s = HTTP(testnet=False)
         start = int(time.time() * 1000) - days * 86400 * 1000
@@ -420,6 +489,10 @@ def fetch_oi(symbol):
     годах» про него сказать нельзя. Сейчас ген включён у BTC, LTC и DOGE
     (config.SYMBOL_PARAMS[...]['final']['oi_gate']), у ETH и SOL — выкл.
     """
+    symbol = _cache_symbol(symbol, "fetch_oi")
+    if symbol is None:
+        return []
+
     def build():
         s = HTTP(testnet=False)
         out, cur = [], None
@@ -454,6 +527,24 @@ def fetch_daily_pct5(max_age_s=None):
     молчит. С max_age_s обновление происходит без удаления, а если источник
     не ответил, отдаётся вчерашняя копия с диска (см. _cache).
 
+    ЧЕСТНЫЙ СТАТУС НА 15.08.2026: ЭТИМ ПУТЁМ В БОЮ НЕ ПОЛЬЗУЕТСЯ НИКТО.
+    Замер счётом по исходникам: 16 продакшен-вызовов fetch_daily_pct5 (список —
+    bot_rsi, webapp/app, report3y, build_analytics, build_pnl_curves,
+    check_stop_rate, debug_eth_4h, finalize_final_bots и восемь evolution*),
+    и ВСЕ ШЕСТНАДЦАТЬ зовут её без аргумента. Единственные вызовы с max_age_s —
+    четыре штуки в test_ext_data.py. bot_rsi.py при этом по-прежнему делает
+    os.remove(daily_pct5.json), если файлу больше суток (метод
+    RsiGridBot.get_macro), то есть ровно то, от чего max_age_s и должен был
+    избавить. Пока эта строка стоит здесь, правка предыдущего круга на боевое
+    поведение НЕ ВЛИЯЕТ.
+
+    Что нужно поменять в bot_rsi.get_macro (файл не наш, поэтому здесь только
+    описание): убрать проверку возраста файла вместе с os.remove и звать
+    ext_data.fetch_daily_pct5(max_age_s=86400). Тогда суточное обновление
+    останется, но при молчащем Yahoo бот получит вчерашние ряды вместо пустых,
+    и макро-фильтры лонгов не выключатся на сутки. Менять что-либо здесь ради
+    этого не требуется: путь готов и покрыт тестом.
+
     Глубина рядов разная: SPX и DXY — с 2022-08-23 (yfinance period="4y"),
     окно бэктеста закрывают полностью (100.0% свечей); золото — только с
     2025-04-09, когда пара XAUTUSDT появилась на Bybit. Ген gold_long_max
@@ -472,6 +563,24 @@ def fetch_daily_pct5(max_age_s=None):
     макро-фильтры лонгов до восстановления источника НЕ ПРИМЕНЯЮТСЯ. Кому
     важно отличить это от «фильтр отработал» — смотрит macro_available(pct5).
     """
+    if max_age_s is not None:
+        # мусор в max_age_s ронял сравнение возраста внутри _cache; наружу это
+        # не выходило (общий try в _fetch_series), но превращалось в ПУСТЫЕ
+        # ряды, то есть опечатка в аргументе молча выключала макро-фильтры.
+        # Правильная реакция — громкая строка в лог и прежнее поведение
+        # («кэш не протухает»), а не потеря данных
+        given = type(max_age_s).__name__
+        try:
+            age = float(max_age_s)
+            if not math.isfinite(age) or age < 0:
+                age = None      # NaN, inf и отрицательный возраст — не возраст
+        except Exception:
+            age = None
+        if age is None:
+            log.error("fetch_daily_pct5: max_age_s (%s) не годится как возраст "
+                      "кэша — считаем, что кэш не протухает", given)
+        max_age_s = age
+
     def build():
         out = {}
         import yfinance as yf
@@ -557,13 +666,35 @@ def fetch_daily_pct5(max_age_s=None):
 
 
 def step_lookup(series):
-    """series [(ts,val)] -> функция ts->последнее известное значение."""
+    """series [(ts,val)] -> функция ts->последнее известное значение.
+
+    Ряд негодной ФОРМЫ даёт функцию, которая всегда отвечает None, то есть то
+    же самое, что пустой ряд: «значение неизвестно, фильтр не применяется».
+    Это не перестраховка — это тот самый путь, на котором контракт модуля уже
+    ломался: при is_valid=bool кэш-словарь считался годным, fetch_funding
+    отдавал его наружу, и распаковка `for t, _ in series` бросала ValueError
+    вызывающему, который никакого try не ставил. Проверка формы стоит около
+    1 мс на funding и 5 мс на OI (см. _is_series) и делается ОДИН раз на
+    построение таблицы, а не на каждой из 110 тысяч свечей.
+    """
     import bisect
-    ts_list = [t for t, _ in series]
-    vals = [v for _, v in series]
+    ts_list, vals = [], []
+    if _is_series(series):
+        ts_list = [t for t, _ in series]
+        vals = [v for _, v in series]
 
     def get(ts):
-        i = bisect.bisect_right(ts_list, ts) - 1
+        if not ts_list:
+            return None
+        try:
+            i = bisect.bisect_right(ts_list, ts) - 1
+        except TypeError:
+            # ts несравним с метками времени (строка, None, список) — значит
+            # значения на такой момент нет. Целое из сотен цифр здесь НЕ
+            # проблема: python сравнивает int с float точно, без приведения
+            # (проверено: bisect_right([1.0, 3.0], 10**400) даёт 2) — оно
+            # ломало не bisect, а math.isfinite в _is_series
+            return None
         return vals[i] if i >= 0 else None
     return get
 
@@ -576,6 +707,9 @@ def aux_coverage(aux):
     его вклад в результат отбора — вклад константы, а не фильтра.
     """
     out = {}
+    if not isinstance(aux, dict):
+        # предикат про покрытие обязан ОТВЕЧАТЬ: «рядов нет» — честный ответ
+        return out
     for k, arr in aux.items():
         if isinstance(arr, list) and arr:
             out[k] = sum(1 for v in arr if v is not None) / len(arr)
@@ -588,9 +722,25 @@ def build_aux4(candles, funding, oi, pct5, label=""):
     По окончании пишет в лог фактическое покрытие каждого ряда: OI и золото
     короче окна бэктеста (см. модульную докстроку), и без этой строки
     отсутствие данных выглядело бы как обычный «фильтр не сработал».
+
+    Все четыре ряда приводятся к безопасному виду на входе: их отдают fetch_*,
+    но те же fetch_* при молчащем источнике отдают пустышку, а кэши на диске
+    правят руками. Негодная форма любого ряда означает здесь «этих данных
+    нет» — соответствующий массив останется из None, и это ровно то, что
+    показывает aux_coverage. Прежде dict(oi) на негодном OI и pct5["spx"] на
+    пустышке бросали наружу TypeError/KeyError, а зовут build_aux4 восемь
+    скриптов бэктеста без всякого try.
     """
+    if not isinstance(candles, (list, tuple)):
+        candles = []
     fget = step_lookup(funding) if funding else (lambda ts: None)
-    oi_map = dict(oi)
+    oi_map = dict(oi) if _is_series(oi) else {}
+
+    def series_of(key):
+        m = pct5.get(key) if isinstance(pct5, dict) else None
+        return m if isinstance(m, dict) else {}
+
+    spx_m, dxy_m, gold_m = (series_of(k) for k in ("spx", "dxy", "gold"))
     fund = [None] * len(candles)
     oi_chg = [None] * len(candles)
     spx5 = [None] * len(candles)
@@ -605,23 +755,32 @@ def build_aux4(candles, funding, oi, pct5, label=""):
         return None
 
     for i, c in enumerate(candles):
-        ts = c[0]
+        try:
+            ts = int(c[0])
+        except Exception:
+            # свеча-мусор внутри годного списка (json правят руками): строки
+            # массивов остаются None, длина массивов совпадает с длиной
+            # candles, и покрытие честно покажет провал
+            continue
         fund[i] = fget(ts)
         hour = ts // 3600000 * 3600000
         now, prev = oi_map.get(hour), oi_map.get(hour - 24 * 3600000)
         if now and prev:
             oi_chg[i] = (now / prev - 1) * 100
         day = ts // 1000 // 86400 * 86400
-        spx5[i] = daily(pct5["spx"], day)
-        dxy5[i] = daily(pct5["dxy"], day)
-        gold5[i] = daily(pct5["gold"], day)
+        spx5[i] = daily(spx_m, day)
+        dxy5[i] = daily(dxy_m, day)
+        gold5[i] = daily(gold_m, day)
     aux = dict(fund=fund, oi_chg=oi_chg, spx5=spx5, dxy5=dxy5, gold5=gold5)
     cov = aux_coverage(aux)
     thin = {k: v for k, v in cov.items() if v < 0.99}
     if thin:
+        # метку в строку приводим осторожно: она приходит от вызывающего, и
+        # f-строка от объекта с падающим __str__ роняла бы весь build_aux4
+        # ровно на строке лога, то есть после всей работы
+        tag = f" ({_safe_str(label)})" if label else ""
         log.warning("Покрытие рядов%s: %s — на остальных свечах "
-                    "соответствующие фильтры НЕ ПРИМЕНЯЛИСЬ",
-                    f" ({label})" if label else "",
+                    "соответствующие фильтры НЕ ПРИМЕНЯЛИСЬ", tag,
                     ", ".join(f"{k} {v:.0%}" for k, v in sorted(thin.items())))
     return aux
 
@@ -658,7 +817,13 @@ def describe_cache():
         except Exception as e:
             return None, f"{type(e).__name__}: {e}"
 
-    for path in sorted(_glob.glob("funding_*.json") + _glob.glob("oi_*.json")):
+    files = sorted(_glob.glob("funding_*.json") + _glob.glob("oi_*.json"))
+    if not files:
+        # ОТСУТСТВИЕ файла — тоже факт о глубине рядов, и как раз тот, ради
+        # которого инструмент и зовут: молчание читалось как «всё в порядке»
+        print(f"{'funding_*/oi_*.json':<26} НЕТ ФАЙЛОВ — фильтры funding и OI "
+              f"не применяются, пока источник не ответит")
+    for path in files:
         rows, err = read(path)
         if err:
             print(f"{path:<26} НЕ ЧИТАЕТСЯ: {err}")
@@ -671,7 +836,14 @@ def describe_cache():
             continue
         print(f"{path:<26} {len(rows):>6} точек  "
               f"{day(rows[0][0] / 1000)} -> {day(rows[-1][0] / 1000)}")
-    if os.path.exists("daily_pct5.json"):
+    if not os.path.exists("daily_pct5.json"):
+        # ПРОПАЖУ этого файла инструмент и должен показывать в первую очередь:
+        # именно её устраивает bot_rsi.get_macro, удаляя кэш перед обновлением
+        # (см. docs и шапку fetch_daily_pct5). Прежде describe_cache о ней
+        # молчал, и «нет строки» выглядело как «нечего сказать».
+        print(f"{'daily_pct5.json':<26} НЕТ ФАЙЛА — макро-фильтры лонгов "
+              f"(spx/dxy/gold) не применяются, пока источник не ответит")
+    else:
         raw, err = read("daily_pct5.json")
         if err:
             print(f"{'daily_pct5.json':<26} НЕ ЧИТАЕТСЯ: {err}")

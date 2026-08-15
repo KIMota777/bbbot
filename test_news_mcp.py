@@ -49,6 +49,131 @@ def payload(res):
     return {}
 
 
+def local_checks():
+    """Границы news_state без сети и без MCP: недоверенный вход и пути к файлу.
+
+    Оценки новостей ставит языковая модель обычной JSON-строкой — это
+    недоверенный вход по построению, и json.loads умеет отдать оттуда такое,
+    на чём int()/float() бросают НЕ ValueError. Всё ниже подтверждено
+    запуском, а не рассуждением.
+    """
+    import math
+
+    huge = 10 ** 400                       # json такое целое принимает
+    base = {"url": "https://www.coindesk.com/policy/x", "title": "t",
+            "category": "macro", "weight": 0.5, "direction": 1}
+
+    # 1. NaN в horizon_h проходил кламп НАСКВОЗЬ: сравнение NaN с любой
+    #    границей ложно, а ловились только TypeError/ValueError вокруг float().
+    #    Достижимо от модели: json.loads('{"horizon_h": NaN}') разбирается.
+    rec = dict(base, horizon_h=float("nan"))
+    clean, why = news_state.sanitize(rec)
+    check(clean is not None and math.isfinite(clean["horizon_h"]),
+          f"horizon_h=NaN не проскакивает кламп: {None if clean is None else clean['horizon_h']}")
+    check(news_state.MIN_HORIZON_H <= clean["horizon_h"] <= news_state.MAX_HORIZON_H,
+          "и получившийся горизонт лежит внутри задокументированных границ")
+    for bad_h in (float("inf"), float("-inf"), huge, "12", None, [1]):
+        c, _ = news_state.sanitize(dict(base, horizon_h=bad_h))
+        check(c is not None and math.isfinite(c["horizon_h"]),
+              f"horizon_h={type(bad_h).__name__} даёт конечный горизонт")
+
+    # 2. float(целое из 400 цифр) бросает OverflowError, которого в прежнем
+    #    перечне (TypeError, ValueError) не было
+    c, why = news_state.sanitize(dict(base, weight=huge))
+    check(c is None and "вес" in why,
+          f"вес целым из 400 цифр отклонён по-человечески, а не OverflowError: {why}")
+    # int(float("inf")) — тоже OverflowError, и тоже мимо прежнего перечня
+    c, why = news_state.sanitize(dict(base, direction=float("inf")))
+    check(c is None and "direction" in why,
+          f"direction=Infinity отклонён внятно, а не OverflowError: {why}")
+    for field in ("published_ms", "confirmations"):
+        c, _ = news_state.sanitize(dict(base, **{field: float("inf")}))
+        check(c is not None and isinstance(c[field], int),
+              f"{field}=Infinity заменён разумным целым, а не OverflowError")
+
+    # 3. load(1) открывал не файл, а ФАЙЛОВЫЙ ДЕСКРИПТОР: читал и закрывал
+    #    стандартный вывод процесса. После такого вызова бот и MCP-сервер
+    #    остаются немыми, а сам вызов выглядит успешным.
+    for arg in (1, True, 0, 2.5, [], object()):
+        st = news_state.load(arg)
+        check(st == news_state.empty_state(),
+              f"load({type(arg).__name__}) даёт пустое состояние")
+    try:
+        os.write(1, b"")
+        alive = True
+    except OSError:
+        alive = False
+    check(alive, "и стандартный вывод процесса после этого ЖИВ")
+
+    # 4. save не портит файл фона и не роняет вызывающего на негодных данных
+    before = os.path.exists(_TMP_STATE) and open(_TMP_STATE, "rb").read()
+    check(news_state.save(None) is None and news_state.save([1, 2]) is None,
+          "save на не-словаре: None, а не исключение")
+    check(news_state.save({"items": [b"bytes"]}) is None,
+          "save на несериализуемом состоянии: None, а не TypeError наружу")
+    after = os.path.exists(_TMP_STATE) and open(_TMP_STATE, "rb").read()
+    check(before == after, "и файл фона при этом остался прежним, до байта")
+    check(news_state.save({"items": []}, 1) is None,
+          "save с дескриптором вместо пути ничего не пишет")
+
+    # 5. свёртка фона на правленом руками файле: KeyError на странице сайта
+    #    ничем не лучше исключения в цикле сопровождения позиции
+    junk = os.path.join(os.path.dirname(_TMP_STATE), "news_state_junk.json")
+    with open(junk, "w", encoding="utf-8") as fh:
+        json.dump({"updated_ms": "вчера", "items": [
+            {"нет": "полей"}, 5, None, "строка",
+            {"published_ms": int(time.time() * 1000), "horizon_h": 12,
+             "weight": "не число", "symbols": {"BTCUSDT": 1},
+             "direction": [1], "market_wide": True}]}, fh, ensure_ascii=False)
+    bg = news_state.background("BTCUSDT", path=junk)
+    check(bg["index"] == 0.0 and bg["heat"] == 0.0,
+          "фон из мусорного файла = нули, а не исключение")
+    os.unlink(junk)
+
+    # 6. коэффициенты влияния на мусорном фоне: это путь сопровождения сделки
+    for bg in ({"index": huge, "heat": huge}, {"index": "x"}, {}, None,
+               {"index": float("nan"), "heat": float("nan")}):
+        check(news_state.tp_multiplier(bg, "L", 1.0) == 1.0,
+              f"tp_multiplier на фоне {type(bg).__name__}: множитель 1.0 "
+              f"(«фона нет»), а не исключение")
+        check(news_state.sl_tighten_fraction(bg, "L", 1.0) == 0.0,
+              "sl_tighten_fraction там же: стоп не двигаем")
+        check(news_state.entry_veto(bg, "L", 0.8, 0.3) == (False, ""),
+              "entry_veto там же: вход не запрещаем по несуществующему фону")
+
+    # 7. приём записей: отказ — это ответ модели, а не обрыв инструмента
+    acc, rej = news_state.upsert(None)
+    check(acc == [] and rej and "последовательность" in rej[0]["reason"],
+          "upsert на не-списке: внятный отказ, а не TypeError")
+    acc, rej = news_state.upsert([{"url": 1}, 5, None])
+    check(acc == [] and len(rej) == 3, "мусорные записи отклонены поимённо")
+
+    # 8. защита чтения не должна была поменять ФОРМУ ответа background.
+    #    Проверка не теоретическая: main() печатает direction как "%+d", и
+    #    стоило прочитать его через общий числовой помощник (float), как
+    #    обещанная шапкой команда `python news_state.py` начала бы падать
+    #    ValueError на первом же непустом фоне.
+    shape = os.path.join(os.path.dirname(_TMP_STATE), "news_state_shape.json")
+    now_ms = int(time.time() * 1000)
+    news_state.upsert([
+        {"url": "https://www.coindesk.com/policy/shape", "title": "адресная",
+         "category": "regulation", "weight": 0.8, "direction": -1,
+         "horizon_h": 24, "symbols": ["BTCUSDT"], "published_ms": now_ms},
+        {"url": "https://decrypt.co/1/shape", "title": "общерыночная",
+         "category": "macro", "weight": 0.6, "direction": 1, "horizon_h": 48,
+         "symbols": [], "market_wide": True, "published_ms": now_ms},
+    ], path=shape)
+    bg = news_state.background("BTCUSDT", path=shape)
+    check(bg["n"] == 2 and len(bg["top"]) == 2, "фон собран из двух записей")
+    check(all(isinstance(t["direction"], int) for t in bg["top"])
+          and isinstance(bg["updated_ms"], int),
+          "форма ответа прежняя: direction и updated_ms — целые")
+    check(f"{bg['top'][0]['direction']:+d}" in ("+1", "-1", "+0"),
+          'и main() печатает его через "%+d" — та самая команда '
+          "`python news_state.py` из шапки модуля")
+    os.unlink(shape)
+
+
 async def scenario():
     import news_mcp
     async with mcp.Client(news_mcp.server) as client:
@@ -185,6 +310,7 @@ def main():
                         "news_state.json")
     before = os.path.getmtime(live) if os.path.exists(live) else None
     try:
+        local_checks()
         asyncio.run(scenario())
         after = os.path.getmtime(live) if os.path.exists(live) else None
         assert before == after, "тест тронул боевой файл фона!"

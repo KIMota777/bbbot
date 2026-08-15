@@ -96,18 +96,24 @@
         ср. удержание {{ st.hold if st.hold is not none else '?' }}ч
         <br><span class="src">{{ st.src }}</span>
         {% if rec.get('enabled', True) %}
-        <br>💰 Капитал сетапа: <b style="color:var(--accent)">${{ '%.2f'|format(capitals.get(name, 50.0)) }}</b>
-        (реинвест от $50; след. маржа ≈ ${{ '%.2f'|format(capitals.get(name, 50.0) * 0.25) }})
+        {# обе суммы посчитаны и отформатированы в app.py: считать в шаблоне
+           нечем — там нельзя отказаться от строки вместо числа #}
+        {% set cap = capitals.get(name, {}) %}
+        <br>💰 Капитал сетапа: <b style="color:var(--accent)">${{ cap.get('cap', '50.00') }}</b>
+        (реинвест от $50; след. маржа ≈ ${{ cap.get('next', '12.50') }})
         {% endif %}
         {% if rec.get('note') %}<br>💬 {{ rec.note }}{% endif %}
       </div>
       {% if act %}
       <div class="plan">
-        Вход:  <b>{{ act.entry }}</b> ({{ fmt_ts(act.signal_ts) }})<br>
+        Вход:  <b>{{ act.entry }}</b> ({{ act.signal_str }})<br>
         Стоп:  {{ act.stop }} (−{{ act.stop_pct }}%)<br>
         Тейк:  {{ act.tp }} (+{{ act.tp_pct }}%, R:R 1:3)<br>
-        {% if act.get('margin') %}Маржа: <b>${{ act.margin }}</b> (25% капитала) | Риск: −${{ act.risk_1r }} / Цель: +${{ '%.2f'|format(act.risk_1r * 3) }}<br>{% endif %}
-        Плечо: x{{ act.lev }} | до {{ fmt_ts(act.hold_until) }}
+        {# маржа, риск и цель приходят готовыми числами или все сразу пустыми:
+           цель считалась здесь (risk_1r * 3) и роняла страницу, когда риска
+           в записи ещё не было #}
+        {% if act.margin %}Маржа: <b>${{ act.margin }}</b> (25% капитала) | Риск: −${{ act.risk_1r }} / Цель: +${{ act.risk_3r }}<br>{% endif %}
+        Плечо: x{{ act.lev }} | до {{ act.hold_str }}
       </div>
       {% endif %}
       {# ссылку показываем и у отбракованных: приёмку не прошёл ни один сетап,
@@ -118,22 +124,29 @@
   </div>
 
   {% if not setups %}
-  <div class="banner off">Параметры сетапов ещё не готовы — генетический отбор (evolution9.py) не завершён.</div>
+  {# причину подставляет app.py: «файла нет вовсе» и «файл повреждён» —
+     разные новости, и раньше обе выглядели как незавершённый отбор #}
+  <div class="banner off">{{ setups_note }}</div>
   {% endif %}
 
   <h2>История сигналов</h2>
   <table>
     <tr><th>Закрыт</th><th>Сетап</th><th>Напр.</th><th>Вход</th><th>Стоп</th><th>Тейк</th><th>Исход</th><th>R</th><th>PnL, $</th><th>Капитал</th><th>Удерж, ч</th></tr>
+    {# строки приходят уже отформатированными из clean_history: ни одного
+       формата и ни одного сравнения здесь не осталось. Раньше в этих девяти
+       ячейках жили три разных способа положить страницу: нехешируемый setup
+       ключом словаря названий, «%+.2f» от pnl_usd со значением None и
+       localtime от заведомо непригодного времени #}
     {% for h in history %}
     <tr>
-      <td>{{ fmt_ts(h.exit_ts) }}</td>
-      <td>{{ ru.get(h.setup, h.setup) }}</td>
+      <td>{{ h.ts_str }}</td>
+      <td>{{ h.setup_ru }}</td>
       <td>{{ h.side }}</td>
       <td>{{ h.entry }}</td><td>{{ h.stop }}</td><td>{{ h.tp }}</td>
-      <td class="{{ 'pos' if h.outcome == 'ТЕЙК' else ('neg' if h.outcome == 'СТОП' else '') }}">{{ h.outcome }}</td>
-      <td class="{{ 'pos' if h.r > 0 else 'neg' }}">{{ '%+.1f'|format(h.r) }}</td>
-      <td class="{{ 'pos' if h.get('pnl_usd', 0) > 0 else 'neg' }}">{{ '%+.2f'|format(h.get('pnl_usd', 0)) }}</td>
-      <td>{{ '$%.2f'|format(h.get('capital_after', 0)) if h.get('capital_after') else '—' }}</td>
+      <td class="{{ h.outcome_cls }}">{{ h.outcome }}</td>
+      <td class="{{ h.r_cls }}">{{ h.r_str }}</td>
+      <td class="{{ h.pnl_cls }}">{{ h.pnl_str }}</td>
+      <td>{{ h.cap_str }}</td>
       <td>{{ h.hold_h }}</td>
     </tr>
     {% else %}

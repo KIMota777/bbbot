@@ -56,7 +56,32 @@ def die(msg):
     sys.exit(1)
 
 
+def is_num(v):
+    """Число, которое можно печатать и делить.
+
+    bool исключён нарочно: True прошёл бы как 1 и напечатался бы как «+1.0%».
+    Целые в JSON без ограничения разрядности: число из четырёхсот цифр —
+    законный int, но «:.1f» переводит его во float и падает OverflowError.
+    Для отчёта это такое же «не число», как строка.
+    """
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return False
+    try:
+        float(v)
+    except OverflowError:
+        return False
+    return True
+
+
 def load():
+    """Данные кривых, проверенные ДО ЗНАЧЕНИЙ, а не только по верху.
+
+    Проверка «ключ на месте» ловила недописанный файл, но не ловила файл с
+    валидным JSON не того типа: доход строкой, точки словарём, название
+    списком. Каждый такой случай доходил до печати и вываливал голую
+    трассировку — то самое, чего докстрока этого файла обещает не делать.
+    Отчёт про деньги обязан либо считать, либо внятно сказать «не считаю».
+    """
     if not os.path.exists(CURVES):
         die("нет файла с кривыми")
     try:
@@ -72,15 +97,44 @@ def load():
     series = data.get("series")
     if not series:
         die("в файле нет ни одной серии")
+    if not isinstance(series, list):
+        die("список серий в файле — не список")
     for s in series:
+        if not isinstance(s, dict):
+            die(f"серия записана не объектом, а {type(s).__name__}")
         missing = [k for k in SERIES_KEYS if k not in s]
         if missing:
             die(f"серия {s.get('key', '?')} без полей {', '.join(missing)} — "
                 f"формат файла разошёлся с этим отчётом")
-        if len(s["points"]) < 2:
+        name = s["key"]
+        # key уходит ключом словаря by_key, label — в форматирование по
+        # ширине: ни то, ни другое не переживёт список или словарь
+        for k in ("key", "label", "group"):
+            if not isinstance(s[k], str):
+                die(f"поле {k} серии {name!r} — не текст, а "
+                    f"{type(s[k]).__name__}")
+        for k in ("final_usd", "final_pct", "dd"):
+            if not is_num(s[k]):
+                die(f"поле {k} серии {s['key']} — не число, а "
+                    f"{type(s[k]).__name__}")
+        if not (s.get("dd_float") is None or is_num(s["dd_float"])):
+            die(f"плавающая просадка серии {s['key']} — не число")
+        pts = s["points"]
+        if not isinstance(pts, list) or len(pts) < 2:
             die(f"в серии {s['key']} меньше двух точек")
+        # каждая точка — пара «время, капитал», и обе половины уходят в
+        # арифметику: время в разницу лет, капитал в деление
+        for p in pts:
+            if (not isinstance(p, (list, tuple)) or len(p) != 2
+                    or not all(is_num(x) for x in p)):
+                die(f"в серии {s['key']} точка кривой не пара чисел: {p!r}")
     if not data.get("sleeve"):
         die("не указан стартовый капитал стратегии (sleeve)")
+    if not is_num(data["sleeve"]):
+        die("стартовый капитал стратегии (sleeve) — не число")
+    total = data.get("total")
+    if total and not is_num(total):
+        die("общий капитал портфеля (total) — не число")
     return data
 
 
@@ -202,7 +256,15 @@ def main():
     if years <= 0 or mult <= 0:
         print("Годовую ставку не считаю: капитал ушёл в ноль или период пуст.")
         return
-    print(f"Годовая ставка портфеля (CAGR): {(mult ** (1 / years) - 1) * 100:+.1f}%")
+    try:
+        cagr = (mult ** (1 / years) - 1) * 100
+    except OverflowError:
+        # множитель и период — из файла; на числах, которые деньгами быть не
+        # могут, возведение в степень улетает за пределы float
+        print("Годовую ставку не считаю: множитель портфеля и период в файле "
+              "не похожи на деньги.")
+        return
+    print(f"Годовая ставка портфеля (CAGR): {cagr:+.1f}%")
     print("Тот же процент на другом капитале (пропорция точная, "
           "проскальзывание на больших объёмах — нет):")
     for cap0 in (100, 500, 1000):
@@ -217,4 +279,13 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise                    # это наш собственный die(), он уже всё сказал
+    except Exception as e:       # noqa: BLE001
+        # Страховка поверх проверок load(): проверки знают про поля, которые
+        # мы читаем сегодня, а файл собирает другой скрипт и он меняется.
+        # Обещание из докстроки — «сказать не считаю своим голосом» — не
+        # должно зависеть от того, все ли будущие поля мы предусмотрели.
+        die(f"файл с кривыми не разобран ({e!r}) — формат разошёлся с отчётом")

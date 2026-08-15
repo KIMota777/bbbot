@@ -33,12 +33,15 @@ STATE_MAX_AGE_H. Если Claude перестал обновлять фон, в�
 """
 
 import json
+import logging
 import math
 import os
 import tempfile
 import time
 
 import newsfeed
+
+log = logging.getLogger("news_state")
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "news_state.json")
@@ -118,6 +121,82 @@ def _now_ms():
     return int(time.time() * 1000)
 
 
+def _num(v, default=0.0):
+    """Конечное число из недоверенного json — либо значение по умолчанию.
+
+    Записи фона лежат в обычном json на диске: его пишет MCP-сервер, но правят
+    руками и читают все подряд. Строка вместо числа, NaN или отсутствующий
+    ключ обязаны означать «этой новости как бы нет», а не исключение посреди
+    свёртки фона.
+    """
+    try:
+        v = float(v)
+    except Exception:
+        return default
+    return v if math.isfinite(v) else default
+
+
+def _text(v, limit=None, default=""):
+    """Строка из недоверенного поля или значение по умолчанию.
+
+    str() у чужого объекта может бросить что угодно (замер фаззера: объект с
+    падающим __str__ роняет sanitize на самой первой строке), поэтому ни одно
+    приведение к строке на границе недоверенного входа не делается голым.
+    limit=None — не обрезать: длину полей записи режет сам sanitize там, где
+    это меняет смысл, и лишняя обрезка сдвинула бы id уже принятых новостей.
+    """
+    try:
+        s = str(v)
+    except Exception:
+        return default
+    return s if limit is None else s[:limit]
+
+
+_NOT_A_PATH = object()   # «это вообще не путь», в отличие от «путь по умолчанию»
+
+
+def _as_path(path):
+    """Путь к файлу состояния, STATE_FILE по умолчанию либо _NOT_A_PATH.
+
+    Числа и bool путями НЕ считаются, и это не педантизм: open(1) открывает
+    не файл, а ФАЙЛОВЫЙ ДЕСКРИПТОР. Замер фаззера 15.08.2026: load(1) и
+    load(True) читали и затем ЗАКРЫВАЛИ стандартный вывод процесса — после
+    такого вызова бот и MCP-сервер остаются немыми (os.write(1, b"") даёт
+    OSError «Bad file descriptor»), причём сам вызов выглядел совершенно
+    успешным и возвращал пустое состояние. bool — подкласс int, отдельной
+    строки не требует: обоих отсекает одна проверка типа.
+
+    Строка с NUL внутри — тоже не путь: os.path.exists молча даёт False, а
+    open и os.replace на ней бросают ValueError.
+
+    Путь-БАЙТЫ не принимается сознательно, хотя open его понимает: атомарная
+    запись в save идёт через tempfile.mkstemp с текстовым prefix, и смешение
+    байтового каталога с текстовым префиксом даёт TypeError «Can't mix bytes
+    and non-bytes in path components» уже в момент записи. Принять байты в
+    load и споткнуться о них в save — худший из вариантов: файл фона в этом
+    месте только читался бы, но никогда не обновлялся. STATE_FILE и все
+    вызывающие в репозитории — обычные строки.
+
+    Пустое значение (None, "") означает «путь по умолчанию» — так вели себя
+    все прежние вызывающие, и это поведение сохранено.
+    """
+    if path is None:
+        return STATE_FILE
+    if not isinstance(path, (str, os.PathLike)):
+        return _NOT_A_PATH
+    try:
+        path = os.fspath(path)
+    except Exception:
+        return _NOT_A_PATH
+    if not isinstance(path, str):      # __fspath__ вернул байты
+        return _NOT_A_PATH
+    if not path:
+        return STATE_FILE
+    if "\x00" in path:
+        return _NOT_A_PATH
+    return path
+
+
 def empty_state():
     return dict(version=1, updated_ms=0, items=[])
 
@@ -125,13 +204,24 @@ def empty_state():
 def load(path=None):
     # путь разрешается в момент ВЫЗОВА, а не при импорте: иначе тест не может
     # подменить STATE_FILE и вынужден писать в боевой файл фона
-    path = path or STATE_FILE
+    given = type(path).__name__
+    path = _as_path(path)
+    if path is _NOT_A_PATH:
+        # намеренно НЕ подставляем STATE_FILE: вызов с негодным путём — это
+        # ошибка вызывающего, и молча прочитать вместо него боевой файл фона
+        # значит скрыть её. Печатаем ТИП аргумента, а не сам аргумент: у него
+        # может падать __str__
+        log.error("news_state.load: аргумент типа %s — это не путь к файлу; "
+                  "фон считается отсутствующим", given)
+        return empty_state()
     if not os.path.exists(path):
         return empty_state()
     try:
         with open(path, encoding="utf-8") as fh:
             st = json.load(fh)
-    except (json.JSONDecodeError, OSError):
+    except (OSError, ValueError):
+        # ValueError покрывает и json.JSONDecodeError (его подкласс), и NUL
+        # в имени файла, и прочий мусор в пути
         return empty_state()
     if not isinstance(st, dict) or "items" not in st:
         return empty_state()
@@ -139,8 +229,24 @@ def load(path=None):
 
 
 def save(state, path=None):
-    """Атомарная запись: бот может читать файл в любой момент."""
-    path = path or STATE_FILE
+    """Атомарная запись: бот может читать файл в любой момент.
+
+    Возвращает записанное состояние либо None, если писать было нечего:
+    состояние не словарь или путь — не путь. В этом случае файл НЕ ТРОГАЕТСЯ
+    вовсе и в лог уходит ERROR. Так выбрано сознательно: испортить единственный
+    файл фона (или уронить MCP-сервер посреди приёма оценок) хуже, чем не
+    записать заведомо негодные данные, а строка ERROR не даёт этому пройти
+    незаметно. Настоящие сбои записи — нет места на диске, нет прав — по-прежнему
+    выходят наружу исключением: это не мусор в аргументах, а беда с диском, и
+    молчать о ней нельзя.
+    """
+    path = _as_path(path)
+    if path is _NOT_A_PATH or not isinstance(state, dict):
+        log.error("news_state.save: состояние типа %s, путь типа %s — "
+                  "не записываем ничего, файл фона остаётся прежним",
+                  type(state).__name__,
+                  "негодный" if path is _NOT_A_PATH else "ok")
+        return None
     state["updated_ms"] = _now_ms()
     d = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".news_state.", suffix=".tmp")
@@ -148,7 +254,20 @@ def save(state, path=None):
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(state, fh, ensure_ascii=False, indent=1)
         os.replace(tmp, path)
+    except (TypeError, ValueError, RecursionError) as e:
+        # состояние содержит то, что в json не кладётся (байты, чужой объект,
+        # кольцевая ссылка). Это НЕ беда с диском, а негодные данные — реакция
+        # та же, что на негодный тип аргумента выше: временный файл убираем,
+        # боевой не трогаем, ERROR в лог. Прежний файл фона при этом цел:
+        # os.replace до конца записи не доходит
+        log.error("news_state.save: состояние не сериализуется в json "
+                  "(%s) — файл фона оставлен прежним", type(e).__name__)
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        return None
     except BaseException:
+        # всё остальное — уже беда с диском (нет места, нет прав) или Ctrl+C:
+        # такое обязано выходить наружу, а не превращаться в тихое «не записал»
         if os.path.exists(tmp):
             os.unlink(tmp)
         raise
@@ -164,24 +283,41 @@ def sanitize(rec):
     """
     if not isinstance(rec, dict):
         return None, "запись не объект"
-    url = str(rec.get("url", "")).strip()
-    title = str(rec.get("title", "")).strip()
+    # ПОЧЕМУ except Exception, а не перечень типов, во всех преобразованиях
+    # ниже. Запись приходит от языковой модели обычной JSON-строкой, и
+    # json.loads умеет отдать значения, на которых int()/float()/str() бросают
+    # НЕ TypeError и не ValueError: целое из 400 цифр даёт float() ->
+    # OverflowError, Infinity даёт int() -> OverflowError. Перечень
+    # «ожидаемых» типов уже один раз подвёл в ext_data ровно так же. Контракт
+    # «мусор от модели превращается в отказ, а не в исключение» не может
+    # держаться на полноте такого перечня. BaseException не ловится: Ctrl+C
+    # должен работать.
+    url = _text(rec.get("url", ""), default=None)
+    title = _text(rec.get("title", ""), default=None)
+    if url is None or title is None:
+        return None, "url или title не приводится к строке"
+    url, title = url.strip(), title.strip()
     if not url or not title:
         return None, "нет url или title"
     # домен берётся из разобранного hostname, а не поиском подстроки:
     # подстрока пропускала https://evil.io/?ref=coindesk.com и
     # https://theblock.com.attacker.io/ — см. newsfeed.match_allowed_domain
-    domain = newsfeed.match_allowed_domain(url)
+    # (разбор чужой строки обёрнут: newsfeed не наш модуль, и обещание «не
+    # бросаем» не должно зависеть от того, все ли формы url там предусмотрены)
+    try:
+        domain = newsfeed.match_allowed_domain(url)
+    except Exception:
+        domain = None
     if domain is None:
         return None, f"домен вне белого списка: {url[:80]}"
 
-    cat = str(rec.get("category", "other"))
+    cat = _text(rec.get("category", "other"), default=None)
     if cat not in CATEGORIES:
         return None, f"неизвестная категория: {cat}"
 
     try:
         weight = float(rec.get("weight", 0.0))
-    except (TypeError, ValueError):
+    except Exception:
         return None, "вес не число"
     if not math.isfinite(weight):
         return None, "вес не число"
@@ -189,7 +325,7 @@ def sanitize(rec):
 
     try:
         direction = int(rec.get("direction", 0))
-    except (TypeError, ValueError):
+    except Exception:
         return None, "direction не целое"
     if direction not in (-1, 0, 1):
         return None, "direction должен быть -1, 0 или 1"
@@ -198,53 +334,101 @@ def sanitize(rec):
 
     try:
         horizon = float(rec.get("horizon_h", 12.0))
-    except (TypeError, ValueError):
+    except Exception:
+        horizon = 12.0
+    # NaN проходил кламп НАСКВОЗЬ и попадал в запись: float("nan") не бросает,
+    # а _clamp сравнивает — и оба сравнения с NaN ложны, так что возвращалось
+    # само NaN. Достижимо от модели обычной JSON-строкой: json.loads принимает
+    # литерал NaN. Дальше NaN-горизонт означал «запись протухла всегда»
+    # (prune её выбрасывал, _freshness давал 0.0), то есть оценка модели молча
+    # пропадала; в чужом читателе фона тот же NaN мог дать и обратное. Явная
+    # проверка на конечность вместо надежды на кламп.
+    if not math.isfinite(horizon):
         horizon = 12.0
     horizon = _clamp(horizon, MIN_HORIZON_H, MAX_HORIZON_H)
 
     syms = rec.get("symbols") or []
     if not isinstance(syms, list):
         return None, "symbols должен быть списком"
-    syms = [s for s in (str(x).upper() for x in syms) if s in BETA]
+    try:
+        syms = [s for s in (str(x).upper() for x in syms) if s in BETA]
+    except Exception:
+        return None, "symbols содержит нечитаемое значение"
 
     published = rec.get("published_ms")
     try:
         published = int(published) if published is not None else _now_ms()
-    except (TypeError, ValueError):
+    except Exception:
         published = _now_ms()
     # новость «из будущего» — почти всегда сбой парсинга даты; не доверяем
     published = min(published, _now_ms())
 
     try:
         conf = int(rec.get("confirmations", 1))
-    except (TypeError, ValueError):
+    except Exception:
         conf = 1
     conf = _clamp(conf, 1, len(newsfeed.SOURCES))
 
+    try:
+        market_wide = bool(rec.get("market_wide", not syms))
+    except Exception:
+        market_wide = not syms
+
+    try:
+        item_id = newsfeed.item_id(url, title)
+    except Exception:
+        return None, "не удалось посчитать id записи"
+
     return dict(
-        id=newsfeed.item_id(url, title), url=url, title=title[:300],
+        id=item_id, url=url, title=title[:300],
         domain=domain, category=cat, weight=round(weight, 4),
         direction=direction, horizon_h=round(horizon, 2), symbols=syms,
-        market_wide=bool(rec.get("market_wide", not syms)),
+        market_wide=market_wide,
         confirmations=conf, published_ms=published, scored_ms=_now_ms(),
-        rationale=str(rec.get("rationale", ""))[:300]), None
+        rationale=_text(rec.get("rationale", ""), limit=300)), None
 
 
 def upsert(records, path=None):
-    """Добавляет/обновляет оценённые новости. Возвращает (принято, отказы)."""
-    path = path or STATE_FILE
+    """Добавляет/обновляет оценённые новости. Возвращает (принято, отказы).
+
+    Отказ — это всегда возвращаемое значение, а не исключение: на том конце
+    MCP-инструмент, и он должен ответить модели «запись не принята и почему»,
+    а не оборваться. Поэтому и негодный список записей, и негодный путь дают
+    пустой приём с причиной в отказах.
+    """
+    path = _as_path(path)
+    if path is _NOT_A_PATH:
+        return [], [dict(record="", reason="негодный путь к файлу состояния")]
     st = load(path)
-    by_id = {r["id"]: r for r in st.get("items", []) if isinstance(r, dict)
-             and "id" in r}
+    by_id = {}
+    # ключи берём только строковые: id из чужого или правленого файла может
+    # оказаться списком, а список нельзя положить в ключ словаря — приём
+    # новых новостей упал бы на разборе СТАРОГО файла
+    try:
+        old_items = list(st.get("items", []) or [])
+    except Exception:
+        old_items = []
+    for r in old_items:
+        if isinstance(r, dict) and isinstance(r.get("id"), str):
+            by_id[r["id"]] = r
     accepted, rejected = [], []
-    for rec in records:
+    try:
+        it = iter(records)
+    except TypeError:
+        return [], [dict(record="", reason="records не последовательность")]
+    for rec in it:
         clean, why = sanitize(rec)
         if clean is None:
-            rejected.append(dict(record=str(rec)[:160], reason=why))
+            rejected.append(dict(record=_text(rec, limit=160,
+                                              default=f"<{type(rec).__name__}>"),
+                                 reason=why))
             continue
         by_id[clean["id"]] = clean
         accepted.append(clean)
-    items = sorted(by_id.values(), key=lambda r: r["scored_ms"], reverse=True)
+    # scored_ms берём через _num: в старом файле он мог оказаться строкой,
+    # и тогда сортировка падала бы на сравнении str с int
+    items = sorted(by_id.values(), key=lambda r: _num(r.get("scored_ms")),
+                   reverse=True)
     st["items"] = prune(items)[:MAX_ITEMS]
     save(st, path)
     return accepted, rejected
@@ -252,14 +436,20 @@ def upsert(records, path=None):
 
 def prune(items, now_ms=None):
     """Выбрасывает записи, у которых истёк собственный горизонт."""
-    now = now_ms or _now_ms()
+    now = _num(now_ms, 0.0) or _now_ms()
     out = []
-    for r in items:
+    try:
+        it = iter(items)
+    except TypeError:
+        return out             # не последовательность — значит записей нет
+    for r in it:
         try:
             age_h = (now - int(r["published_ms"])) / 3600000.0
             if age_h <= float(r["horizon_h"]):
                 out.append(r)
-        except (KeyError, TypeError, ValueError):
+        except Exception:
+            # запись без нужных полей, с нечисловым или NaN-горизонтом —
+            # это «новости нет», а не повод оборвать разбор остальных
             continue
     return out
 
@@ -278,11 +468,27 @@ def _freshness(age_h, horizon_h):
 
 def relevance(rec, symbol):
     """Насколько новость относится к этой монете: 1.0 — названа прямо,
-    иначе бета к BTC для общерыночных, 0 — не относится."""
-    if symbol in rec.get("symbols", []):
-        return 1.0
+    иначе бета к BTC для общерыночных, 0 — не относится.
+
+    Запись приходит из json на диске, а symbol — от вызывающего. Обе стороны
+    могут оказаться не тем, чем ожидается (замер фаззера: `symbol in
+    rec["symbols"]` при symbols-числе давал TypeError, BETA.get на списке —
+    тоже, потому что список нельзя искать в словаре). «Новость к монете не
+    относится» — честный ответ на такой вход, исключение — нет.
+    """
+    if not isinstance(rec, dict):
+        return 0.0
+    syms = rec.get("symbols")
+    try:
+        if isinstance(syms, (list, tuple, set, dict)) and symbol in syms:
+            return 1.0
+    except TypeError:
+        pass                   # symbol нехешируем — искать его в set/dict нечем
     if rec.get("market_wide"):
-        return BETA.get(symbol, DEFAULT_BETA)
+        try:
+            return BETA.get(symbol, DEFAULT_BETA)
+        except TypeError:
+            return DEFAULT_BETA
     return 0.0
 
 
@@ -292,38 +498,54 @@ def background(symbol, path=None, now_ms=None):
     index ∈ [-1..1], heat ∈ [0..1]. Если файла нет, он протух или пуст —
     возвращается нулевой фон: бот в этом случае работает ровно как раньше.
     """
-    now = now_ms or _now_ms()
-    st = load(path or STATE_FILE)
-    updated = st.get("updated_ms", 0) or 0
+    # ВСЕ значения записи читаются через _num/_text, а не по ключу напрямую.
+    # Файл фона — обычный json на диске: его правят руками, копируют между
+    # машинами и читает сайт на каждый запрос страницы. Отсутствующий ключ или
+    # строка вместо веса обязаны означать «этой новости нет», а не KeyError на
+    # странице (500) и не исключение в цикле сопровождения позиции.
+    now = _num(now_ms, 0.0) or _now_ms()
+    st = load(path)
+    # int, а не float: это метка времени в мс, её показывают сайт и MCP
+    updated = int(_num(st.get("updated_ms"), 0.0))
     stale = (now - updated) / 3600000.0 > STATE_MAX_AGE_H
-    if stale or not st.get("items"):
+    items = st.get("items")
+    if stale or not items:
         return dict(index=0.0, heat=0.0, n=0, stale=bool(updated) and stale,
                     updated_ms=updated, top=[])
 
     signed = total = 0.0
     contrib = []
-    for r in prune(st["items"], now):
+    for r in prune(items, now):
+        if not isinstance(r, dict):
+            continue
         rel = relevance(r, symbol)
         if rel <= 0:
             continue
-        age_h = (now - r["published_ms"]) / 3600000.0
-        fresh = _freshness(age_h, r["horizon_h"])
+        age_h = (now - _num(r.get("published_ms"))) / 3600000.0
+        fresh = _freshness(age_h, _num(r.get("horizon_h"), 12.0))
         # подтверждение независимыми изданиями: +15% за каждое сверх первого,
         # но не более +30% — три источника уже не втрое убедительнее одного
-        conf_k = 1.0 + min(0.30, 0.15 * (r.get("confirmations", 1) - 1))
-        w_eff = r["weight"] * rel * fresh * conf_k
-        if w_eff <= 0:
+        conf_k = 1.0 + min(0.30, 0.15 * (_num(r.get("confirmations"), 1.0) - 1))
+        w_eff = _num(r.get("weight")) * rel * fresh * conf_k
+        # именно `not (w_eff > 0)`, а не `w_eff <= 0`: NaN ложен в обоих
+        # сравнениях, и при второй записи он проскочил бы в сумму фона
+        if not (w_eff > 0):
             continue
-        signed += r["direction"] * w_eff
+        signed += _num(r.get("direction")) * w_eff
         total += w_eff
         contrib.append((w_eff, r))
 
     index = _clamp(signed / SAT, -1.0, 1.0)
     heat = _clamp(total / SAT, 0.0, 1.0)
     contrib.sort(key=lambda x: -x[0])
-    top = [dict(title=r["title"][:120], category=r["category"],
-                direction=r["direction"], weight=r["weight"],
-                effective=round(w, 4), url=r["url"])
+    # direction именно int: main() печатает его как "%+d", и float там даёт
+    # ValueError. Прежде это был int из sanitize, и форма ответа background
+    # для сайта и MCP не должна была измениться от одной лишь защиты чтения
+    top = [dict(title=_text(r.get("title", ""), limit=120),
+                category=_text(r.get("category", "")),
+                direction=int(_num(r.get("direction"))),
+                weight=_num(r.get("weight")),
+                effective=round(w, 4), url=_text(r.get("url", "")))
            for w, r in contrib[:5]]
     return dict(index=round(index, 4), heat=round(heat, 4), n=len(contrib),
                 stale=False, updated_ms=updated, top=top)
@@ -344,12 +566,18 @@ def _bg_num(bg, key):
     Коэффициенты k/heat_max/index_min намеренно НЕ подстраховываются: они
     приходят из config.py, то есть от нас самих, и опечатка в них должна
     падать громко, а не молча отключать реакцию.
+
+    Перечень «ожидаемых» типов исключений здесь не годится, и это подтверждено
+    запуском, а не предположением: float() на целом из 400 цифр даёт
+    OverflowError, которого в прежнем перечне (AttributeError, TypeError,
+    ValueError) не было, а такое целое json кладёт в файл фона совершенно
+    законно. Ловится Exception целиком, BaseException — нет.
     """
     try:
-        v = float(bg.get(key, 0.0))
-    except (AttributeError, TypeError, ValueError):
-        return 0.0
-    return v if math.isfinite(v) else 0.0
+        v = bg.get(key, 0.0)
+    except Exception:
+        return 0.0            # не словарь и вообще не отображение — фона нет
+    return _num(v, 0.0)
 
 
 def tp_multiplier(bg, side, k):
