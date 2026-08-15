@@ -125,6 +125,7 @@
       <button class="zbtn" id="zoomOut" title="отдалить">−</button>
       <button class="zbtn" id="zoomFit" title="показать всё">⤢ всё</button>
       <span class="cb-lab" id="tfNote"></span>
+      <span class="cb-lab" id="mkNote"></span>
     </div>
     <div id="chart"></div>
     <p class="muted" style="font-size:12px">▲ вход в лонг · ▼ вход в шорт · оранжевая точка — докупка сеткой · ● закрытие цикла (цвет = знак PnL). Колёсиком мыши — зум, тянуть — прокрутка, двойной клик — показать всё. Точкой ● помечен таймфрейм самого бота: остальные меняют только вид графика, сделки на них те же.</p>
@@ -248,6 +249,15 @@ async function load() {
 
   const tr = await (await fetch(`/api/trades/${SYM}/${MODE}`)).json();
   const sim = await (await fetch(`/api/sim/${SYM}/${MODE}`)).json();
+  // Сделки за ВСЮ историю (предпосчёт). Симуляция на лету покрывает только
+  // последние ~130 дней, и на двухлетнем графике её маркеров почти нет.
+  // Полная история есть только у финальных ботов — у архивных режимов её
+  // никто не считал, там остаётся симуляция.
+  let hist = { events: [] };
+  if (MODE === "final") {
+    try { hist = await (await fetch(`/api/events/${SYM}`)).json(); }
+    catch (e) { hist = { events: [] }; }
+  }
   const minT = candles[0].time;
   // время маркера = время ЕГО свечи на ТЕКУЩЕМ таймфрейме: иначе на крупных
   // барах сделки легли бы между свечами и библиотека их не показала бы
@@ -271,10 +281,21 @@ async function load() {
         text: tag + "PnL " + (e.pnl >= 0 ? "+" : "") + e.pnl });
     }
   };
-  for (const e of sim.events) { const t = snap(e.t); if (t >= minT) pushEv(t, e, false); }
+  // Источник маркеров: полная история, если она есть, иначе симуляция за
+  // последние месяцы. Смешивать нельзя — на пересечении периодов сделки
+  // задвоятся.
+  const back = (hist.events && hist.events.length) ? hist.events : sim.events;
+  for (const e of back) { const t = snap(e.t); if (t >= minT) pushEv(t, e, false); }
   for (const e of tr.events) { const t = snap(e.time); if (t >= minT) pushEv(t, e, true); }
   markers.sort((a, b) => a.time - b.time);
   series.setMarkers(markers);
+  const shown = markers.length;
+  const note = document.getElementById("mkNote");
+  if (note) {
+    note.textContent = hist.trades
+      ? `· на графике ${shown} отметок; всего у бота ${hist.trades} сделок за 3.2 года`
+      : "";
+  }
 
   document.getElementById("s_n").textContent = sim.n;
   document.getElementById("s_wr").textContent =

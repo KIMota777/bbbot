@@ -165,6 +165,16 @@ def main():
         with open(os.path.join(OUT_DIR, f"analytics_bot_{sym}.json"), "w",
                   encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False)
+        # Сделки за всю историю — отдельным файлом: график берёт маркеры
+        # отсюда, а не из симуляции на лету. Симуляция считает только
+        # последние 130 дней, и на двухлетнем графике из 57 сделок BTC было
+        # видно две.
+        with open(os.path.join(OUT_DIR, f"bot_events_{sym}.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(dict(events=meta["events"],
+                           trades=meta["trades"],
+                           ruined=meta["ruined"]), fh, ensure_ascii=False)
+        print(f"  событий на график: {len(meta['events'])}")
 
     with open("signal_setups.json", encoding="utf-8") as fh:
         setups = json.load(fh)

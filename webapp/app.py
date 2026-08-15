@@ -1263,6 +1263,27 @@ def api_sim(symbol, mode):
     return jsonify(build_sim(symbol, mode))
 
 
+@app.route("/api/events/<symbol>")
+def api_events(symbol):
+    """Сделки бота за ВСЮ историю (предпосчёт build_analytics.py).
+
+    Симуляция на лету (/api/sim) считает только последние 130 дней — на
+    графике за два года из 57 сделок BTC было видно две, и это читалось как
+    «бот не торгует». Здесь лежит полный список событий того же самого
+    прогона, которым посчитаны все числа на странице.
+    """
+    if not valid_symbol(symbol):
+        return jsonify(dict(events=[], note="нет такой монеты")), 404
+    path = safe_path(FINAL_DATA_DIR, f"bot_events_{symbol}.json")
+    data = read_json(path)
+    if not isinstance(data, dict) or not isinstance(data.get("events"), list):
+        return jsonify(dict(events=[], note="история сделок не пересчитана"))
+    evs = [e for e in data["events"]
+           if isinstance(e, dict) and is_num(e.get("t"))]
+    return jsonify(dict(events=evs, trades=data.get("trades"),
+                        ruined=bool(data.get("ruined"))))
+
+
 _finalstats_cache = {}
 
 

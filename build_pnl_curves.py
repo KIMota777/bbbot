@@ -112,7 +112,19 @@ def bot_pnls(sym, p, pct5):
                 max_dd_mtm=round(r["max_dd_mtm"] * 100, 1),
                 ret_flat=round((r["balance"] / e2.START - 1) * 100, 1),
                 dd_closed_flat=round(r["max_dd"] * 100, 1),
-                trades=r["trades"], wins=r["wins"])
+                trades=r["trades"], wins=r["wins"],
+                # Полный список событий за все 3.2 года — для маркеров на
+                # графике. Раньше сайт рисовал сделки из симуляции, которую
+                # считал на лету и только за последние 130 дней: на графике
+                # за два года было видно два цикла из пятидесяти семи, и это
+                # читалось как «бот не торгует», хотя он просто торговал
+                # раньше. Прогон здесь и так идёт по всей истории — событиям
+                # достаточно не пропасть.
+                events=[dict(t=e_["t"] // 1000, type=e_["type"],
+                             side=e_.get("side"),
+                             pnl=(round(e_["pnl"], 4)
+                                  if e_.get("pnl") is not None else None))
+                        for e_ in events])
     return start_ts, pnls, meta
 
 
