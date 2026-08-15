@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Сигналы BTC</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ctext y=%2714%27 font-size=%2714%27%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E">
 <style>
   :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
     --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
   body { background:var(--bg); color:var(--ink); margin:0;
     font:15px/1.55 "Segoe UI", system-ui, sans-serif; padding:32px 18px 60px; }
   .wrap { max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:22px; }
-  nav { display:flex; gap:16px; }
+  nav { display:flex; gap:16px;  flex-wrap:wrap; row-gap:8px; }
   nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
   nav a.active { color:var(--accent); }
   nav a:hover { color:var(--ink); }
@@ -39,6 +40,10 @@
   .plan { background:#0e1013; border-radius:8px; padding:10px 12px;
     font:13px Consolas, monospace; line-height:1.7; }
   .plan b { color:var(--accent); }
+  /* на узком экране таблица не влезает — даём ей прокрутку внутри
+     своего блока, чтобы вбок ездила она, а не вся страница */
+  .tablewrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .tablewrap table { min-width:520px; }
   table { width:100%; border-collapse:collapse; font-size:13px;
     background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
   td,th { padding:7px 10px; border-bottom:1px solid var(--line); text-align:right;
@@ -130,6 +135,7 @@
   {% endif %}
 
   <h2>История сигналов</h2>
+  <div class="tablewrap">
   <table>
     <tr><th>Закрыт</th><th>Сетап</th><th>Напр.</th><th>Вход</th><th>Стоп</th><th>Тейк</th><th>Исход</th><th>R</th><th>PnL, $</th><th>Капитал</th><th>Удерж, ч</th></tr>
     {# строки приходят уже отформатированными из clean_history: ни одного
@@ -153,6 +159,7 @@
     <tr><td colspan="11" style="text-align:center;color:var(--muted)">Пока нет закрытых сигналов</td></tr>
     {% endfor %}
   </table>
+  </div>
 </div>
 </body>
 </html>

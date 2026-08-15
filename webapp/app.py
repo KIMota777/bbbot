@@ -553,13 +553,30 @@ def research_report():
                 {"Content-Type": "text/plain; charset=utf-8"})
     with open(path, encoding="utf-8") as fh:
         body = fh.read()
-    # файл написан как содержимое страницы без обёртки — добавляем её здесь
-    if "<!doctype" not in body[:200].lower():
-        body = ("<!doctype html><html lang=\"ru\"><head>"
-                "<meta charset=\"utf-8\">"
-                "<meta name=\"viewport\" content=\"width=device-width,"
-                " initial-scale=1\"></head><body>" + body + "</body></html>")
-    return body, 200, {"Content-Type": "text/html; charset=utf-8"}
+    if "<!doctype" in body[:200].lower():
+        return body, 200, {"Content-Type": "text/html; charset=utf-8"}
+    # Файл написан как содержимое страницы без обёртки: он начинается сразу с
+    # <title> и <style>. Просто завернуть его в <body> нельзя — заголовок
+    # окажется в теле, и вкладка останется без имени. Поэтому вынимаем голову
+    # и кладём куда положено.
+    head = ""
+    for tag in ("title", "style"):
+        for m in re.finditer(r"<%s\b.*?</%s>" % (tag, tag), body,
+                             re.S | re.I):
+            head += m.group(0)
+        body = re.sub(r"<%s\b.*?</%s>" % (tag, tag), "", body, flags=re.S | re.I)
+    # значок вкладки как у остальных страниц: без него браузер стучится в
+    # несуществующий /favicon.ico и пишет 404 в консоль
+    fav = ("<link rel=\"icon\" href=\"data:image/svg+xml,"
+           "%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16"
+           "%27%3E%3Ctext y=%2714%27 font-size=%2714%27%3E%F0%9F%94%AC%3C"
+           "/text%3E%3C/svg%3E\">")
+    page = ("<!doctype html><html lang=\"ru\"><head>"
+            "<meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,"
+            " initial-scale=1\">" + fav + head + "</head><body>"
+            + body.strip() + "</body></html>")
+    return page, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 RU_SETUPS = {

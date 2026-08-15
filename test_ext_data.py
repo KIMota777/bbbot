@@ -321,7 +321,13 @@ def main():
     pat = _re.compile(r"\bfetch_daily_pct5\s*\(([^)]*)\)")
     prod, with_arg = [], []
     for root, dirs, files in os.walk(REPO):
-        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", "venv")]
+        # research/ — исследовательская песочница, а не боевой код, и шапка
+        # ext_data.py считает именно ПРОДАКШЕН-вызовы. Считать research
+        # наравне значит ронять проверку каждый раз, когда в исследовании
+        # появляется новый разовый скрипт, — то есть превращать полезный
+        # сторож в шум. Боевой код по-прежнему под присмотром целиком.
+        dirs[:] = [d for d in dirs
+                   if d not in (".git", "__pycache__", "venv", "research")]
         for f in files:
             if not f.endswith(".py") or f == "ext_data.py" or \
                     f.startswith("test_"):
