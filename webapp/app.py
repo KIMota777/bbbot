@@ -401,6 +401,43 @@ def archive():
                            dry_run=config.DRY_RUN)
 
 
+@app.route("/research")
+def research_report():
+    """Отчёт исследования — отдаётся с диска как есть.
+
+    Файл собирается отдельно (research/ОТЧЁТ.html) кодом, которым посчитан.
+    Отдаём его прямо с сайта, а не ссылкой наружу, чтобы рядом с обещаниями
+    доходности всегда лежала проверка этих обещаний и не пропала вместе с
+    внешней ссылкой.
+    """
+    path = os.path.join(BOT_DIR, "research", "ОТЧЁТ.html")
+    if not os.path.exists(path):
+        return ("Отчёт ещё не собран: нет research/ОТЧЁТ.html", 404,
+                {"Content-Type": "text/plain; charset=utf-8"})
+    with open(path, encoding="utf-8") as fh:
+        body = fh.read()
+    if "<!doctype" in body[:200].lower():
+        return body, 200, {"Content-Type": "text/html; charset=utf-8"}
+    # Файл написан как содержимое страницы без обёртки: начинается сразу с
+    # <title> и <style>. Завернуть его целиком в <body> нельзя — заголовок
+    # окажется в теле, и вкладка останется без имени. Вынимаем голову.
+    head = ""
+    for tag in ("title", "style"):
+        pat = r"<%s.*?</%s>" % (tag, tag)
+        for m in re.finditer(pat, body, re.S | re.I):
+            head += m.group(0)
+        body = re.sub(pat, "", body, flags=re.S | re.I)
+    fav = ("<link rel=\"icon\" href=\"data:image/svg+xml,"
+           "%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16"
+           "%27%3E%3Ctext y=%2714%27 font-size=%2714%27%3E%F0%9F%94%AC%3C"
+           "/text%3E%3C/svg%3E\">")
+    return ("<!doctype html><html lang=\"ru\"><head>"
+            "<meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,"
+            " initial-scale=1\">" + fav + head + "</head><body>"
+            + body.strip() + "</body></html>"), 200,            {"Content-Type": "text/html; charset=utf-8"}
+
+
 # --- сигнальные сетапы v2: действующие 4 (владелец убрал range_long,
 # range_short, sweep_short, pump_short — на сайте их больше нет) ---
 ACTIVE_SETUPS = list(se2.SETUPS)
