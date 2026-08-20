@@ -538,6 +538,25 @@ def archive():
                            dry_run=config.DRY_RUN)
 
 
+# Полоса возврата для страниц, которые отдаются готовым файлом, а не шаблоном.
+# Своя разметка и свои стили прямо в атрибутах: отчёт исследования светлый и
+# несёт собственный CSS, где есть правила и для nav, и для a. Классы сайта туда
+# тащить нельзя — подерутся; а inline-стиль перебивает таблицу стилей документа.
+_BACK_BAR = (
+    '<div style="background:#11151c;padding:10px 16px;font:14px/1.4 system-ui,'
+    'Segoe UI,Arial,sans-serif;display:flex;flex-wrap:wrap;gap:6px 18px;'
+    'align-items:center">'
+    '<a href="/" style="color:#9fc0e8;text-decoration:none;font-weight:600">'
+    '&larr; Боты</a>'
+    '<a href="/signals" style="color:#8a929d;text-decoration:none">Сигналы BTC</a>'
+    '<a href="/pnl" style="color:#8a929d;text-decoration:none">PnL-график</a>'
+    '<a href="/evolution" style="color:#8a929d;text-decoration:none">Эволюция</a>'
+    '<a href="/archive" style="color:#8a929d;text-decoration:none">Архив</a>'
+    '<span style="color:#e8e8e8;font-weight:600">Исследование</span>'
+    '</div>'
+)
+
+
 @app.route("/research")
 def research_report():
     """Отчёт исследования — отдаётся с диска как есть.
@@ -554,6 +573,10 @@ def research_report():
     with open(path, encoding="utf-8") as fh:
         body = fh.read()
     if "<!doctype" in body[:200].lower():
+        # даже у готового документа должна быть дорога назад на сайт
+        body = re.sub(r"(<body[^>]*>)",
+                      lambda m: m.group(1) + _BACK_BAR,
+                      body, count=1, flags=re.I)
         return body, 200, {"Content-Type": "text/html; charset=utf-8"}
     # Файл написан как содержимое страницы без обёртки: он начинается сразу с
     # <title> и <style>. Просто завернуть его в <body> нельзя — заголовок
@@ -574,7 +597,7 @@ def research_report():
     page = ("<!doctype html><html lang=\"ru\"><head>"
             "<meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,"
-            " initial-scale=1\">" + fav + head + "</head><body>"
+            " initial-scale=1\">" + fav + head + "</head><body>" + _BACK_BAR
             + body.strip() + "</body></html>")
     return page, 200, {"Content-Type": "text/html; charset=utf-8"}
 
