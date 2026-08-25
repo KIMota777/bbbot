@@ -176,7 +176,8 @@
               <span class="badge-row" style="margin-top:7px">
                 <span class="badge badge--info">{{ b.ver or 'архив' }}</span>
                 <span class="badge">{{ b.mode_name }}</span>
-                <span class="badge">x{{ b.lev }}</span>
+                {% if b.tier %}<span class="badge {{ 'badge--on' if b.tier.tier in ('A','B') else ('badge--watch' if b.tier.tier == 'C' else 'badge--off') }}" title="{{ b.tier.why }} · общая шкала x5, обе половины, копеечные обнулены">уровень {{ b.tier.tier }}</span>{% endif %}
+              <span class="badge">x{{ b.lev }}</span>
                 <span class="badge">{{ b.tf_label }}</span>
                 <span class="badge badge--off">в архиве</span>
                 {% if b.active %}<span class="badge badge--watch">процесс запущен вручную</span>{% endif %}

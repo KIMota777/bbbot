@@ -145,8 +145,61 @@
     волн, смотри <a href="/archive" style="color:var(--info)">архив</a>.</div>
   {% endif %}
 
+  {% if passed %}
   <div>
-    <div class="h-sec">Финальные боты (волна v7/v8)</div>
+    <div class="h-sec">Прошли честную переоценку</div>
+    <div class="note" style="margin-bottom:10px">
+      <span class="ico">⚖</span>
+      <div class="nb">
+        <span class="t">Все конфиги посчитаны на ОДНОМ плече x5 и на ОБЕИХ
+          половинах истории, копеечные выходы обнулены.</span>
+        Уровень отвечает не на вопрос «сколько заработал», а на вопрос
+        <b>что про конфиг вообще можно утверждать</b>. Уровень A —
+        держится на обеих половинах, настоящих сделок хватает, просадка
+        в норме. Это <b>не</b> «доказано, что зарабатывает»: ни один конфиг
+        набора не значим после поправки на 55 проверенных.
+        <a href="/research" style="color:var(--info)">как считалось</a>
+      </div>
+    </div>
+    <div class="card card--pad0">
+      <div class="list">
+        {% for b in passed %}
+        {% set tr = b.tier %}
+        <a class="list-row bot-row" href="/bot/{{ b.symbol }}/{{ b.mode }}">
+          <span class="avatar avatar--neutral">{{ b.coin[:1] }}</span>
+          <span class="lr-main">
+            <span class="lr-title">{{ b.coin }}/USDT
+              <span class="muted" style="font-weight:500">· режим {{ b.mode }}</span></span>
+            <span class="badge-row" style="margin-top:6px">
+              <span class="badge badge--on">уровень {{ tr.tier }} · {{ tr.name }}</span>
+              <span class="badge">x{{ b.lev }} в конфиге</span>
+              <span class="badge">{{ b.tf_label }}</span>
+              <span class="badge {{ 'badge--on' if b.active else 'badge--off' }}">{{ '● работает' if b.active else '○ НЕ запущен' }}</span>
+            </span>
+            <span class="exam-mini">
+              <span><b class="{{ 'pos' if tr.train > 0 else 'neg' }}">{{ '%+.1f'|format(tr.train) }}%</b>
+                <span>обучение</span></span>
+              <span><b class="{{ 'pos' if tr.hold > 0 else 'neg' }}">{{ '%+.1f'|format(tr.hold) }}%</b>
+                <span>холдоут</span></span>
+              <span><b class="{{ 'pos' if tr.rob_train > 0 else 'neg' }}">{{ '%+.1f'|format(tr.rob_train) }}%</b>
+                <span>устойч. обуч</span></span>
+              <span><b class="{{ 'pos' if tr.rob_hold > 0 else 'neg' }}">{{ '%+.1f'|format(tr.rob_hold) }}%</b>
+                <span>устойч. холд</span></span>
+              <span><b>{{ tr.real }}</b><span>настоящих сделок</span></span>
+              <span><b>{{ tr.dd }}%</b><span>просадка</span></span>
+              <span><b class="flat">{{ tr.p }}</b><span>значимость p</span></span>
+            </span>
+            <span class="lr-sub" style="margin-top:6px">{{ tr.why }}</span>
+          </span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div>
+    <div class="h-sec">Работают сейчас</div>
     <div class="card card--pad0">
       <div class="list">
         {% for b in bots %}
@@ -168,6 +221,11 @@
                     title="без копеечных выходов итог на экзамене {{ '%+.1f'|format(t.ret_without_tiny) }}%">
                 держится на копейках</span>
               {% endif %}
+              {% endif %}
+              {% if b.tier %}
+              <span class="badge {{ 'badge--on' if b.tier.tier in ('A','B') else ('badge--watch' if b.tier.tier == 'C' else 'badge--off') }}"
+                    title="{{ b.tier.why }} · общая шкала: плечо x5, обе половины, копеечные обнулены">
+                уровень {{ b.tier.tier }}</span>
               {% endif %}
               <span class="badge badge--info">{{ b.ver }}</span>
               <span class="badge">x{{ b.lev }}</span>

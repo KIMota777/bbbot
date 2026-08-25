@@ -11,6 +11,40 @@
 <body>
 {% set nav = 'bots' %}{% include '_nav.html' %}
 
+  {% if tier %}
+  <div class="card" style="margin-bottom:14px">
+    <div class="h-card">Честная переоценка · общая шкала</div>
+    <p class="muted" style="font-size:12.5px;margin:0 0 10px">
+      Все конфиги проекта посчитаны здесь на <b>одном плече x5</b> и на
+      <b>обеих половинах</b> истории, копеечные выходы обнулены. Числа ниже по
+      странице считаны иначе — на родном плече конфига (x{{ lev }}) и вместе с
+      копеечными, — поэтому они выше. Это не противоречие: вопросы разные.
+    </p>
+    <div class="exam-mini">
+      <span><b class="{{ 'pos' if tier.tier in ('A','B') else 'neg' }}">{{ tier.tier }}</b>
+        <span>{{ tier.name }}</span></span>
+      <span><b class="{{ 'pos' if tier.train > 0 else 'neg' }}">{{ '%+.1f'|format(tier.train) }}%</b>
+        <span>обучение</span></span>
+      <span><b class="{{ 'pos' if tier.hold > 0 else 'neg' }}">{{ '%+.1f'|format(tier.hold) }}%</b>
+        <span>холдоут</span></span>
+      <span><b class="{{ 'pos' if tier.rob_train > 0 else 'neg' }}">{{ '%+.1f'|format(tier.rob_train) }}%</b>
+        <span>устойчивость обуч</span></span>
+      <span><b class="{{ 'pos' if tier.rob_hold > 0 else 'neg' }}">{{ '%+.1f'|format(tier.rob_hold) }}%</b>
+        <span>устойчивость холд</span></span>
+      <span><b>{{ tier.real }}</b><span>настоящих сделок</span></span>
+      <span><b>{{ tier.dd }}%</b><span>просадка</span></span>
+      <span><b class="flat">{{ tier.tiny }}%</b><span>циклов в ноль</span></span>
+      <span><b class="flat">{{ tier.p }}</b><span>значимость p</span></span>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:10px 0 0">
+      {{ tier.why }}. Значимость p={{ tier.p }} — от нуля неотличимо; порог с
+      поправкой на 55 проверенных конфигов равен 0.00091, и его не проходит ни
+      один. <a href="/research" style="color:var(--info)">подробности</a>
+    </p>
+  </div>
+  {% endif %}
+
+
 <div class="wrap stack">
 
   <!-- ================= шапка ================= -->

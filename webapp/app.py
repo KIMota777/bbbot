@@ -313,8 +313,54 @@ def honest_stats_line(h, hd):
     return " · ".join(parts)
 
 
+
+# ---- уровни честной переоценки (tierlist.py) --------------------------------
+# Уровень отвечает не на вопрос «сколько заработал», а на вопрос «что про этот
+# конфиг вообще можно утверждать»: держится ли он на ОБЕИХ половинах истории,
+# хватает ли настоящих (некопеечных) сделок, укладывается ли просадка в 20%.
+# Все конфиги посчитаны на ОДНОМ плече x5 — иначе просадка меряет размер
+# ставки, а не качество стратегии.
+TIER_NAMES = {
+    "A": "держится на обеих половинах",
+    "B": "держится, но сделок мало",
+    "C": "одна половина из двух — как монетка",
+    "D": "не держится нигде",
+    "F": "живёт на копеечных выходах",
+}
+TIER_RANK = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4}
+
+
+def load_tiers():
+    """(символ, режим) -> уровень и числа общей шкалы. Пусто, если не считано."""
+    path = os.path.join(FINAL_DATA_DIR, "tierlist.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except Exception:                              # noqa: BLE001
+        return {}
+    out = {}
+    for r in d.get("rows", []):
+        if r.get("src") != "config.py":
+            continue
+        n = min(r["train"]["real"]["n"], r["hold"]["real"]["n"])
+        out[(r["sym"], r["tag"])] = dict(
+            tier=r["tier"], why=r["why"],
+            train=round(r["train"]["comp"], 1), hold=round(r["hold"]["comp"], 1),
+            rob_train=round(r["train"]["rob"], 1),
+            rob_hold=round(r["hold"]["rob"], 1),
+            dd=round(max(r["train"]["dd"], r["hold"]["dd"]), 1),
+            real=n, tiny=round(max(r["train"]["tiny_share"],
+                                   r["hold"]["tiny_share"])),
+            p=round(max(r["train"]["real"]["p"], r["hold"]["real"]["p"]), 3),
+            name=TIER_NAMES.get(r["tier"], ""))
+    return out
+
+
 def list_bots(modes):
     bots = []
+    tiers = load_tiers()
     for sym, sym_modes in config.SYMBOL_PARAMS.items():
         for mode in modes:
             p = sym_modes.get(mode)
@@ -336,6 +382,7 @@ def list_bots(modes):
                 title=meta.get("title", f"{sym.replace('USDT','')} — {mode}"),
                 stats=meta.get("stats", ""),
                 honest=honest, tiny=honest_tiny(honest) if honest else None,
+                tier=tiers.get((sym, mode)),
                 active=active, has_log=os.path.exists(log_file)))
     return bots
 
@@ -346,6 +393,28 @@ def final_bot_list():
 
 def archive_bot_list():
     return list_bots(ARCHIVE_MODES)
+
+
+ARCHIVE_MODES_ALL = ("normal", "bear", "turbo")
+
+
+def passed_bots():
+    """Конфиги, прошедшие честную переоценку (уровень A или B).
+
+    Это НЕ «самые доходные». Уровень A означает «нечему возразить»: конфиг
+    держится на обеих половинах истории, настоящих сделок хватает, просадка в
+    норме. Ни один из них не значим после поправки на число проверенных
+    конфигов, и на витрине это сказано прямо.
+    """
+    tiers = load_tiers()
+    out = []
+    for b in list_bots(("final",) + ARCHIVE_MODES_ALL):
+        t = b.get("tier")
+        if t and t["tier"] in ("A", "B"):
+            out.append(b)
+    out.sort(key=lambda b: (TIER_RANK[b["tier"]["tier"]],
+                            -b["tier"]["rob_hold"]))
+    return out
 
 
 @app.route("/")
@@ -377,7 +446,8 @@ def index():
             train_start=hd["periods"]["train"]["start"],
             train_end=hd["periods"]["train"]["end"])
     return render_template("index.html", bots=finals, dry_run=config.DRY_RUN,
-                           has_final=bool(finals), summary=summary, honest=hd)
+                           has_final=bool(finals), summary=summary, honest=hd,
+                           passed=passed_bots(), tier_names=TIER_NAMES)
 
 
 FAVICON = (
@@ -1735,6 +1805,11 @@ def bot_page(symbol, mode):
     h = honest_bot(symbol) if mode == "final" else None
     return render_template(
         "bot.html", symbol=symbol, coin=symbol.replace("USDT", ""),
+        # уровень общей шкалы: плечо x5 у всех, обе половины, копеечные
+        # обнулены. Стоит рядом с числами страницы намеренно — те посчитаны
+        # на РОДНОМ плече конфига и вместе с копеечными, то есть отвечают на
+        # другой вопрос и получаются заметно выше.
+        tier=load_tiers().get((symbol, mode)),
         mode=mode, mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
         interval_min=int(interval),
         # ТФ отображения (сам бот всегда торгует на своём) и граница экзамена
