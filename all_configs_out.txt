@@ -1,0 +1,103 @@
+собрано уникальных геномов: 68
+по монетам: BTC 15, DOGE 14, ETH 13, LTC 13, SOL 13
+плечо для всех: x5 | возмущений на половину: 40 | процессов: 11
+прогонов всего: 5576
+
+  5/68  8s
+  10/68  12s
+  15/68  18s
+  20/68  19s
+  25/68  24s
+  30/68  28s
+  DOGEUSDT: SMC посчитан за 4.74с
+  LTCUSDT: SMC посчитан за 3.33с
+  LTCUSDT: SMC посчитан за 3.44с
+  LTCUSDT: SMC посчитан за 3.44с
+  DOGEUSDT: SMC посчитан за 4.74с
+  DOGEUSDT: SMC посчитан за 4.78с
+  ETHUSDT: SMC посчитан за 4.32с
+  ETHUSDT: SMC посчитан за 4.35с
+  35/68  32s
+  ETHUSDT: SMC посчитан за 4.29с
+  ETHUSDT: SMC посчитан за 4.41с
+  BTCUSDT: SMC посчитан за 7.64с
+  LTCUSDT: SMC посчитан за 3.41с
+  LTCUSDT: SMC посчитан за 3.29с
+  SOLUSDT: SMC посчитан за 7.55с
+  DOGEUSDT: SMC посчитан за 4.87с
+  DOGEUSDT: SMC посчитан за 4.90с
+  LTCUSDT: SMC посчитан за 3.30с
+  SOLUSDT: SMC посчитан за 7.53с
+  LTCUSDT: SMC посчитан за 3.36с
+  SOLUSDT: SMC посчитан за 7.37с
+  BTCUSDT: SMC посчитан за 7.63с
+  DOGEUSDT: SMC посчитан за 4.91с
+  DOGEUSDT: SMC посчитан за 4.82с
+  ETHUSDT: SMC посчитан за 4.38с
+  40/68  36s
+  ETHUSDT: SMC посчитан за 4.18с
+  BTCUSDT: SMC посчитан за 7.76с
+  BTCUSDT: SMC посчитан за 7.54с
+  LTCUSDT: SMC посчитан за 3.43с
+  BTCUSDT: SMC посчитан за 7.64с
+  ETHUSDT: SMC посчитан за 4.38с
+  ETHUSDT: SMC посчитан за 4.42с
+  BTCUSDT: SMC посчитан за 7.80с
+  LTCUSDT: SMC посчитан за 3.23с
+  SOLUSDT: SMC посчитан за 7.59с
+  SOLUSDT: SMC посчитан за 7.51с
+  SOLUSDT: SMC посчитан за 7.42с
+  45/68  40s
+  DOGEUSDT: SMC посчитан за 4.74с
+  BTCUSDT: SMC посчитан за 7.63с
+  SOLUSDT: SMC посчитан за 7.46с
+  BTCUSDT: SMC посчитан за 7.58с
+  BTCUSDT: SMC посчитан за 7.58с
+  SOLUSDT: SMC посчитан за 7.50с
+  BTCUSDT: SMC посчитан за 7.66с
+  DOGEUSDT: SMC посчитан за 4.84с
+  50/68  54s
+  55/68  82s
+  60/68  90s
+  65/68  117s
+  68/68  138s
+  DOGEUSDT: SMC посчитан за 4.84с
+  ETHUSDT: SMC посчитан за 4.31с
+  SOLUSDT: SMC посчитан за 7.44с
+  SOLUSDT: SMC посчитан за 7.47с
+  SOLUSDT: SMC посчитан за 7.39с
+  BTCUSDT: SMC посчитан за 7.57с
+  LTCUSDT: SMC посчитан за 3.36с
+  BTCUSDT: SMC посчитан за 7.41с
+  ETHUSDT: SMC посчитан за 4.43с
+  DOGEUSDT: SMC посчитан за 4.89с
+  LTCUSDT: SMC посчитан за 3.34с
+  DOGEUSDT: SMC посчитан за 4.85с
+  BTCUSDT: SMC посчитан за 7.15с
+  LTCUSDT: SMC посчитан за 3.42с
+  DOGEUSDT: SMC посчитан за 4.99с
+  BTCUSDT: SMC посчитан за 7.76с
+  ETHUSDT: SMC посчитан за 4.33с
+  ETHUSDT: SMC посчитан за 4.24с
+
+ВСЕ КОНФИГИ НА ОДНОМ ПЛЕЧЕ x5, ОБЕ ПОЛОВИНЫ ИСТОРИИ
+Порядок — по ХУДШЕЙ половине устойчивости: конфиг обязан быть
+приличным на обеих, а не блистать на одной.
+
+№   мон   откуда                        обуч      холд  уст.обуч  уст.холд    сдел
+1   DOGE  evolution8_15m_final/вол    +59.3%    +16.2%    +31.4%    +13.2%     292
+2   DOGE  evolution8_15m_winners/в    +56.9%    +19.8%    +31.8%    +12.4%     301
+3   ETH   evolution8_15m_winners/в    +22.9%     +7.3%    +16.6%     +3.0%     172
+4   BTC   evolution8_15m_final/вол    +56.3%     -1.0%    +49.9%     +0.5%      14
+5   SOL   evolution8_15m_winners/в     +0.0%     +0.0%     +0.0%     +0.0%       0
+6   LTC   evolution8_15m_final/вол   +175.9%     +3.2%   +135.2%     -1.8%     169
+7   BTC   evolution8_15m_winners/в    +48.7%     +2.4%    +24.3%     -3.1%     186
+8   SOL   evolution8_15m_final/вол    +36.8%     +6.2%    +33.4%     -4.1%     303
+9   ETH   evolution8_15m_final/вол     -1.6%    +30.0%    -11.7%    +19.8%      62
+10  LTC   evolution8_4h_final/волн    -56.9%    -24.9%    -57.0%    -23.7%     382
+11  DOGE  evolution8_4h_final/волн    -59.0%     -0.2%    -58.3%     -5.2%     386
+12  ETH   evolution8_4h_final/волн    -58.9%    -10.8%    -58.4%    -13.6%     688
+
+Конфигов, у которых ОБЕ половины устойчивости в плюсе: 4 из 12
+не посчитались: 56
+-> webapp\data\all_configs_honest.json
