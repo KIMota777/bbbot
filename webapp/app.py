@@ -437,8 +437,94 @@ def ruined_flag(data):
     return isinstance(end, float) and end != end
 
 
+
+# ---- уровни честной переоценки (tierlist.py) --------------------------------
+# Уровень отвечает не «сколько заработал», а «что про конфиг можно утверждать»:
+# держится ли он на ОБЕИХ половинах истории, хватает ли настоящих (некопеечных)
+# сделок, укладывается ли просадка в 20%. Все конфиги считаны на ОДНОМ плече
+# x5 — иначе просадка меряет размер ставки, а не качество стратегии.
+TIER_NAMES = {
+    "A": "держится на обеих половинах",
+    "B": "держится, но сделок мало",
+    "C": "одна половина из двух — как монетка",
+    "D": "не держится нигде",
+    "F": "живёт на копеечных выходах",
+}
+TIER_RANK = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4}
+
+
+def load_tiers():
+    """(символ, режим) -> уровень и числа общей шкалы. Пусто, если не считано."""
+    path = os.path.join(FINAL_DATA_DIR, "tierlist.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except Exception:                              # noqa: BLE001
+        return {}
+    out = {}
+    for r in d.get("rows", []):
+        if r.get("src") != "config.py":
+            continue
+        out[(r["sym"], r["tag"])] = dict(
+            tier=r["tier"], why=r["why"],
+            train=round(r["train"]["comp"], 1), hold=round(r["hold"]["comp"], 1),
+            rob_train=round(r["train"]["rob"], 1),
+            rob_hold=round(r["hold"]["rob"], 1),
+            dd=round(max(r["train"]["dd"], r["hold"]["dd"]), 1),
+            real=min(r["train"]["real"]["n"], r["hold"]["real"]["n"]),
+            tiny=round(max(r["train"]["tiny_share"], r["hold"]["tiny_share"])),
+            p=round(max(r["train"]["real"]["p"], r["hold"]["real"]["p"]), 3),
+            name=TIER_NAMES.get(r["tier"], ""))
+    # Режимы с ОДИНАКОВЫМ геномом наследуют уровень друг у друга. При расчёте
+    # дубли схлопываются, и уровень записывается только на один из них: у ETH
+    # final побайтово совпадает с normal, поэтому final остался бы без уровня
+    # и выглядел бы непроверенным, хотя проверен.
+    for sym, modes in config.SYMBOL_PARAMS.items():
+        have = [m for m in modes
+                if isinstance(modes[m], dict) and (sym, m) in out]
+        for mode, prm in modes.items():
+            if not isinstance(prm, dict) or (sym, mode) in out:
+                continue
+            for m in have:
+                if modes[m] == prm:
+                    out[(sym, mode)] = dict(out[(sym, m)], same_as=m)
+                    break
+    return out
+
+
+def passed_bots():
+    """Конфиги, прошедшие честную переоценку: уровень A или B.
+
+    Это НЕ «самые доходные». Уровень A значит «нечему возразить»: держится на
+    обеих половинах, настоящих сделок хватает, просадка в норме. Ни один не
+    значим после поправки на число проверенных, и на витрине это сказано.
+    """
+    out = [b for b in list_bots(("final", "normal", "bear", "turbo"))
+           if b.get("tier") and b["tier"]["tier"] in ("A", "B")]
+    out.sort(key=lambda b: (TIER_RANK[b["tier"]["tier"]],
+                            -b["tier"]["rob_hold"]))
+    return out
+
+
+def failed_bots():
+    """Всё остальное, включая работающее. Прячем с витрины, но не удаляем.
+
+    Спрятать работающего бота нельзя: тогда сайт показывал бы красивую
+    картину, пока в фоне крутится провалившее проверку. Поэтому провалившиеся
+    уходят вниз с честной пометкой, а не исчезают.
+    """
+    out = [b for b in list_bots(("final",))
+           if not (b.get("tier") and b["tier"]["tier"] in ("A", "B"))]
+    out.sort(key=lambda b: TIER_RANK.get(
+        (b.get("tier") or {}).get("tier", "D"), 3))
+    return out
+
+
 def list_bots(modes):
     bots = []
+    tiers = load_tiers()
     for sym, sym_modes in config.SYMBOL_PARAMS.items():
         for mode in modes:
             p = sym_modes.get(mode)
@@ -473,6 +559,7 @@ def list_bots(modes):
                     # именно по ней когда-то выбиралось плечо
                     dd, dd_float = a.get("max_dd"), a.get("max_dd_float")
             bots.append(dict(
+                tier=tiers.get((sym, mode)),
                 symbol=sym, coin=sym.replace("USDT", ""), mode=mode,
                 mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
                 interval=iv, tf_label=("4ч" if iv == "240" else f"{iv}m"),
@@ -529,6 +616,7 @@ def news_panel():
 def index():
     finals = final_bot_list()
     return render_template("index.html", bots=finals, dry_run=config.DRY_RUN,
+                           passed=passed_bots(), failed=failed_bots(),
                            has_final=bool(finals), news=news_panel())
 
 
