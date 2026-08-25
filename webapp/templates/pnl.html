@@ -84,6 +84,18 @@
   </div>
 </div>
 
+<div class="scalebar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px">
+  <button id="btnCommon" class="sbtn on">Общая шкала</button>
+  <button id="btnLegacy" class="sbtn">Прежние кривые</button>
+  <span id="scaleNote" style="color:var(--muted);font-size:12.5px"></span>
+</div>
+<style>
+  .sbtn { background:#1B1E23; color:#9A9DA6; border:1px solid #2A2E35;
+    border-radius:99px; padding:5px 14px; font:600 12.5px/1.4 inherit;
+    cursor:pointer; }
+  .sbtn:hover { color:#E7E5DF; border-color:#3a4049; }
+  .sbtn.on { background:#1d3a2c; color:#46C186; border-color:#2c6b4f; }
+</style>
 <script>
 // Пустой график молчит: библиотека роняет исключение внутри своего цикла
 // перерисовки (requestAnimationFrame), наш try/catch туда не достаёт, и
@@ -141,10 +153,31 @@ const normPoints = pts => {
 };
 const fmtDate = t => new Date(t * 1000).toLocaleDateString("ru");
 
-async function load() {
-  const d = await (await fetch("/api/pnl_curves")).json();
+const SOURCES = {
+  common: { url: "/api/pnl_common",
+    note: "все конфиги на ОДНОМ плече x5, копеечные выходы обнулены — " +
+          "кривые сравнимы между собой. ★ — прошёл честную переоценку." },
+  legacy: { url: "/api/pnl_curves",
+    note: "каждый бот на СВОЁМ плече и вместе с копеечными выходами — " +
+          "числа выше, но между собой несравнимы." },
+};
+let CURRENT = "common";
+
+async function load(which) {
+  which = which || CURRENT;
+  CURRENT = which;
+  document.getElementById("scaleNote").textContent = SOURCES[which].note;
+  document.getElementById("btnCommon").classList.toggle("on", which === "common");
+  document.getElementById("btnLegacy").classList.toggle("on", which === "legacy");
+  const d = await (await fetch(SOURCES[which].url)).json();
   const legend = document.getElementById("legend");
   const tiles = document.getElementById("tiles");
+  // холст и подписи чистятся ПЕРЕД каждой отрисовкой: иначе при переключении
+  // шкалы старые линии остаются под новыми и график показывает обе разом
+  (window.__lines || []).forEach(l => { try { chart.removeSeries(l); } catch (e) {} });
+  window.__lines = [];
+  legend.innerHTML = "";
+  if (tiles) tiles.innerHTML = "";
 
   for (const s of d.series) {
     const isPf = s.group === "portfolio";
@@ -163,6 +196,7 @@ async function load() {
       value: +((p[1] / start - 1) * 100).toFixed(2) }));
     s._start = start;
     s._till = pts.length ? pts[pts.length - 1][0] : null;
+    window.__lines.push(line);
     line.setData(s._usd);
     // точка на конце линии: без неё обрыв кривой (у BTC сделки кончаются
     // раньше всех, у SOL — на сливе) читается как «график не дорисовался»
@@ -266,7 +300,13 @@ async function load() {
 }
 // сорванный запрос к API тоже должен быть виден на странице, а не только
 // в консоли разработчика, куда владелец не заглядывает
-load().catch(e => showChartErr(String(e && e.message || e)));
+load("common").catch(e => showChartErr(String(e && e.message || e)));
+// Кнопки вешаются ОДИН раз и вызывают ту же load с другим источником.
+// Перерисовка чистит холст и легенду, иначе линии двух шкал легли бы вместе.
+document.getElementById("btnCommon").onclick = () =>
+  load("common").catch(e => showChartErr(String(e && e.message || e)));
+document.getElementById("btnLegacy").onclick = () =>
+  load("legacy").catch(e => showChartErr(String(e && e.message || e)));
 </script>
 </body>
 </html>

@@ -166,13 +166,36 @@ def slice_aux(v, a, b):
     return v[a:b]
 
 
+def _run5_takes_storm():
+    """Умеет ли движок этой ветки принимать параметр storm.
+
+    Файл переносится между ветками, а ветки разошлись: на одной run5 знает про
+    storm, на другой нет. Проверять подписью, а не try/except по TypeError:
+    TypeError может прилететь и из глубины прогона, и тогда мы молча
+    пересчитали бы всё без storm, решив, что движок старый.
+    """
+    import inspect
+    try:
+        return "storm" in inspect.signature(e2.run5).parameters
+    except (TypeError, ValueError):                # noqa: BLE001
+        return False
+
+
+_RUN5_STORM = None
+
+
 def run_at(candles, pre, g, filt, lev, storm=None, events=None):
     """Прогон на заданном плече; глобалы e2 восстанавливаются."""
+    global _RUN5_STORM
+    if _RUN5_STORM is None:
+        _RUN5_STORM = _run5_takes_storm()
     old = e2.LEV
     e2.LEV = lev
     try:
-        return e2.run5(candles, pre, g, entry_filter=filt, events=events,
-                       storm=storm)
+        if _RUN5_STORM:
+            return e2.run5(candles, pre, g, entry_filter=filt, events=events,
+                           storm=storm)
+        return e2.run5(candles, pre, g, entry_filter=filt, events=events)
     finally:
         e2.LEV = old
 

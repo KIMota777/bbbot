@@ -1132,6 +1132,22 @@ def api_pnl_curves():
     return jsonify(data)
 
 
+@app.route("/api/pnl_common")
+def api_pnl_common():
+    """Кривые в ОБЩЕЙ шкале: одно плечо x5 у всех, копеечные выходы обнулены.
+
+    Отдельная ручка, а не замена прежней: прежние кривые отвечают на вопрос
+    «сколько бы заработал этот бот на своём плече», эти — на вопрос «какой из
+    конфигов лучше». Смешивать их в одном ответе нельзя, числа несравнимы.
+    """
+    path = os.path.join(FINAL_DATA_DIR, "pnl_common.json")
+    if not os.path.exists(path):
+        return jsonify(dict(series=[], note="не собрано: "
+                                            "python build_pnl_common.py"))
+    with open(path, encoding="utf-8") as fh:
+        return jsonify(json.load(fh))
+
+
 @app.route("/evolution")
 def evolution_page():
     path = os.path.join(FINAL_DATA_DIR, "evolution_timeline.json")
