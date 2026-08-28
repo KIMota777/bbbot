@@ -75,6 +75,39 @@
 <div class="wrap">
   <div>
     <nav><a href="/">← Боты</a><a href="/signals">Сигналы BTC</a><a href="/pnl">PnL-график</a><a href="/evolution">Эволюция</a><a href="/archive">Архив</a><a href="/research">Исследование</a></nav>
+
+  {% if retired %}
+  <div class="banner bad" style="background:#331b1b;border:1px solid #6a2a2a;color:#e08b8b;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:14px">
+    ⛔ <b>Этот конфиг снят с витрины.</b> Уровень {{ retired[0] }}: {{ retired[1] }}.
+    Числа ниже посчитаны на родном плече конфига и вместе с копеечными
+    выходами — они выше того, что даёт общая шкала, и обещанием не являются.
+  </div>
+  {% endif %}
+  {% if tier %}
+  <div style="background:#1B1E23;border:1px solid #2A2E35;border-radius:12px;padding:14px 18px;margin:14px 0">
+    <div style="font-weight:700;margin-bottom:6px">Честная переоценка · общая шкала</div>
+    <div style="color:#9A9DA6;font-size:12.5px;margin-bottom:10px">
+      Все конфиги проекта посчитаны здесь на <b>одном плече x5</b> и на
+      <b>обеих половинах</b> истории, копеечные выходы обнулены. Числа ниже по
+      странице считаны иначе — на родном плече (x{{ lev }}) и вместе с
+      копеечными, — поэтому они выше. Вопросы разные.
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px">
+      <span>уровень <b>{{ tier.tier }}</b> — {{ tier.name }}</span>
+      <span>обучение <b>{{ '%+.1f'|format(tier.train) }}%</b></span>
+      <span>холдоут <b>{{ '%+.1f'|format(tier.hold) }}%</b></span>
+      <span>устойчивость <b>{{ '%+.1f'|format(tier.rob_train) }}%</b> / <b>{{ '%+.1f'|format(tier.rob_hold) }}%</b></span>
+      <span>настоящих сделок <b>{{ tier.real }}</b></span>
+      <span>просадка <b>{{ tier.dd }}%</b></span>
+      <span>значимость <b>p={{ tier.p }}</b></span>
+    </div>
+    <div style="color:#9A9DA6;font-size:12px;margin-top:8px">
+      {{ tier.why }}. Порог значимости с поправкой на число проверенных
+      конфигов — 0.0008, и его не проходит ни один.
+    </div>
+  </div>
+  {% endif %}
+
     <h1>{{ title }}</h1>
     <div class="badges">
       <span class="b ver">волна {{ ver }}</span>

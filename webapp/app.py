@@ -1222,6 +1222,12 @@ def bot_page(symbol, mode):
     an = stats_block(data)
     return render_template(
         "bot.html", symbol=symbol, coin=symbol.replace("USDT", ""),
+        # Уровень общей шкалы и признак отставки. Страница снятого бота
+        # открывается по прямой ссылке, и без пометки она показывала бы старые
+        # числа так, будто бот в строю.
+        tier=load_tiers().get((symbol, mode)),
+        retired=(config.retire_reason(symbol, mode)
+                 if hasattr(config, "retire_reason") else None),
         mode=mode, mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
         interval_min=int(interval),
         tf_label=("4ч" if interval == "240" else f"{interval}m"),

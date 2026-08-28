@@ -199,6 +199,13 @@ def main():
         p = modes.get("final")
         if not p:
             continue
+        # Отставленные конфиги на график не идут. Иначе прежний график
+        # продолжал бы показывать снятых с витрины ботов, а линия портфеля
+        # считалась бы вместе с ними — то есть страница противоречила бы
+        # главной, где этих ботов уже нет.
+        if hasattr(config, "is_retired") and config.is_retired(sym, "final"):
+            print("%s: отставлен, на график не идёт" % sym)
+            continue
         print(f"{sym}: сделки бота (x{p.get('lev', 5)})...")
         st, pnls, meta = bot_pnls(sym, p, pct5)
         print(f"  движок (база $20, без реинвеста): {meta['ret_flat']:+.1f}% | "
