@@ -91,6 +91,8 @@ ARCHIVE_MODES = ("normal", "bear", "turbo")
 # известные монеты/режимы и ключи без разделителей пути. На Windows
 # разделителем считается и обратный слэш, а Flask его в параметре не режет —
 # без проверки /api/analytics/..\..\..\report3y читал бы файл вне webapp/data.
+MODESTATS_DIR = os.path.join(FINAL_DATA_DIR, "modestats")
+
 VALID_MODES = frozenset(
     # Собирается ИЗ КОНФИГА, а не перечисляется руками: иначе каждый
     # новый режим (например с гейтом волатильности) молча получал бы 404
@@ -1519,6 +1521,37 @@ def api_events(symbol):
 
 
 _finalstats_cache = {}
+
+
+@app.route("/api/modestats/<symbol>/<mode>")
+def api_modestats(symbol, mode):
+    """Помесячная и погодовая статистика КОНКРЕТНОГО режима (build_modestats).
+
+    Отдельный маршрут появился после ошибки: /api/finalstats/<монета> имеет
+    ключом только монету, и страницы всех нефинальных режимов показывали
+    цифры финального бота той же монеты как свои. Здесь ключ — монета И
+    режим, поэтому подставить чужое нечем.
+
+    Числа посчитаны тем же способом, что и уровень на карточке: плечо x5,
+    копеечные выходы обнулены, половины истории порознь. Поэтому сумма
+    месяцев обучения совпадает с числом «обучение», а холдоута — с «холдоут».
+    """
+    if not valid_symbol(symbol) or not valid_mode(mode):
+        return jsonify(dict(available=False, error="нет такого бота")), 404
+    path = safe_path(MODESTATS_DIR, f"{symbol}_{mode}.json")
+    if path is None or not os.path.exists(path):
+        # Отсутствие файла — не ошибка сервера, а факт про конфиг: он либо не
+        # выражается нынешним геномом (turbo), либо не дал ни одной сделки.
+        # Страница обязана сказать это словами, а не показать пустоту.
+        return jsonify(dict(available=False,
+                            error="для этого режима разбора нет"))
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except Exception:                              # noqa: BLE001
+        return jsonify(dict(available=False, error="файл разбора повреждён"))
+    d["available"] = True
+    return jsonify(d)
 
 
 @app.route("/api/finalstats/<symbol>")

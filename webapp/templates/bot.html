@@ -69,6 +69,21 @@
   .ruin b { color:#ff6b6b; }
   .b.ruin-b { background:#5a1616; color:#ff8f8f; }
   .b.dd { background:var(--line); color:var(--muted); }
+  /* Столбцы месяцев: нулевая линия посередине, плюс вверх, минус вниз.
+     Обе половины на ОДНОЙ шкале, иначе слабый холдоут выглядел бы как
+     сильный — у него просто свой масштаб. */
+  .msbars { display:flex; align-items:stretch; gap:2px; overflow-x:auto;
+    padding:4px 0 2px; }
+  .msb { flex:0 0 9px; display:flex; flex-direction:column; }
+  .msb-top, .msb-bot { height:48px; display:flex; }
+  .msb-top { align-items:flex-end; border-bottom:1px solid #2A2E35; }
+  .msb-bot { align-items:flex-start; }
+  .msb i { display:block; width:100%; border-radius:2px 2px 0 0; }
+  .msb-bot i { border-radius:0 0 2px 2px; }
+  #ms_years td, #ms_months td, #ms_years th, #ms_months th {
+    padding:4px 10px; text-align:left; font-variant-numeric:tabular-nums; }
+  #ms_years th, #ms_months th { color:#9A9DA6; font-weight:600;
+    border-bottom:1px solid #2A2E35; }
 </style>
 </head>
 <body>
@@ -116,7 +131,7 @@
     </div>
     <div style="color:#9A9DA6;font-size:12px;margin-top:8px">
       {{ tier.why }}. Порог значимости с поправкой на число проверенных
-      конфигов — 0.0008, и его не проходит ни один.
+      конфигов (их 72) — 0.0007, и его не проходит ни один.
     </div>
   </div>
   {% endif %}
@@ -208,16 +223,54 @@
     <div class="kpi" id="an_tiles2" style="margin-top:12px"></div>
   </div>
 
+  <div class="card" id="modestatsCard" style="display:none">
+    <h3>Разбор по месяцам — именно этого режима</h3>
+    <p class="muted" style="margin:-4px 0 12px;font-size:13px;line-height:1.55">
+      Считано так же, как уровень на карточке вверху: <b>плечо x5</b>,
+      <b>копеечные выходы обнулены</b>, обе половины истории <b>порознь</b>,
+      каждая от своих ста процентов. Поэтому сумма месяцев обучения даёт в
+      точности число «обучение», а сумма месяцев холдоута — число «холдоут».
+      <b>Холдоут — проверочная половина</b>, её конфиг не видел при настройке;
+      обучающая половина показывает, как стратегию подгоняли, и сама по себе
+      ничего не доказывает. Если ниже есть ещё блок «Статистика за 3.2 года» —
+      он про другое: там родное плечо конфига и реинвест, и половины не
+      разделены.
+    </p>
+    <div class="kpi" id="ms_tiles"></div>
+
+    <h3 style="margin-top:18px">По месяцам</h3>
+    <div id="ms_bars" class="msbars"></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">
+      Синие столбцы — обучение, жёлтые — холдоут. Наведите на столбец, чтобы
+      увидеть месяц, доход и число настоящих сделок.
+    </div>
+
+    <h3 style="margin-top:18px">По годам</h3>
+    <div style="overflow-x:auto">
+      <table id="ms_years"></table>
+    </div>
+
+    <h3 style="margin-top:18px">Помесячно, таблицей</h3>
+    <div style="overflow-x:auto;max-height:340px;overflow-y:auto">
+      <table id="ms_months"></table>
+    </div>
+  </div>
+
   <div class="card" id="noFinalStats" style="display:none">
-    <h3>Статистики за 3.2 года здесь нет</h3>
+    <h3>Разбора по месяцам для этого режима нет</h3>
     <div class="muted" style="font-size:13px;line-height:1.55">
-      Помесячный и погодовой разбор считается отдельным проходом и только для
-      запущенных финальных ботов. Этот режим не запущен, поэтому такого
-      разбора у него нет. Показывать вместо него цифры финального бота той же
-      монеты было бы подлогом: монета совпадает, конфиг — нет.
-      <br>
-      Что про этот режим известно честно — в карточке «Честная переоценка»
-      вверху страницы и в симуляции за период графика выше.
+      И это не «данные ещё не посчитались», а факт про сам конфиг: его набор
+      параметров <b>старше нынешнего движка</b> и не выражается его геномом,
+      поэтому честно пересчитать режим нечем. Режимы <code>turbo</code> — как
+      раз такие: у них шесть параметров старого поколения
+      (<code>tp_k</code>, <code>stop_k</code>, <code>zone</code>) вместо
+      нынешних, и ни в переоценку, ни в уровни они не входили никогда.
+      <br><br>
+      <b>Что это значит на практике.</b> Числа ниже по странице у такого
+      режима посчитаны старым движком — с завышающими дефектами, которые
+      описаны в оранжевой плашке выше. Относиться к ним как к проверенным
+      нельзя. Показывать вместо них цифры финального бота той же монеты тоже
+      нельзя: монета совпадает, конфиг — нет.
     </div>
   </div>
 
@@ -466,11 +519,69 @@ async function loadFinalStats() {
 // свою: winrate 84.6% и «+56.2% за 3.2 года» относились к другому конфигу.
 // Тот же вид ошибки, что и перенос tierlist.json между ветками, — число
 // выглядит своим, потому что монета совпала.
+// Честный разбор по месяцам грузится ВСЕГДА — он посчитан для каждого режима
+// отдельно и на общем плече x5, поэтому режимы им сравнимы. У финальных
+// вдобавок есть старая карточка «за 3.2 года»: другая база (родное плечо,
+// реинвест), другой вопрос, и на странице сказано какой.
+loadModeStats();
 if (MODE === "final") {
   loadFinalStats();
-} else {
-  const box = document.getElementById("noFinalStats");
-  if (box) box.style.display = "";
+}
+
+// Разбор по месяцам для НЕфинальных режимов. Ключ маршрута — монета И режим,
+// поэтому подставить сюда чужие числа нечем: именно на этом обжёгся
+// /api/finalstats, у которого ключ только монета.
+async function loadModeStats() {
+  let d;
+  try { d = await (await fetch(`/api/modestats/${SYM}/${MODE}`)).json(); }
+  catch (e) { d = { available: false }; }
+  if (!d || !d.available) {
+    const box = document.getElementById("noFinalStats");
+    if (box) box.style.display = "";
+    return;
+  }
+  document.getElementById("modestatsCard").style.display = "";
+  const sign = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+  const cls = v => (v >= 0 ? "pnl-pos" : "pnl-neg");
+  const halves = [["train", "обучение", "#5b8def"], ["hold", "холдоут", "#e0a63f"]];
+
+  // плитки: итог и просадка каждой половины отдельно, без общего числа —
+  // складывать половины в одно значение здесь было бы ровно тем смешением
+  // подогнанного с проверочным, ради которого весь раздел и заведён
+  document.getElementById("ms_tiles").innerHTML = halves.map(([k, name]) => {
+    const h = d[k];
+    if (!h) return "";
+    return `<div><b class="${cls(h.ret)}">${sign(h.ret)}</b><span>${name}, итог</span></div>
+            <div><b>${h.dd.toFixed(1)}%</b><span>${name}, просадка</span></div>
+            <div><b>${h.wr === null ? "–" : h.wr + "%"}</b><span>${name}, winrate</span></div>
+            <div><b>${h.trades}</b><span>${name}, сделок</span></div>`;
+  }).join("");
+
+  // столбцы по месяцам, общая шкала на обе половины
+  const all = [];
+  halves.forEach(([k, name, color]) => (d[k] ? d[k].months : []).forEach(
+    m => all.push(Object.assign({ half: name, color }, m))));
+  const peak = Math.max(1, ...all.map(m => Math.abs(m.ret)));
+  document.getElementById("ms_bars").innerHTML = all.map(m => {
+    const hgt = Math.max(2, Math.round(46 * Math.abs(m.ret) / peak));
+    const up = m.ret >= 0;
+    return `<div class="msb" title="${m.period} · ${m.half} · ${sign(m.ret)} · сделок ${m.trades}">
+      <div class="msb-top">${up ? `<i style="height:${hgt}px;background:${m.color}"></i>` : ""}</div>
+      <div class="msb-bot">${up ? "" : `<i style="height:${hgt}px;background:${m.color};opacity:.55"></i>`}</div>
+    </div>`;
+  }).join("");
+
+  const rows = (list, half) => list.map(r => `<tr>
+    <td>${r.period}</td><td class="muted">${half}</td>
+    <td class="${cls(r.ret)}">${sign(r.ret)}</td>
+    <td>${r.trades}</td><td>${r.wr === null ? "–" : r.wr + "%"}</td>
+    <td class="muted">${r.tiny}</td></tr>`).join("");
+  const head = `<tr><th>Период</th><th>Половина</th><th>Доход</th>
+    <th>Сделок</th><th>WR</th><th>Копеечных</th></tr>`;
+  document.getElementById("ms_years").innerHTML = head +
+    halves.map(([k, name]) => rows(d[k] ? d[k].years : [], name)).join("");
+  document.getElementById("ms_months").innerHTML = head +
+    halves.map(([k, name]) => rows(d[k] ? d[k].months : [], name)).join("");
 }
 
 // Библиотеке графиков нужны строго возрастающие отметки времени: пара точек с

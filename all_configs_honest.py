@@ -107,6 +107,26 @@ def collect():
             out.append(dict(src=f.replace(".json", ""), tag="волна",
                             sym=sym, g=with_defaults(g),
                             own_lev=v.get("rec_lev", v.get("lev", 5))))
+    # Геномы из других веток репозитория (branch_configs.py). Конфиг с тем же
+    # именем в другой ветке бывает другим геномом — у LTC/final в main
+    # отличаются тридцать четыре параметра, — и без этого он не проверялся бы
+    # вовсе. В config.py их класть нельзя: туда попадает всё запускаемое.
+    if os.path.exists("branch_genomes.json"):
+        try:
+            d = json.load(open("branch_genomes.json", encoding="utf-8"))
+        except Exception:                          # noqa: BLE001
+            d = {}
+        for _key, v in (d.items() if isinstance(d, dict) else []):
+            g = v.get("genome")
+            if not isinstance(g, dict) or "rsi_os" not in g:
+                continue
+            sym = str(v.get("symbol", ""))
+            if not sym.endswith("USDT"):
+                continue
+            out.append(dict(src="ветка " + str(v.get("branch", "?")),
+                            tag=str(v.get("mode", "?")), sym=sym,
+                            g=with_defaults(g), own_lev=v.get("lev", 5)))
+
     # Схлопываем одинаковые геномы: волны часто переносят конфиг без изменений,
     # и без этого один и тот же бот занял бы полтаблицы, создавая видимость
     # согласия там, где это одна и та же запись.
