@@ -17,6 +17,7 @@ Kill switch: MAX_CONSEC_LOSSES убыточных циклов подряд -> �
 В DRY_RUN бот ведёт виртуальную позицию по тем же правилам и пишет лог.
 """
 
+import math
 import json
 import logging
 import os
@@ -356,6 +357,18 @@ class RsiGridBot:
         # По умолчанию включён у режима "bear" ради обратной совместимости
         # со старыми архивными bear-ботами, которые гейтили снаружи генома.
         self.regime_gate = self.p.get("regime_gate", 1 if mode == "bear" else 0)
+        # Гейт по собственной волатильности. 0 = ВЫКЛЮЧЕН, и тогда поведение
+        # бота не меняется ни на бит — та же договорённость, что у OFF7/OFF8.
+        # Значение 0.5 означает «торговать только когда текущая волатильность
+        # не ниже медианы своих последних VOL_GATE_LOOK баров».
+        #
+        # Зачем: проверка на 15 конфигах показала, что такой запрет надёжно
+        # снижает просадку (12 улучшений из 15, знаковый критерий p=0.018), но
+        # НЕ добавляет дохода (8 из 15 — монетка). Это инструмент управления
+        # риском, а не источник прибыли, и включать его надо с этим пониманием.
+        self.vol_gate = float(self.p.get("vol_gate", 0.0))
+        self.vol_gate_look = int(self.p.get("vol_gate_look", 500))
+        self.vol_gate_win = int(self.p.get("vol_gate_win", 96))
         # фильтр графических паттернов: 0=выкл, 1=требовать совпадение,
         # 2=запрещать только явное противоречие (мягкий вариант)
         self.pattern_gate = self.p.get("pattern_gate", 0)
@@ -795,8 +808,52 @@ class RsiGridBot:
         self._regime_cache = (day, regime)
         return regime
 
+    def vol_rank(self, cs):
+        """Место текущей волатильности среди своих последних баров, 0..1.
+
+        Считается ТОЛЬКО по закрытым барам: cs[-1] — последняя закрытая свеча.
+        Перцентиль, а не абсолютное значение, потому что абсолютная
+        волатильность несравнима между монетами и между эпохами: 2% в день у
+        DOGE и у BTC значат разное, и 2% в 2023 и в 2026 тоже.
+
+        None, если баров не хватает — тогда гейт не применяется. Отсутствие
+        данных не повод запрещать вход: запрет по незнанию вырезал бы начало
+        каждой сессии.
+        """
+        need = self.vol_gate_look + self.vol_gate_win + 2
+        if len(cs) < need:
+            return None
+        closes = [float(c[4]) for c in cs[-need:]]
+        rets = []
+        for i in range(1, len(closes)):
+            a, b = closes[i - 1], closes[i]
+            if a > 0 and b > 0:
+                rets.append(math.log(b / a))
+            else:
+                rets.append(0.0)
+        w = self.vol_gate_win
+        if len(rets) < w + self.vol_gate_look:
+            return None
+        vols = []
+        for i in range(w, len(rets) + 1):
+            seg = rets[i - w:i]
+            vols.append(math.sqrt(sum(x * x for x in seg) / w))
+        if len(vols) < 2:
+            return None
+        cur = vols[-1]
+        hist = vols[-(self.vol_gate_look + 1):]
+        return sum(1 for v in hist if v <= cur) / float(len(hist))
+
     def entry_allowed(self, side, cs):
         """Внешние фильтры входа. True = вход разрешён."""
+        # Гейт по волатильности — до всех сетевых запросов: если вход и так
+        # запрещён, дёргать биржу за funding и OI незачем.
+        if self.vol_gate > 0:
+            vr = self.vol_rank(cs)
+            if vr is not None and vr < self.vol_gate:
+                self.log.info("Гейт волатильности: %.2f < %.2f — вход отменён",
+                              vr, self.vol_gate)
+                return False
         if self.adx_gate:
             adx = indicators.calc_adx(cs[-(4 * self.adx_n + 20):], self.adx_n)[-1]
             if adx is not None and adx > self.adx_max:

@@ -80,8 +80,13 @@ def collect():
                 g = e7.cfg_to_genome(p, mode)
             except Exception:                      # noqa: BLE001
                 continue
+            gg = with_defaults(g)
+            # Порог гейта едет ВМЕСТЕ с геномом: иначе конфиг с гейтом
+            # оценивался бы так, будто гейта нет, и уровень был бы не его.
+            if p.get("vol_gate"):
+                gg["vol_gate"] = float(p["vol_gate"])
             out.append(dict(src="config.py", tag=mode, sym=sym,
-                            g=with_defaults(g), own_lev=p.get("lev", 5)))
+                            g=gg, own_lev=p.get("lev", 5)))
     for f in sorted(glob.glob("evolution*_winners.json") +
                     glob.glob("evolution*_final.json")):
         try:
@@ -117,6 +122,24 @@ def collect():
     return uniq
 
 
+def _gate_filter(filt, reg, thr):
+    """Тот же запрет, что и в боевом боте: не входить в штиле.
+
+    Определение гейта одно на два пути — бэктест и живая торговля. Если
+    завести второе, они разойдутся, и уровень на витрине перестанет
+    соответствовать поведению бота.
+    """
+    def f(side, i):
+        s_ = filt(side, i) if filt else side
+        if s_ is None:
+            return None
+        v = reg["volrank"][i] if i < len(reg["volrank"]) else float("nan")
+        if v == v and v < thr:          # NaN != NaN: нет данных -> не мешаем
+            return None
+        return s_
+    return f
+
+
 def halves(sym, g, pct5):
     """Обе половины истории с готовыми фильтрами. Раскол — как у bots_honest."""
     candles = ev.fetch(sym, "15", bh.DAYS)
@@ -126,11 +149,16 @@ def halves(sym, g, pct5):
     out = {}
     for name, a, b in (("train", 0, h), ("hold", h, n)):
         c = candles[a:b]
+        filt = e8.make_filter8(
+            g, dict((k, bh.slice_aux(v, a, b)) for k, v in aux.items()))
+        thr = float(g.get("vol_gate", 0.0) or 0.0)
+        if thr > 0:
+            import adaptive_ltc as _al
+            filt = _gate_filter(filt, _al.regimes(c), thr)
         out[name] = dict(
             candles=c, pre=e2.prep(c),
             months=(c[-1][0] - c[0][0]) / (30 * 86400000),
-            filt=e8.make_filter8(
-                g, dict((k, bh.slice_aux(v, a, b)) for k, v in aux.items())))
+            filt=filt)
     return out
 
 

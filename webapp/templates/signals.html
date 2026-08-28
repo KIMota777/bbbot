@@ -53,6 +53,13 @@
   tr:last-child td { border-bottom:none; }
   .pos { color:var(--up); } .neg { color:var(--down); }
   h2 { font-size:16px; margin:8px 0 0; }
+  .fold { margin: 0 0 18px; }
+  .fold > summary { cursor: pointer; color: var(--muted); font-size: 13.5px;
+    font-weight: 600; padding: 9px 0; list-style: none; }
+  .fold > summary::-webkit-details-marker { display: none; }
+  .fold > summary::before { content: "▸ "; }
+  .fold[open] > summary::before { content: "▾ "; }
+  .fold > summary:hover { color: var(--ink); }
 </style>
 </head>
 <body>
@@ -75,6 +82,13 @@
     историческая картина отбора, а не рабочие стратегии.</div>
   {% endif %}
 
+  {% if none_passed %}
+  {# Карточки провалившихся убраны с витрины, но НЕ удалены: разбор того,
+     почему сетап отбраковали, полезнее пустой страницы. Свёрнуты, чтобы
+     страница не выглядела списком рабочих стратегий, которых нет. #}
+  <details class="fold">
+    <summary>Показать разбор {{ setups|length }} отбракованных сетапов</summary>
+  {% endif %}
   <div class="grid">
     {% for name, rec in setups.items() %}
     {% set act = active.get(name) %}
@@ -127,6 +141,7 @@
     </div>
     {% endfor %}
   </div>
+  {% if none_passed %}</details>{% endif %}
 
   {% if not setups %}
   {# причину подставляет app.py: «файла нет вовсе» и «файл повреждён» —

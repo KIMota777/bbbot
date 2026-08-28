@@ -67,7 +67,10 @@ def bybit():
 
 
 MODE_NAMES = {"normal": "Обычный", "turbo": "Турбо", "bear": "Медвежий",
-              "final": "Финальный"}
+              "final": "Финальный",
+    "normal_g": "обычный + гейт",
+    "final_g": "финальный + гейт",
+}
 ARCHIVE_MODES = ("normal", "bear", "turbo")
 
 # --- проверка параметров маршрутов ---
@@ -75,7 +78,13 @@ ARCHIVE_MODES = ("normal", "bear", "turbo")
 # известные монеты/режимы и ключи без разделителей пути. На Windows
 # разделителем считается и обратный слэш, а Flask его в параметре не режет —
 # без проверки /api/analytics/..\..\..\report3y читал бы файл вне webapp/data.
-VALID_MODES = frozenset(MODE_NAMES)
+VALID_MODES = frozenset(
+    # Собирается ИЗ КОНФИГА, а не перечисляется руками: иначе каждый
+    # новый режим (например с гейтом волатильности) молча получал бы 404
+    # на свои свечи, а страница при этом открывалась бы — график пустой,
+    # причина не видна.
+    m for modes in config.SYMBOL_PARAMS.values() for m in modes
+    if isinstance(modes[m], dict))
 RE_KEY = re.compile(r"^[A-Za-z0-9_]{1,64}$")
 
 
@@ -508,6 +517,22 @@ def passed_bots():
     return out
 
 
+def gated_bots():
+    """Конфиги с включённым гейтом волатильности — новые.
+
+    Показываются отдельно: это не «лучшие», а те, у кого гейт заметно снизил
+    просадку. Уровень у них свой и на витрине виден как есть.
+    """
+    return [b for b in list_bots(("normal_g", "final_g", "bear_g"))
+            if b.get("gated")]
+
+
+def retired_running():
+    """Отставленные конфиги, которые ВСЁ ЕЩЁ запущены. Пустой список — норма."""
+    return [b for b in list_bots(("final",), include_retired=True)
+            if b.get("retired") and b.get("active")]
+
+
 def failed_bots():
     """Всё остальное, включая работающее. Прячем с витрины, но не удаляем.
 
@@ -522,13 +547,22 @@ def failed_bots():
     return out
 
 
-def list_bots(modes):
+def list_bots(modes, include_retired=False):
+    """Боты для витрины. Отставленные по умолчанию не выдаются.
+
+    include_retired=True нужен одному месту — предупреждению «отставлен, но
+    запущен»: скрыть работающего бота нельзя, иначе сайт покажет чистую
+    картину при работающем в фоне провалившем проверку.
+    """
     bots = []
     tiers = load_tiers()
     for sym, sym_modes in config.SYMBOL_PARAMS.items():
         for mode in modes:
             p = sym_modes.get(mode)
             if not p:
+                continue
+            retired = config.retire_reason(sym, mode)                 if hasattr(config, "retire_reason") else None
+            if retired and not include_retired:
                 continue
             meta = META.get((sym, mode), {})
             log_file = os.path.join(BOT_DIR, f"bot_{sym}_{mode}.log")
@@ -560,6 +594,8 @@ def list_bots(modes):
                     dd, dd_float = a.get("max_dd"), a.get("max_dd_float")
             bots.append(dict(
                 tier=tiers.get((sym, mode)),
+                retired=retired,
+                gated=bool(p.get("vol_gate")),
                 symbol=sym, coin=sym.replace("USDT", ""), mode=mode,
                 mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
                 interval=iv, tf_label=("4ч" if iv == "240" else f"{iv}m"),
@@ -617,6 +653,7 @@ def index():
     finals = final_bot_list()
     return render_template("index.html", bots=finals, dry_run=config.DRY_RUN,
                            passed=passed_bots(), failed=failed_bots(),
+                           gated=gated_bots(), retired_live=retired_running(),
                            has_final=bool(finals), news=news_panel())
 
 
