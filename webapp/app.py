@@ -1229,6 +1229,14 @@ def evolution_page():
 def bot_page(symbol, mode):
     p = config.SYMBOL_PARAMS.get(symbol, {}).get(mode)
     if not p:
+        # Режим, вынесенный из рабочих конфигов, отвечает объяснением, а не
+        # голым 404: по старой ссылке человек должен узнать, куда делся бот и
+        # почему, иначе исчезновение выглядит как поломка сайта.
+        legacy = getattr(config, "LEGACY_UNVERIFIABLE", {}).get((symbol, mode))
+        if legacy:
+            return render_template("gone.html", symbol=symbol,
+                                   coin=symbol.replace("USDT", ""),
+                                   mode=mode, prm=legacy), 410
         return "Нет такого бота", 404
     meta = META.get((symbol, mode), {})
     interval = p.get("interval", "15")

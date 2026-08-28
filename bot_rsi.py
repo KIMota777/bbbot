@@ -2095,7 +2095,31 @@ def main():
         mode = "final" if available.get("final") else "normal"
     if not available.get(mode):
         opts = ", ".join(k for k, v in available.items() if v)
-        raise SystemExit(f"Режим '{mode}' недоступен для {sym}. Доступно: {opts}")
+        extra = ""
+        if (sym, mode) in getattr(config, "LEGACY_UNVERIFIABLE", {}):
+            extra = (
+                f"\n'{mode}' вынесен из рабочих конфигов: он описан "
+                f"набором параметров старого поколения, который нынешний "
+                f"движок не принимает, поэтому проверить его нечем. "
+                f"Сохранён в config.LEGACY_UNVERIFIABLE.")
+        raise SystemExit(
+            f"Режим '{mode}' недоступен для {sym}. Доступно: {opts}{extra}")
+
+    # ОТСТАВЛЕННЫЙ КОНФИГ НЕ СТАРТУЕТ БЕЗ ЯВНОГО СОГЛАСИЯ.
+    # Раньше витрина писала «снят с витрины», а бот на том же конфиге спокойно
+    # запускался: пометка жила только на сайте. Теперь она означает то, что
+    # написано. Запрет снимается флагом --run-retired — это не защита от
+    # владельца, а защита от того, чтобы отставленный конфиг попал в торговлю
+    # случайно, по строке из старой шпаргалки.
+    reason = (config.retire_reason(sym, mode)
+              if hasattr(config, "retire_reason") else None)
+    if reason and "--run-retired" not in sys.argv:
+        raise SystemExit(
+            f"Конфиг {sym}/{mode} отставлен (уровень {reason[0]}): "
+            f"{reason[1]}.\n"
+            f"Он не прошёл честную переоценку и убран с витрины. Если "
+            f"запуск всё-таки нужен, добавьте --run-retired.")
+
     bot = RsiGridBot(sym, mode)
     try:
         bot.run()

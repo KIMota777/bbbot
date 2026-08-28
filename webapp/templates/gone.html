@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ coin }} — режим {{ mode }} вынесен</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ctext y=%2714%27 font-size=%2714%27%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E">
+<style>
+  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
+    --accent:#E3A83E; --line:#2A2E35; }
+  body { background:var(--bg); color:var(--ink); margin:0;
+    font:15px/1.6 "Segoe UI", system-ui, sans-serif; padding:32px 18px 60px; }
+  .wrap { max-width:760px; margin:0 auto; }
+  a { color:var(--accent); }
+  h1 { font-size:26px; margin:0 0 6px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line);
+    border-radius:12px; padding:18px 20px; margin:0 0 14px; }
+  .warn { border-color:#b96911; color:#e0923f; }
+  table { border-collapse:collapse; width:100%; margin-top:8px; }
+  td, th { padding:4px 10px; text-align:left; border-bottom:1px solid var(--line);
+    font-variant-numeric:tabular-nums; }
+  th { color:var(--muted); font-weight:600; }
+  code { background:#22262c; padding:1px 5px; border-radius:4px; font-size:13px; }
+  nav { margin-bottom:18px; }
+  nav a { margin-right:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/">← Боты</a><a href="/archive">Архив</a><a href="/pnl">PnL-график</a></nav>
+
+  <h1>{{ coin }}/USDT · режим {{ mode }} — вынесен из проекта</h1>
+  <p class="sub">Страница осталась, чтобы старая ссылка отвечала объяснением,
+    а не пустотой.</p>
+
+  <div class="card warn">
+    ⚠ <b>Этот режим не проходил честную переоценку ни разу — и не мог.</b>
+    Он описан набором параметров старого поколения
+    (<code>tp_k</code>, <code>stop_k</code>, <code>zone</code>) вместо
+    нынешнего генома, и сегодняшний движок такого набора не принимает:
+    перевод падает с <code>KeyError('step')</code>. Поэтому в таблицу уровней
+    он не входил и в число проверенных конфигов не считался.
+  </div>
+
+  <div class="card">
+    <b>Почему вынесен, а не просто помечен.</b> Отставленный конфиг остаётся
+    запускаемым, и для тех, кто провалил проверку, это правильно: про них есть
+    числа, решение остаётся за владельцем. Про этот режим чисел нет вообще, а
+    плечо у него <b>x{{ prm.get('lev', '?') }}</b> — вчетверо выше всего, что
+    проверялось. Предлагать запуск того, о чём нечего сказать, нельзя.
+    <br><br>
+    Конфиг сохранён целиком в <code>config.LEGACY_UNVERIFIABLE</code> и
+    вернётся, если появится способ выразить его геномом. Запуск
+    <code>python bot_rsi.py {{ coin }} {{ mode }}</code> теперь отвечает
+    отказом с этим же объяснением.
+  </div>
+
+  <div class="card">
+    <b>Сохранённые параметры</b>
+    <table>
+      <tr><th>Параметр</th><th>Значение</th></tr>
+      {% for k, v in prm.items() %}
+      <tr><td><code>{{ k }}</code></td><td>{{ v }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    Что проверено и осталось — на <a href="/">главной</a>. Почему числа старого
+    движка нельзя читать как проверенные — в <a href="/archive">архиве</a>.
+  </div>
+</div>
+</body>
+</html>
