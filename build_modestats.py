@@ -52,6 +52,41 @@ def year_key(ts):
     return "%04d" % d.year
 
 
+def half_events(evs, candles):
+    """События входа и выхода в том же виде, что отдаёт /api/events.
+
+    ЗАЧЕМ ОТДЕЛЬНО. На графике бота маркеры сделок берутся из симуляции на
+    лету, а она считает только последние 130 дней (webapp/app.py, RAW_DAYS).
+    Для LTC/final_w это 15 сделок из 289 — на холсте видно 5% работы бота, и
+    выглядит это так, будто он почти не торгует. Полная история до сих пор
+    существовала только для финальных ботов и лежала в bot_events_<МОНЕТА>.json,
+    то есть С КЛЮЧОМ ПО МОНЕТЕ, без режима.
+
+    Здесь события считаются ТЕМ ЖЕ прогоном, что и месячная статистика, значит
+    маркеры на графике и числа на карточке приходят из одного расчёта и не
+    могут разойтись.
+
+    Время приводится к секундам: библиотека графика ждёт секунды, а движок
+    отдаёт миллисекунды.
+    """
+    out = []
+    for e in evs:
+        if e["type"] not in ("entry", "close", "add"):
+            continue
+        t = int(e["t"])
+        t = t // 1000 if t > 1e11 else t
+        pnl = e.get("pnl")
+        row = dict(t=t, type=e["type"], side=e.get("side"))
+        if pnl is not None:
+            # копеечные помечаем, а не выбрасываем: на графике они должны быть
+            # видны как «сделка была, результата нет», иначе картина торговли
+            # окажется чище, чем на самом деле
+            row["pnl"] = 0.0 if bh.is_tiny(pnl) else round(float(pnl), 4)
+            row["tiny"] = bool(bh.is_tiny(pnl))
+        out.append(row)
+    return out
+
+
 def half_stats(part, g, lev):
     """Разбор одной половины: месяцы, годы, итог, просадка, винрейт.
 
@@ -65,6 +100,7 @@ def half_stats(part, g, lev):
     closes = [e for e in evs if e["type"] == "close" and e["pnl"] is not None]
     if not closes:
         return None
+    events = half_events(evs, part["candles"])
 
     months, years = {}, {}
     bal = e2.START
@@ -107,6 +143,7 @@ def half_stats(part, g, lev):
         return out
 
     return dict(
+        events=events,
         ret=round(100.0 * (bal - e2.START) / e2.START, 2),
         dd=round(100.0 * dd, 2),
         trades=n_real, tiny=n_tiny,

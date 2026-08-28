@@ -329,6 +329,15 @@
 
 <script>
 const SYM = "{{ symbol }}", MODE = "{{ mode }}";
+
+// Один запрос на двоих: маркеры на графике и блок помесячной статистики
+// приходят из одного и того же ответа. Иначе страница дважды считала бы одно
+// и то же и могла бы показать две версии одних чисел.
+const MODESTATS = (async () => {
+  try { return await (await fetch(`/api/modestats/${SYM}/${MODE}`)).json(); }
+  catch (e) { return { available: false }; }
+})();
+
 const el = document.getElementById("chart");
 const chart = LightweightCharts.createChart(el, {
   layout: { background: { color: "#1B1E23" }, textColor: "#9A9DA6" },
@@ -362,15 +371,27 @@ async function load() {
 
   const tr = await (await fetch(`/api/trades/${SYM}/${MODE}`)).json();
   const sim = await (await fetch(`/api/sim/${SYM}/${MODE}`)).json();
-  // Сделки за ВСЮ историю (предпосчёт). Симуляция на лету покрывает только
-  // последние ~130 дней, и на двухлетнем графике её маркеров почти нет.
-  // Полная история есть только у финальных ботов — у архивных режимов её
-  // никто не считал, там остаётся симуляция.
+  // Сделки за ВСЮ историю. Симуляция на лету покрывает только последние ~130
+  // дней: у LTC/final_w это 15 сделок из 289, то есть на холсте было видно 5%
+  // работы бота, и он выглядел почти не торгующим.
+  //
+  // Полная история берётся из /api/modestats/<монета>/<режим> — она посчитана
+  // ТЕМ ЖЕ прогоном, что и числа на карточке уровня, поэтому маркеры и цифры
+  // не могут разойтись. Раньше история существовала только для финальных
+  // ботов и лежала в bot_events_<МОНЕТА>.json, то есть с ключом по монете БЕЗ
+  // режима — новым конфигам она не подходила и по смыслу, и по данным.
   let hist = { events: [] };
-  if (MODE === "final") {
-    try { hist = await (await fetch(`/api/events/${SYM}`)).json(); }
-    catch (e) { hist = { events: [] }; }
-  }
+  try {
+    const ms = await MODESTATS;
+    if (ms && ms.available) {
+      const evs = [].concat((ms.train && ms.train.events) || [],
+                            (ms.hold && ms.hold.events) || []);
+      // trades — число ЗАКРЫТИЙ, а не всех событий: входы и докупки сеткой
+      // тоже события, и без этого «всего сделок» было бы втрое больше правды
+      hist = { events: evs,
+               trades: evs.filter(e => e.type === "close").length };
+    }
+  } catch (e) { hist = { events: [] }; }
   const minT = candles[0].time;
   // время маркера = время ЕГО свечи на ТЕКУЩЕМ таймфрейме: иначе на крупных
   // барах сделки легли бы между свечами и библиотека их не показала бы
@@ -398,15 +419,29 @@ async function load() {
   // последние месяцы. Смешивать нельзя — на пересечении периодов сделки
   // задвоятся.
   const back = (hist.events && hist.events.length) ? hist.events : sim.events;
-  for (const e of back) { const t = snap(e.t); if (t >= minT) pushEv(t, e, false); }
+  // Закрытия считаем отдельно от всех отметок: входы и докупки сеткой тоже
+  // отметки, и «видно 40 из 289» с ними означало бы не то, что написано.
+  let shownCloses = 0;
+  for (const e of back) {
+    const t = snap(e.t);
+    if (t < minT) continue;
+    if (e.type === "close") shownCloses++;
+    pushEv(t, e, false);
+  }
   for (const e of tr.events) { const t = snap(e.time); if (t >= minT) pushEv(t, e, true); }
   markers.sort((a, b) => a.time - b.time);
   series.setMarkers(markers);
-  const shown = markers.length;
   const note = document.getElementById("mkNote");
   if (note) {
+    // Прямо говорим, сколько сделок НЕ поместилось в окно и что с этим
+    // делать. Раньше на 15м было видно 15 сделок из 289, и бот выглядел почти
+    // не торгующим — причина была не в боте, а в ширине окна графика.
+    const miss = Math.max(0, hist.trades - shownCloses);
     note.textContent = hist.trades
-      ? `· на графике ${shown} отметок; всего у бота ${hist.trades} сделок за 3.2 года`
+      ? `· на этом окне видно ${shownCloses} закрытий из ${hist.trades} за всю историю`
+        + (miss && TF !== "240"
+           ? ` — остальные ${miss} вне окна, переключите таймфрейм на 4ч — там окно 1170 дней и видна вся история`
+           : miss ? ` — остальные ${miss} раньше начала окна` : "")
       : "";
   }
 
@@ -532,9 +567,7 @@ if (MODE === "final") {
 // поэтому подставить сюда чужие числа нечем: именно на этом обжёгся
 // /api/finalstats, у которого ключ только монета.
 async function loadModeStats() {
-  let d;
-  try { d = await (await fetch(`/api/modestats/${SYM}/${MODE}`)).json(); }
-  catch (e) { d = { available: false }; }
+  const d = await MODESTATS;
   if (!d || !d.available) {
     const box = document.getElementById("noFinalStats");
     if (box) box.style.display = "";
