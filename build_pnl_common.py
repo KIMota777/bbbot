@@ -30,6 +30,8 @@ import argparse
 import json
 import os
 
+import adaptive_ltc as _al
+import all_configs_honest as ach
 import bots_honest as bh
 import config
 import evolution as ev
@@ -96,6 +98,13 @@ def run_halves(sym, g, lev, pct5):
         c = candles[a:b]
         filt = e8.make_filter8(
             g, dict((k, bh.slice_aux(v, a, b)) for k, v in aux.items()))
+        # Гейт применяется ТЕМ ЖЕ определением, что и в оценке и в боевом боте.
+        # Без этого конфиг с гейтом рисовался бы кривой конфига БЕЗ гейта — и
+        # график молча показывал бы не то, что подписано. Так и случилось при
+        # первой сборке: LTC final_g совпал с LTC final до последней точки.
+        thr = float(g.get("vol_gate", 0.0) or 0.0)
+        if thr > 0:
+            filt = ach._gate_filter(filt, _al.regimes(c), thr)
         evs = []
         bh.run_at(c, e2.prep(c), g, filt, lev, events=evs)
         out.append(evs)
@@ -155,34 +164,57 @@ def main():
     import evolution7 as _e7
     wanted = []
     seen_g = set()
+
+    def _add(sym, mode, prm, kind, src="config.py"):
+        """Добавить конфиг на график, если такой кривой ещё нет.
+
+        Отсев по геному, а не по имени: у разных режимов геном бывает
+        побайтово одинаковым, и тогда на холсте появились бы две линии там,
+        где стратегия одна.
+        """
+        try:
+            g = with_defaults(_e7.cfg_to_genome(prm, mode))
+        except Exception:                          # noqa: BLE001
+            return
+        if prm.get("vol_gate"):
+            g["vol_gate"] = float(prm["vol_gate"])
+        key = json.dumps(g, sort_keys=True, default=str)
+        if key in seen_g:
+            return
+        seen_g.add(key)
+        star = "" if kind == "работает" else " ★"
+        wanted.append(dict(sym=sym, mode=mode, src=src, g=g, kind=kind,
+                           label="%s · %s%s" % (sym.replace("USDT", ""),
+                                                mode, star)))
+
+    # На график идут запущенные (final) И новые конфиги с гейтом. Отставленные
+    # не идут: витрина их не предлагает, и на графике им тоже нечего делать.
     for sym, modes in config.SYMBOL_PARAMS.items():
-        if not isinstance(modes.get("final"), dict):
-            continue
-        g0 = with_defaults(_e7.cfg_to_genome(modes["final"], "final"))
-        # геном запущенного кладём в отсев СРАЗУ: иначе победитель волны с тем
-        # же геномом нарисуется второй линией поверх первой, и график покажет
-        # две стратегии там, где она одна
-        seen_g.add(json.dumps(g0, sort_keys=True, default=str))
-        wanted.append(dict(sym=sym, label="%s · final" % sym.replace("USDT", ""),
-                           g=g0, mode="final", src="config.py",
-                           kind="работает"))
+        for mode in ("final", "normal_g", "final_g"):
+            prm = modes.get(mode)
+            if not isinstance(prm, dict):
+                continue
+            if hasattr(config, "is_retired") and config.is_retired(sym, mode):
+                continue
+            _add(sym, mode, prm,
+                 "работает" if mode == "final" else "с гейтом")
+
+    # плюс победители волн, прошедшие переоценку
     for rec in ach.collect():
-        key = (rec["sym"], rec["src"], rec["tag"])
-        if tier_full.get(key) not in ("A", "B"):
+        if tier_full.get((rec["sym"], rec["src"], rec["tag"])) not in ("A", "B"):
             continue
-        gk = json.dumps(with_defaults(rec["g"]), sort_keys=True, default=str)
-        if gk in seen_g:
-            continue                       # одинаковые геномы рисовать дважды незачем
-        seen_g.add(gk)
-        if rec["src"] == "config.py" and rec["tag"] == "final":
-            continue                       # уже взят как запущенный
+        if rec["src"] == "config.py":
+            continue
+        key = json.dumps(with_defaults(rec["g"]), sort_keys=True, default=str)
+        if key in seen_g:
+            continue
+        seen_g.add(key)
         wanted.append(dict(
-            sym=rec["sym"], mode=rec["tag"], src=rec["src"], g=rec["g"],
+            sym=rec["sym"], mode=rec["tag"], src=rec["src"],
+            g=with_defaults(rec["g"]), kind="прошёл проверку",
             label="%s · %s ★" % (rec["sym"].replace("USDT", ""),
                                  rec["src"].replace("_winners", "")
-                                 .replace("_final", "")
-                                 if rec["src"] != "config.py" else rec["tag"]),
-            kind="прошёл проверку"))
+                                 .replace("_final", ""))))
 
     series, hold_ts, first_ts = [], None, None
     for w in wanted:
