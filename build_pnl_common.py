@@ -187,17 +187,20 @@ def main():
                            label="%s · %s%s" % (sym.replace("USDT", ""),
                                                 mode, star)))
 
-    # На график идут запущенные (final) И новые конфиги с гейтом. Отставленные
-    # не идут: витрина их не предлагает, и на графике им тоже нечего делать.
+    # На график идут запущенные (final), конфиги с гейтом и конфиги с
+    # раздвинутыми уровнями. Отставленные не идут: витрина их не предлагает,
+    # и на графике им тоже нечего делать.
+    _KIND = {"final": "работает", "normal_g": "с гейтом", "final_g": "с гейтом",
+             "normal_w": "уровни раздвинуты", "final_w": "уровни раздвинуты",
+             "bear_w": "уровни раздвинуты"}
     for sym, modes in config.SYMBOL_PARAMS.items():
-        for mode in ("final", "normal_g", "final_g"):
+        for mode, kind in _KIND.items():
             prm = modes.get(mode)
             if not isinstance(prm, dict):
                 continue
             if hasattr(config, "is_retired") and config.is_retired(sym, mode):
                 continue
-            _add(sym, mode, prm,
-                 "работает" if mode == "final" else "с гейтом")
+            _add(sym, mode, prm, kind)
 
     # плюс победители волн, прошедшие переоценку
     for rec in ach.collect():

@@ -70,7 +70,20 @@ MODE_NAMES = {"normal": "Обычный", "turbo": "Турбо", "bear": "Мед
               "final": "Финальный",
     "normal_g": "обычный + гейт",
     "final_g": "финальный + гейт",
+    "normal_w": "обычный, уровни раздвинуты",
+    "final_w": "финальный, уровни раздвинуты",
+    "bear_w": "медвежий, уровни раздвинуты",
 }
+
+# Все режимы из конфига, по порядку. Нужен именно полный список: разделы
+# витрины отбирают по УРОВНЮ, а не по имени режима, и режим, забытый в
+# перечислении, молча исчез бы с сайта, оставаясь при этом в конфиге.
+# set обязателен: одно и то же имя режима есть у нескольких монет, а
+# list_bots перебирает переданные имена внутри каждой монеты — с дублями в
+# списке одна и та же карточка появилась бы на витрине по нескольку раз.
+ALL_MODES = tuple(sorted(set(
+    m for modes in config.SYMBOL_PARAMS.values() for m in modes
+    if isinstance(modes[m], dict))))
 ARCHIVE_MODES = ("normal", "bear", "turbo")
 
 # --- проверка параметров маршрутов ---
@@ -510,7 +523,7 @@ def passed_bots():
     обеих половинах, настоящих сделок хватает, просадка в норме. Ни один не
     значим после поправки на число проверенных, и на витрине это сказано.
     """
-    out = [b for b in list_bots(("final", "normal", "bear", "turbo"))
+    out = [b for b in list_bots(ALL_MODES)
            if b.get("tier") and b["tier"]["tier"] in ("A", "B")]
     out.sort(key=lambda b: (TIER_RANK[b["tier"]["tier"]],
                             -b["tier"]["rob_hold"]))
@@ -524,7 +537,8 @@ def gated_bots():
     просадку. Уровень у них свой и на витрине виден как есть.
     """
     return [b for b in list_bots(("normal_g", "final_g", "bear_g"))
-            if b.get("gated")]
+            if b.get("gated")
+            and not (b.get("tier") and b["tier"]["tier"] in ("A", "B"))]
 
 
 def retired_running():
@@ -596,6 +610,7 @@ def list_bots(modes, include_retired=False):
                 tier=tiers.get((sym, mode)),
                 retired=retired,
                 gated=bool(p.get("vol_gate")),
+                widened=mode.endswith("_w"),
                 symbol=sym, coin=sym.replace("USDT", ""), mode=mode,
                 mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
                 interval=iv, tf_label=("4ч" if iv == "240" else f"{iv}m"),
@@ -1228,6 +1243,14 @@ def bot_page(symbol, mode):
         tier=load_tiers().get((symbol, mode)),
         retired=(config.retire_reason(symbol, mode)
                  if hasattr(config, "retire_reason") else None),
+        # Расширенный вариант и его исходник: страница открывается по прямой
+        # ссылке, и без этой пары непонятно, чем «final_w» отличается от
+        # «final» и почему у них разные числа.
+        widened=(mode.endswith("_w") and mode[:-2] or None),
+        # Настоящий архивный режим — только normal/bear/turbo. Режимы с
+        # гейтом и с раздвинутыми уровнями появились уже после починки движка,
+        # и плашка «числа посчитаны старым движком» на них лгала бы.
+        archive=(mode in ARCHIVE_MODES),
         mode=mode, mode_name=MODE_NAMES.get(mode, mode), lev=p.get("lev", 5),
         interval_min=int(interval),
         tf_label=("4ч" if interval == "240" else f"{interval}m"),
