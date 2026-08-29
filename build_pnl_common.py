@@ -199,7 +199,8 @@ def main():
     # и на графике им тоже нечего делать.
     _KIND = {"final": "работает", "normal_g": "с гейтом", "final_g": "с гейтом",
              "normal_w": "уровни раздвинуты", "final_w": "уровни раздвинуты",
-             "bear_w": "уровни раздвинуты"}
+             "bear_w": "уровни раздвинуты",
+             "final_wf": "раздвинуты + мягкий гейт шорта"}
     for sym, modes in config.SYMBOL_PARAMS.items():
         for mode, kind in _KIND.items():
             prm = modes.get(mode)
