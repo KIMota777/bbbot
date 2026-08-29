@@ -214,7 +214,34 @@ def one_half(part, g, lev):
     curve_nt = [(e["t"], 0.0 if bh.is_tiny(e["pnl"]) else e["pnl"])
                 for e in evs if e["type"] == "close" and e["pnl"] is not None]
     comp_nt, dd_nt = bh.portfolio({"one": curve_nt}, 1)
+
+    # ПЛАВАЮЩАЯ ПРОСАДКА — та, что владелец видел бы на счёте.
+    #
+    # portfolio считает просадку ТОЛЬКО по закрытым сделкам: провал внутри
+    # ещё не закрытого цикла в неё не попадает. Для флагманского LTC/final_w
+    # это занижение в 2.6 раза — 3.8% против 9.7% на холдоуте, и именно на
+    # закрытом числе витрина строила утверждение о риске.
+    #
+    # Движок давно пишет в событие закрытия поле worst — худшую плавающую
+    # переоценку за цикл, и в комментарии рядом (evolution2.py:292) прямо
+    # сказано, зачем: «чтобы кривая просадки на сайте видела не только
+    # закрытые сделки». Дотянуть его до сайта забыли; здесь это доделано.
+    closes = sorted((e for e in evs
+                     if e["type"] == "close" and e["pnl"] is not None),
+                    key=lambda e: e["t"])
+    bal = peak = e2.START
+    dd_float = 0.0
+    for e in closes:
+        w = e.get("worst")
+        if w is not None and peak > 0:
+            # низшая точка ВНУТРИ цикла: баланс до закрытия плюс худший мазок
+            dd_float = max(dd_float, (peak - (bal + float(w))) / peak)
+        bal += 0.0 if bh.is_tiny(e["pnl"]) else float(e["pnl"])
+        peak = max(peak, bal)
+        if peak > 0:
+            dd_float = max(dd_float, (peak - bal) / peak)
     return dict(comp=float(comp_nt), dd=float(dd_nt),
+                dd_float=float(100.0 * dd_float),
                 comp_raw=float(m.get("comp", 0.0)),
                 trades=int(m.get("trades", 0)),
                 tiny_share=float(tiny.get("tiny_share", 0.0)),

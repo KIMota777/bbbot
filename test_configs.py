@@ -182,11 +182,112 @@ def test_funding_sign():
               "у лонгового конфига положительная ставка невыгодна")
 
 
+def test_funding_reaches_every_caller():
+    """Ряд настоящих ставок обязан доезжать ДО КАЖДОГО вызова движка.
+
+    ЗАЧЕМ. Правку знака фандинга пришлось прокидывать в шесть мест — у каждого
+    свой вызов run5. Прокинули в четыре, два пропустили: график «прежней
+    шкалы» и симуляция на странице бота. Хуже того, правка молча изменила и
+    их: для шортового конфига плоская ставка из РАСХОДА стала ДОХОДОМ, и линия
+    LTC подскочила на 17 п.п. побочным эффектом.
+
+    Тест грубый нарочно: он читает исходники и требует, чтобы у каждого вызова
+    run5 или run_at в файлах, из которых едут числа сайта, стоял аргумент
+    funding. Тонкую проверку тут не построить — важно само отсутствие копии
+    без ряда.
+    """
+    import io as _io
+    import os
+    import re
+    FILES = ("build_pnl_curves.py", "build_pnl_common.py", "build_modestats.py",
+             "tierlist.py", "all_configs_honest.py", os.path.join("webapp", "app.py"))
+    bad = []
+    for fn in FILES:
+        if not os.path.exists(fn):
+            continue
+        src = _io.open(fn, encoding="utf-8").read()
+        # вызовы run5/run_at вместе с их аргументами до закрывающей скобки
+        for m in re.finditer(r"(?:e2\.run5|bh\.run_at)\s*\(", src):
+            depth, i = 0, m.end() - 1
+            while i < len(src):
+                if src[i] == "(":
+                    depth += 1
+                elif src[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            call = src[m.start():i + 1]
+            if "funding" not in call:
+                line = src[:m.start()].count(chr(10)) + 1
+                bad.append("%s:%d" % (fn, line))
+    check(not bad, "у каждого вызова движка в числах сайта есть ряд фандинга"
+          + ("" if not bad else " — БЕЗ РЯДА: " + ", ".join(bad)))
+
+
+def test_funding_series_units():
+    """funding_series отдаёт ДОЛИ, а не проценты.
+
+    Стократная ловушка проекта: в файлах ставки в процентах. Один пропущенный
+    делитель на 100 даёт результат в двенадцать раз больше настоящего, и ни
+    одна другая проверка этого не поймает.
+    """
+    import bots_honest as bh
+    aux = {"fund": [0.01, -0.02, None, 0.005]}
+    got = bh.funding_series(aux)
+    want = [0.0001, -0.0002, 0.0, 0.00005]
+    ok = got is not None and len(got) == len(want) and all(
+        abs(a - b) < 1e-12 for a, b in zip(got, want))
+    print("     funding_series([0.01, -0.02, None, 0.005]) -> %s" % got)
+    check(ok, "funding_series переводит проценты в доли и не роняет пропуски")
+    check(bh.funding_series({}) is None, "нет ряда — возвращается None, а не пустой список")
+    part = bh.funding_series({"fund": [1.0, 2.0, 3.0, 4.0]}, 1, 3)
+    check(part == [0.02, 0.03], "срез по половине берётся из того же места")
+
+
+def test_vol_gate_reaches_site():
+    """Ген гейта волатильности обязан доезжать до КАЖДОГО потребителя.
+
+    ЗАЧЕМ. e7.cfg_to_genome ген vol_gate НЕ переносит, поэтому каждый, кто
+    строит геном из конфига, обязан дописать его сам. Проект уже объявлял этот
+    дефект закрытым «одним определением в трёх местах», после чего он нашёлся
+    в ЧЕТВЁРТОМ: симуляция на странице бота считалась без гейта и завышала
+    число сделок в 2.7 раза.
+
+    Проверяется прямо: у конфига с гейтом геном, собранный сайтом, обязан
+    нести порог. Если кто-то заведёт пятого потребителя и забудет — тест не
+    поймает его автоматически, но хотя бы закрепит нынешних.
+    """
+    import os
+    import sys as _sys
+    web = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
+    if web not in _sys.path:
+        _sys.path.insert(0, web)
+    gated = [(sym, mode, p) for sym, mode, p in modes() if p.get("vol_gate")]
+    if not gated:
+        print("     конфигов с гейтом нет — проверять нечего")
+        return
+    try:
+        import app as _app
+    except Exception as exc:                       # noqa: BLE001
+        print("     сайт не импортируется (%s) — пропуск" % type(exc).__name__)
+        return
+    bad = []
+    for sym, mode, prm in gated:
+        g = _app.cfg_to_genome(prm, mode)
+        if not g.get("vol_gate"):
+            bad.append("%s/%s" % (sym, mode))
+    print("     конфигов с гейтом: %d" % len(gated))
+    check(not bad, "геном, собранный сайтом, несёт порог гейта"
+          + ("" if not bad else " — ПОТЕРЯН у: " + ", ".join(bad)))
+
+
 def main():
     print("Проверки конфигов")
     for fn in (test_index_sets, test_genome_roundtrip, test_all_modes_evaluable,
                test_retired_not_offered, test_legacy_kept_intact,
-               test_funding_sign):
+               test_funding_sign, test_funding_reaches_every_caller,
+               test_funding_series_units, test_vol_gate_reaches_site):
         fn()
     if FAILED:
         print("\nПРОВАЛЕНО: %d" % len(FAILED))

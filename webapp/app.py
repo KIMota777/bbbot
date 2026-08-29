@@ -33,6 +33,7 @@ except Exception:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config  # noqa: E402
+import bots_honest as bh  # noqa: E402
 import evolution2 as e2  # noqa: E402
 import evolution5 as e5  # noqa: E402
 import evolution6 as e6  # noqa: E402
@@ -496,7 +497,12 @@ def load_tiers():
             train=round(r["train"]["comp"], 1), hold=round(r["hold"]["comp"], 1),
             rob_train=round(r["train"]["rob"], 1),
             rob_hold=round(r["hold"]["rob"], 1),
-            dd=round(max(r["train"]["dd"], r["hold"]["dd"]), 1),
+            # ПРОСАДКА НА КАРТОЧКЕ — ПЛАВАЮЩАЯ. Закрытая (только по
+            # завершённым сделкам) занижала риск флагмана в 2.6 раза: 3.8%
+            # против 9.7% на холдоуте. Закрытая остаётся рядом, для сравнения.
+            dd=round(max(r["train"].get("dd_float", r["train"]["dd"]),
+                         r["hold"].get("dd_float", r["hold"]["dd"])), 1),
+            dd_closed=round(max(r["train"]["dd"], r["hold"]["dd"]), 1),
             real=min(r["train"]["real"]["n"], r["hold"]["real"]["n"]),
             tiny=round(max(r["train"]["tiny_share"], r["hold"]["tiny_share"])),
             p=round(max(r["train"]["real"]["p"], r["hold"]["real"]["p"]), 3),
@@ -1453,6 +1459,13 @@ def cfg_to_genome(p, mode):
     g = e7.cfg_to_genome(p, mode)
     for k, v in e8.OFF8.items():
         g.setdefault(k, v)
+    # ГЕН ГЕЙТА ВОЛАТИЛЬНОСТИ ЕДЕТ ВМЕСТЕ С ГЕНОМОМ.
+    # e7.cfg_to_genome его не переносит, и симуляция на странице бота считалась
+    # так, будто гейта нет: число сделок завышалось в 2.7 раза, PnL окна в 2.6.
+    # Это ЧЕТВЁРТОЕ место того же дефекта — обещание «одно определение гейта в
+    # трёх местах» не выполнялось. Закреплено тестом в test_configs.py.
+    if p.get("vol_gate"):
+        g["vol_gate"] = float(p["vol_gate"])
     return g
 
 
@@ -1480,12 +1493,24 @@ def build_sim(symbol, mode):
     pct5 = xd.fetch_daily_pct5()
     aux = e12.make_aux_builder(pct5, bars_per_day)(symbol, candles)
     filt = e12.make_filter12(g, aux)
+    # Гейт применяется ТЕМ ЖЕ определением, что в оценке и в боевом боте.
+    # Без этого симуляция рисовала бы конфиг БЕЗ гейта под подписью конфига
+    # С гейтом — то же самое уже случалось на графике общей шкалы.
+    _thr = float(g.get("vol_gate", 0.0) or 0.0)
+    if _thr > 0:
+        import adaptive_ltc as _al
+        import all_configs_honest as _ach
+        filt = _ach._gate_filter(filt, _al.regimes(candles), _thr)
     events = []
     old_lev, old_bpd = e2.LEV, e2.BARS_PER_DAY
     e2.LEV = p.get("lev", 5)
     e2.BARS_PER_DAY = bars_per_day
     try:
-        e2.run5(candles, pre, g, entry_filter=filt, events=events)
+        # Ряд настоящих ставок фандинга — тот же, что у карточки уровня.
+        # Без него симуляция на этой же странице считалась бы плоской ставкой,
+        # и два блока одной страницы говорили бы разное.
+        e2.run5(candles, pre, g, entry_filter=filt, events=events,
+                funding=bh.funding_series(aux))
     finally:
         e2.LEV, e2.BARS_PER_DAY = old_lev, old_bpd
     chart_start = int(time.time()) - CANDLE_DAYS * 86400

@@ -25,6 +25,7 @@ import json
 import os
 from collections import defaultdict
 
+import bots_honest as bh
 import config
 import evolution as ev
 import evolution2 as e2
@@ -95,7 +96,11 @@ def bot_pnls(sym, p, pct5):
     e2.BARS_PER_DAY = bars_per_day
     try:
         events = []
-        r = e2.run5(candles, pre, g, entry_filter=filt, events=events)
+        # Ряд настоящих ставок обязателен: без него этот график считался бы
+        # плоской ставкой, а карточка рядом — настоящими, и подпись «то же,
+        # что карточка» была бы неправдой.
+        r = e2.run5(candles, pre, g, entry_filter=filt, events=events,
+                    funding=bh.funding_series(aux))
     finally:
         e2.LEV, e2.BARS_PER_DAY = old_lev, old_bpd
     start_ts = candles[0][0] // 1000

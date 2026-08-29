@@ -131,7 +131,7 @@
       <span>холдоут <b>{{ '%+.1f'|format(tier.hold) }}%</b></span>
       <span>устойчивость <b>{{ '%+.1f'|format(tier.rob_train) }}%</b> / <b>{{ '%+.1f'|format(tier.rob_hold) }}%</b></span>
       <span>настоящих сделок <b>{{ tier.real }}</b></span>
-      <span>просадка <b>{{ tier.dd }}%</b></span>
+      <span>просадка <b>{{ tier.dd }}%</b>{% if tier.dd_closed is defined and tier.dd_closed != tier.dd %} <span class="muted">(по закрытым сделкам {{ tier.dd_closed }}%)</span>{% endif %}</span>
       <span>значимость <b>p={{ tier.p }}</b></span>
     </div>
     <div style="color:#9A9DA6;font-size:12px;margin-top:8px">
