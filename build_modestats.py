@@ -96,7 +96,12 @@ def half_stats(part, g, lev):
     первую видно.
     """
     evs = []
-    bh.run_at(part["candles"], part["pre"], g, part["filt"], lev, events=evs)
+    # funding обязателен: без него месяцы считались бы плоской ставкой, а
+    # карточка уровня — настоящими, и суммы месяцев перестали бы сходиться с
+    # числом на карточке. Ровно это и случилось после правки знака фандинга —
+    # поймала сверка «сумма месяцев == итог половины», 27 расхождений из 38.
+    bh.run_at(part["candles"], part["pre"], g, part["filt"], lev, events=evs,
+              funding=part.get("funding"))
     closes = [e for e in evs if e["type"] == "close" and e["pnl"] is not None]
     if not closes:
         return None

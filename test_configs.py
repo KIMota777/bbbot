@@ -126,10 +126,67 @@ def test_legacy_kept_intact():
           "вынесенные конфиги действительно убраны из SYMBOL_PARAMS")
 
 
+def test_funding_sign():
+    """Знак фандинга зависит от стороны сделки, а не всегда «расход».
+
+    ГДЕ БЫЛА ОШИБКА. В evolution2.run5 стояло
+        pos["fees"] += q_pre * c * FUND_8H / BARS_8H
+    то есть фандинг списывался и с лонга, и с шорта. На бирже при
+    положительной ставке лонги платят шортам. Лучший конфиг проекта на 99%
+    в шорте, поэтому движок брал с него плату, которую он получал бы.
+
+    Проверка прямая: один и тот же прогон при ставке +X и -X должен дать
+    РАЗНЫЙ итог, и для шортового конфига положительная ставка обязана быть
+    ВЫГОДНОЙ. Если кто-то вернёт безусловное списание, тест упадёт.
+    """
+    import all_configs_honest as ach
+    import bots_honest as bh
+    import evolution2 as e2
+    import ext_data as xd
+
+    sym, mode = "LTCUSDT", "final_w"
+    if mode not in config.SYMBOL_PARAMS.get(sym, {}):
+        print("     пропуск: нет %s/%s" % (sym, mode))
+        return
+    g = ach.with_defaults(e7.cfg_to_genome(config.SYMBOL_PARAMS[sym][mode], mode))
+    parts = ach.halves(sym, g, xd.fetch_daily_pct5())
+    part = parts["hold"]
+
+    orig = e2.FUND_8H
+    got = {}
+    try:
+        for tag, rate in (("плюс", +0.0002), ("ноль", 0.0), ("минус", -0.0002)):
+            e2.FUND_8H = rate
+            # ряд не передаём: проверяем именно плоскую ставку и её знак
+            p2 = dict(part)
+            p2.pop("funding", None)
+            got[tag] = ach.one_half(p2, g, 5.0)["comp"]
+    finally:
+        e2.FUND_8H = orig
+
+    evs = []
+    bh.run_at(part["candles"], part["pre"], g, part["filt"], 5.0, events=evs)
+    shorts = sum(1 for e in evs if e["type"] == "entry" and e.get("side") == "S")
+    longs = sum(1 for e in evs if e["type"] == "entry" and e.get("side") == "L")
+    print("     сторон: шортов %d, лонгов %d; итог при ставке "
+          "+0.02%%/0/-0.02%%: %+.2f%% / %+.2f%% / %+.2f%%"
+          % (shorts, longs, got["плюс"], got["ноль"], got["минус"]))
+
+    check(got["плюс"] != got["ноль"], "ставка фандинга вообще влияет на итог")
+    if shorts > longs:
+        check(got["плюс"] > got["минус"],
+              "у шортового конфига ПОЛОЖИТЕЛЬНАЯ ставка выгодна "
+              "(шорт получает фандинг, а не платит)")
+    else:
+        check(got["плюс"] < got["минус"],
+              "у лонгового конфига положительная ставка невыгодна")
+
+
 def main():
     print("Проверки конфигов")
     for fn in (test_index_sets, test_genome_roundtrip, test_all_modes_evaluable,
-               test_retired_not_offered, test_legacy_kept_intact):
+               test_retired_not_offered, test_legacy_kept_intact,
+               test_funding_sign):
         fn()
     if FAILED:
         print("\nПРОВАЛЕНО: %d" % len(FAILED))

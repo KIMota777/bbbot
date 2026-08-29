@@ -345,7 +345,13 @@ def main():
                              progress=False)
             closes = [float(x) for x in df["Close"].values.ravel()]
             times = [int(t.timestamp()) for t in df.index]
-            rows = [(ts, c) for ts, c in zip(times, closes) if ts >= t0]
+            # ПУСТЫЕ ЗАКРЫТИЯ ВЫБРАСЫВАЕМ. У биржевых бенчмарков последний
+            # день часто ещё не закрылся, и yfinance отдаёт по нему NaN. Одна
+            # такая точка отравляла весь ряд: final_pct считался от неё и
+            # становился nan, а на графике «Золото» показывало «+nan%».
+            # Замечено 29.08.2026 — до этого просто везло с временем сборки.
+            rows = [(ts, c) for ts, c in zip(times, closes)
+                    if ts >= t0 and c == c and c > 0]
             if len(rows) < 50:
                 print(f"  {label}: мало данных, пропущен")
                 continue

@@ -45,7 +45,8 @@ MAX_DD = 20.0          # потолок просадки, как в правил
 def real_trades(sym, g, part, lev=5.0):
     """Некопеечные сделки половины: их число, средняя и достоверность."""
     evs = []
-    bh.run_at(part["candles"], part["pre"], g, part["filt"], lev, events=evs)
+    bh.run_at(part["candles"], part["pre"], g, part["filt"], lev, events=evs,
+              funding=part.get("funding"))
     p = [e["pnl"] for e in evs
          if e["type"] == "close" and e["pnl"] is not None
          and not bh.is_tiny(e["pnl"])]

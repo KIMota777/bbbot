@@ -105,8 +105,15 @@ def run_halves(sym, g, lev, pct5):
         thr = float(g.get("vol_gate", 0.0) or 0.0)
         if thr > 0:
             filt = ach._gate_filter(filt, _al.regimes(c), thr)
+        # Ряд настоящих ставок фандинга для этой половины. В файлах проекта
+        # он в ПРОЦЕНТАХ — делим на 100. Без него график считался бы плоской
+        # ставкой, а карточка рядом — настоящими, и подпись «график говорит то
+        # же, что карточка» перестала бы быть правдой.
+        _f = aux.get("fund")
+        _f = ([(v / 100.0 if v is not None else 0.0)
+               for v in bh.slice_aux(_f, a, b)] if _f is not None else None)
         evs = []
-        bh.run_at(c, e2.prep(c), g, filt, lev, events=evs)
+        bh.run_at(c, e2.prep(c), g, filt, lev, events=evs, funding=_f)
         out.append(evs)
     return out[0], out[1], int(candles[h][0]), int(candles[0][0])
 

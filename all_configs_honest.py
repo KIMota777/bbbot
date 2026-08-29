@@ -175,10 +175,16 @@ def halves(sym, g, pct5):
         if thr > 0:
             import adaptive_ltc as _al
             filt = _gate_filter(filt, _al.regimes(c), thr)
+        # Ряд настоящих ставок фандинга для ЭТОЙ половины. В файлах проекта
+        # он в ПРОЦЕНТАХ — делим на 100, иначе стократная ошибка (эта ловушка
+        # в проекте уже один раз подменяла победителя).
+        fnd = aux.get("fund")
+        fnd = ([(v / 100.0 if v is not None else 0.0)
+                for v in bh.slice_aux(fnd, a, b)] if fnd is not None else None)
         out[name] = dict(
             candles=c, pre=e2.prep(c),
             months=(c[-1][0] - c[0][0]) / (30 * 86400000),
-            filt=filt)
+            funding=fnd, filt=filt)
     return out
 
 
@@ -202,7 +208,7 @@ def one_half(part, g, lev):
     """
     evs = []
     r = bh.run_at(part["candles"], part["pre"], g, part["filt"], lev,
-                  events=evs)
+                  events=evs, funding=part.get("funding"))
     m = bh.summarize(r, evs, part["months"])
     tiny = bh.cycle_metrics(evs, part["candles"], g, part["months"])
     curve_nt = [(e["t"], 0.0 if bh.is_tiny(e["pnl"]) else e["pnl"])

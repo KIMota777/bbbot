@@ -184,8 +184,14 @@ def _run5_takes_storm():
 _RUN5_STORM = None
 
 
-def run_at(candles, pre, g, filt, lev, storm=None, events=None):
-    """Прогон на заданном плече; глобалы e2 восстанавливаются."""
+def run_at(candles, pre, g, filt, lev, storm=None, events=None, funding=None):
+    """Прогон на заданном плече; глобалы e2 восстанавливаются.
+
+    funding — ряд НАСТОЯЩИХ ставок фандинга по барам, В ДОЛЯХ, со знаком
+    биржи. Не передан — движок берёт плоскую FUND_8H (тоже с верным знаком по
+    стороне сделки). Ряд появился вместе с исправлением знака: см. подробный
+    комментарий в evolution2.run5.
+    """
     global _RUN5_STORM
     if _RUN5_STORM is None:
         _RUN5_STORM = _run5_takes_storm()
@@ -194,8 +200,9 @@ def run_at(candles, pre, g, filt, lev, storm=None, events=None):
     try:
         if _RUN5_STORM:
             return e2.run5(candles, pre, g, entry_filter=filt, events=events,
-                           storm=storm)
-        return e2.run5(candles, pre, g, entry_filter=filt, events=events)
+                           storm=storm, funding=funding)
+        return e2.run5(candles, pre, g, entry_filter=filt, events=events,
+                       funding=funding)
     finally:
         e2.LEV = old
 
