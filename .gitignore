@@ -70,3 +70,6 @@ desktop.ini
 research/data/
 research/out/
 research/data_wide/
+
+# черновики разовых скриптов и подсобных агентов
+TEMP/
