@@ -722,13 +722,42 @@ class RsiGridBot:
 
     # ---------- внешние сигналы ----------
 
+    # Возвращается, когда СПРОСИТЬ не удалось. Это не то же самое, что
+    # «биржа не знает ставку»: там ответ None, и бэктест на None фильтр не
+    # применяет. Сбой связи бэктест не моделирует вовсе, поэтому вести себя
+    # как «фильтра нет» здесь нельзя — см. entry_allowed.
+    FUND_UNKNOWN = object()
+
     def get_funding(self):
-        """Текущий funding rate в % за 8ч, либо None."""
+        """Последняя РАСЧЁТНАЯ ставка фандинга в % за 8ч.
+
+        ЗДЕСЬ БЫЛА ПОДМЕНА ВЕЛИЧИНЫ. Стояло get_tickers -> fundingRate, а это
+        ПРЕДСТОЯЩАЯ ставка следующего расчёта: она ещё меняется до момента
+        списания. Бэктест же смотрит историю расчётов
+        (ext_data.fetch_funding -> step_lookup) и берёт ПОСЛЕДНЮЮ УЖЕ
+        СОСТОЯВШУЮСЯ ставку на момент бара. Две разные величины на одном и
+        том же пороге дают разные решения: по LTCUSDT/final_wf они расходятся
+        на 19.9% баров обучающей половины и на 38.4% баров проверочной, а итог
+        холдоута падает с +56.61% до +40.63%.
+
+        Поэтому здесь тот же источник, что у бэктеста: история расчётов.
+        Предстоящую ставку брать нельзя не потому, что она хуже, а потому что
+        по ней не посчитано ни одно число на витрине.
+
+        Ставки у Bybit — доли; в проекте фандинг хранится в ПРОЦЕНТАХ, и
+        пороги конфигов тоже в процентах, поэтому x100.
+        """
         try:
-            r = self.session.get_tickers(category="linear", symbol=self.symbol)
-            return float(r["result"]["list"][0]["fundingRate"]) * 100
-        except Exception:
-            return None
+            r = self.session.get_funding_rate_history(
+                category="linear", symbol=self.symbol, limit=1)
+            rows = r["result"]["list"]
+            if not rows:
+                return None
+            return float(rows[0]["fundingRate"]) * 100
+        except Exception as e:      # noqa: BLE001
+            self.log.warning("Не удалось получить фандинг по %s: %s",
+                             self.symbol, e)
+            return self.FUND_UNKNOWN
 
     def get_oi_chg24(self):
         """Изменение открытого интереса за 24ч в %, либо None."""
@@ -862,6 +891,13 @@ class RsiGridBot:
                 return False
         f = self.get_funding() if (self.fund_long_max < 900 or
                                    self.fund_short_min > -900) else None
+        if f is self.FUND_UNKNOWN:
+            # ФЕЙЛ-КЛОУЗ. Раньше сбой запроса возвращал None, проверка стояла
+            # под «если значение есть», и бот молча ВХОДИЛ там, где гейт мог
+            # бы не пустить. Пропуск входа стоит ноль, вход вслепую — деньги.
+            self.log.warning("Фильтр funding: ставка неизвестна (сбой запроса)"
+                             " — вход отменён")
+            return False
         if f is not None:
             if side == "L" and f > self.fund_long_max:
                 self.log.info("Фильтр funding: %.4f%% > %.4f%% — лонг отменён",

@@ -282,12 +282,69 @@ def test_vol_gate_reaches_site():
           + ("" if not bad else " — ПОТЕРЯН у: " + ", ".join(bad)))
 
 
+def test_genome_decides_outcome():
+    """Итог прогона должен определяться ГЕНОМОМ, а не заранее собранным part.
+
+    ГДЕ БЫЛА ОШИБКА И ЧЕМ ОНА СТОИЛА. all_configs_honest.halves собирала
+    фильтр входа один раз, по исходному геному, и клала готовым в part.
+    Проверка устойчивости возмущает геном и зовёт one_half с СОСЕДОМ — но
+    фильтр брала из part, то есть от исходного конфига. Значит все гены,
+    живущие в фильтре, не возмущались никогда: пороги фандинга, гейт
+    открытого интереса, макро-пороги, EMA/MA/Aroon, режимный гейт,
+    направление, паттерны, SMC. Устойчивость мерила половину генома, а
+    уровень A раздавался именно по ней.
+
+    У LTCUSDT/final_wf это било точно в цель: весь его отрыв от родителя —
+    один ген fund_short_min, и он в фильтре. Честный пересчёт уронил
+    устойчивость обучения с +27.0% до +20.5%, ниже родительских +24.1%.
+
+    ПРОВЕРКА ПРЯМАЯ. Берём два конфига, отличающихся геном из фильтра,
+    прогоняем каждый геном на part ДРУГОГО и требуем, чтобы результат
+    совпал с собственным результатом этого генома. Пока фильтр брался из
+    part, здесь выходили числа чужого конфига.
+    """
+    import all_configs_honest as ach
+    import ext_data as xd
+
+    sym, a_mode, b_mode = "LTCUSDT", "final_w", "final_wf"
+    mm = config.SYMBOL_PARAMS.get(sym, {})
+    if a_mode not in mm or b_mode not in mm:
+        print("     пропуск: нет %s/%s или %s" % (sym, a_mode, b_mode))
+        return
+    ga = ach.with_defaults(e7.cfg_to_genome(mm[a_mode], a_mode))
+    gb = ach.with_defaults(e7.cfg_to_genome(mm[b_mode], b_mode))
+    diff = [k for k in set(ga) | set(gb) if ga.get(k) != gb.get(k)]
+    check(diff, "выбранные конфиги вообще различаются геномом"
+          + ("" if not diff else " (по %s)" % ", ".join(sorted(diff))))
+
+    pct5 = xd.fetch_daily_pct5()
+    pa = ach.halves(sym, ga, pct5)
+    pb = ach.halves(sym, gb, pct5)
+    bad = []
+    for half in ("train", "hold"):
+        own_a = ach.one_half(pa[half], ga, 5.0)["comp"]
+        own_b = ach.one_half(pb[half], gb, 5.0)["comp"]
+        cross_a = ach.one_half(pb[half], ga, 5.0)["comp"]   # A на part от B
+        cross_b = ach.one_half(pa[half], gb, 5.0)["comp"]   # B на part от A
+        print("     %-5s  %s=%+.4f%%  %s=%+.4f%%  (перекрёстно %+.4f%% / %+.4f%%)"
+              % (half, a_mode, own_a, b_mode, own_b, cross_a, cross_b))
+        if abs(cross_a - own_a) > 1e-6:
+            bad.append("%s: геном %s на чужом part дал %+.4f%% вместо %+.4f%%"
+                       % (half, a_mode, cross_a, own_a))
+        if abs(cross_b - own_b) > 1e-6:
+            bad.append("%s: геном %s на чужом part дал %+.4f%% вместо %+.4f%%"
+                       % (half, b_mode, cross_b, own_b))
+    check(not bad, "исход определяет геном, а не заранее собранный фильтр"
+          + ("" if not bad else " — " + "; ".join(bad)))
+
+
 def main():
     print("Проверки конфигов")
     for fn in (test_index_sets, test_genome_roundtrip, test_all_modes_evaluable,
                test_retired_not_offered, test_legacy_kept_intact,
                test_funding_sign, test_funding_reaches_every_caller,
-               test_funding_series_units, test_vol_gate_reaches_site):
+               test_funding_series_units, test_vol_gate_reaches_site,
+               test_genome_decides_outcome):
         fn()
     if FAILED:
         print("\nПРОВАЛЕНО: %d" % len(FAILED))
