@@ -234,13 +234,63 @@
       посчитаны прежним способом.
       {% endif %}
 
+      {% if tier.audit.forward %}
+      {# Единственная проверка в проекте, которую нельзя подогнать: этих дней
+         не существовало, когда конфиг фиксировали. #}
+      <div style="margin-top:12px;padding:10px 12px;background:#20161A;border:1px solid #4A2A2E;border-radius:8px">
+        <b style="color:#e8756b">Проверка вперёд: дни, которых ещё не было.</b>
+        Порог этого конфига выбран на данных до
+        {{ tier.audit.forward.cut }} — всё, что случилось позже, он не мог
+        видеть даже теоретически. Прошло
+        <b>{{ tier.audit.forward.days }} дней</b>
+        ({{ tier.audit.forward.cut }} — {{ tier.audit.forward.end }}).
+
+        <div style="margin-top:8px"></div>
+        Рынок развернулся: LTC вырос с {{ tier.audit.forward.price_from }} до
+        {{ tier.audit.forward.price_to }}, то есть
+        <b>{{ '%+.1f'|format(tier.audit.forward.price_pct) }}%</b>. Стратегия
+        почти чисто шортовая, и результат такой:
+
+        <div style="margin-top:8px;font-variant-numeric:tabular-nums">
+          <div>этот бот &mdash;
+            <b style="color:#d9534f">{{ '%+.1f'|format(tier.audit.forward.bot) }}%</b>
+            ({{ '%+.2f'|format(tier.audit.forward.bot_usd) }}$), сделок
+            {{ tier.audit.forward.trades }}, из них в плюс
+            {{ tier.audit.forward.wr }}%</div>
+          <div>родительский конфиг &mdash;
+            {{ '%+.1f'|format(tier.audit.forward.parent) }}%</div>
+          <div>простой шорт без плеча &mdash;
+            {{ '%+.1f'|format(tier.audit.forward.short_flat) }}%</div>
+          <div>просто держать LTC в лонг &mdash;
+            {{ '%+.1f'|format(tier.audit.forward.long_hold) }}%</div>
+        </div>
+
+        <div style="margin-top:8px"></div>
+        Два вывода, и оба неприятные. Бот потерял <b>больше</b>, чем простой
+        шорт без плеча &mdash; то есть преимущество в управлении риском,
+        которое он показывал на проверочной половине, здесь не повторилось.
+        И потерял больше родителя, от которого отличается одним параметром.
+
+        <div style="margin-top:8px;color:#9A9DA6;font-size:12px">
+          Честная оговорка: сделок всего {{ tier.audit.forward.trades }}.
+          На таком числе нельзя утверждать ничего о качестве &mdash; можно
+          только видеть направление. Расчёт проверен сверкой: та же процедура
+          на отрезке до обрыва воспроизводит
+          {{ '%+.2f'|format(tier.audit.forward.check) }}% и
+          {{ tier.audit.forward.check_n }} сделок, то есть числа карточки
+          в точности.
+        </div>
+      </div>
+      {% endif %}
+
       <div style="margin-top:12px;padding-top:10px;border-top:1px solid #2A2E35">
         <b>Как это читать.</b> Уровень {{ tier.tier }} значит «прошёл три
         формальных условия»: устойчивость выше нуля на обеих половинах,
         настоящих сделок не меньше 40, просадка не выше 20%. Он не значит
-        «работает». Проверено, что бот управляет риском лучше простого шорта.
-        Не проверено — и прямой проверкой <i>не подтверждено</i>, — что он
-        угадывает момент входа.
+        «работает». На проверочной половине он управлял риском лучше
+        простого шорта, но на первых же днях, которых не видел, это не
+        повторилось. Что он угадывает момент входа — прямой проверкой
+        <i>не подтверждено</i>.
       </div>
     </div>
   </div>
