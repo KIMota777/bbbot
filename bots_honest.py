@@ -128,7 +128,7 @@ NUMERIC_GENES = ["rsi_os", "zone_l", "zone_s", "window", "step", "mult", "tp",
 # Гены, которых нет в GENES8. clamp из e4.ga_tools собирает словарь ТОЛЬКО из
 # ключей genes, то есть всё остальное выбрасывает молча — сосед оценивался
 # без vol_gate, и без trend_days оценивался бы так же. См. perturb.
-EXTRA_GENES = ("trend_days", "vol_gate")
+EXTRA_GENES = ("trend_days", "vol_gate", "adx_gate", "adx_idx", "adx_max")
 # Не возмущаются: переключатели (0/1/2), индексы наборов и число колен сетки —
 # у них нет «на 10% больше», сдвиг такого гена это уже ДРУГАЯ стратегия.
 DISCRETE_GENES = ["rsi_idx", "levels", "be_move", "oi_gate", "ema_mode",

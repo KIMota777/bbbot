@@ -42,6 +42,7 @@ import evolution4 as e4
 import evolution5 as e5
 import evolution7 as e7
 import evolution8 as e8
+import evolution12 as e12
 import ext_data as xd
 import trend_gate as tg
 
@@ -64,7 +65,7 @@ def with_defaults(g):
     ранние одинаково.
     """
     out = dict(g)
-    for off in (e4.OFF4, e5.OFF5, e7.OFF7, e8.OFF8, tg.OFF):
+    for off in (e4.OFF4, e5.OFF5, e7.OFF7, e8.OFF8, e12.OFF12, tg.OFF):
         for k, v in off.items():
             out.setdefault(k, v)
     return out
@@ -188,7 +189,11 @@ def build_filter(part, g):
     у него нет границ в GENES8, и clamp его не примет. Для конфигов с
     гейтом волатильности устойчивость остаётся неполной.
     """
-    filt = e8.make_filter8(g, part["aux"])
+    # Фильтр v12, а не v8: v8 не знает ADX-гейт (ген волны v12), и конфиг
+    # с adx_gate=1 оценивался бы здесь БЕЗ него, тогда как живой бот и
+    # симуляция на сайте его применяют. При adx_gate=0 v12 тождественен v8 —
+    # закреплено тестом test_adx_gate_reaches_evaluation.
+    filt = e12.make_filter12(g, part["aux"])
     thr = float(g.get("vol_gate", 0.0) or 0.0)
     if thr > 0:
         if part.get("reg") is None:
@@ -223,7 +228,7 @@ def halves(sym, g, pct5):
     из которых build_filter собирает фильтр под каждый геном отдельно.
     """
     candles = ev.fetch(sym, "15", bh.DAYS)
-    aux = e8.make_aux_builder(pct5, 96)(sym, candles)
+    aux = e12.make_aux_builder(pct5, 96)(sym, candles)   # v8 + ряды ADX
     n = len(candles)
     h = int(n * bh.HOLD_FRAC)
     out = {}

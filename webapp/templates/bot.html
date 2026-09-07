@@ -278,6 +278,44 @@
       доход, и просадку в одной пропорции.
       {% endif %}
 
+      {% if A.hybrid %}
+      {% set H = A.hybrid %}
+      <div style="margin-top:10px"></div>
+      <b>Можно ли взять лучшее от родителя — его шорты в росте?</b>
+      Проверено 08.09.2026. Разница между родителем и этим конфигом — ровно
+      шорты выше дневной средней: на обучении они дали +78 п.п., на
+      невиданных днях −50. Гипотеза: они хороши в вялом росте и губительны в
+      сильном, а силу тренда меряет ADX (ген волны v12, период 14). Проверены
+      шорт в росте только при ADX ≤ 20 / 30 / 40, ADX-гейт без дневной
+      средней и смесь 50/50 с родителем. Экзамен — невиданные дни:
+      <div style="overflow-x:auto;margin-top:6px">
+      <table style="border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">
+        <tr style="color:#9A9DA6"><th style="text-align:left;padding:2px 10px 2px 0">вариант</th>
+          <th style="text-align:right;padding:2px 10px">обучение</th>
+          <th style="text-align:right;padding:2px 10px">экзамен</th>
+          <th style="text-align:right;padding:2px 10px">просадка $</th>
+          <th style="text-align:right;padding:2px 10px">худший месяц</th></tr>
+        {% for key, name in (('wf','родитель final_wf'), ('wft','этот конфиг'), ('blend','смесь 50/50'), ('h30','в росте шорт при ADX ≤ 30'), ('h40','в росте шорт при ADX ≤ 40'), ('h20','в росте шорт при ADX ≤ 20'), ('adx_only','ADX-гейт без дневной средней')) %}
+        {% set r = H[key] %}
+        <tr><td style="padding:2px 10px 2px 0">{{ name }}</td>
+          <td style="text-align:right;padding:2px 10px">{{ '%+.1f'|format(r.train) }}%</td>
+          <td style="text-align:right;padding:2px 10px"><b>{{ '%+.1f'|format(r.unseen) }}%</b></td>
+          <td style="text-align:right;padding:2px 10px">{{ '%.2f'|format(r.dd) }}</td>
+          <td style="text-align:right;padding:2px 10px">{{ '%+.0f'|format(r.worst) }}%</td></tr>
+        {% endfor %}
+      </table>
+      </div>
+      Гипотеза опровергнута с обратным знаком: вялый рост — <b>худшая</b>
+      среда для шортовой сетки, её медленно выдавливает без откатов, а
+      фильтр «слабый тренд» отбирает ровно такие дни. ADX-гейт без дневной
+      средней — лучший на обучении и худший на экзамене, причём устойчивый у
+      соседей ({{ H.adx_only_neigh_ok }} из 20 в допуске, медиана на экзамене
+      {{ '%+.1f'|format(H.adx_only_neigh_exam) }}%) — самый опасный вид
+      подгонки: её не видно ни по обучению, ни по соседям. Объединять
+      нечего: то, что делает родителя доходнее на известных данных, и есть
+      то, что губит его на невиданных.
+      {% endif %}
+
       <div style="margin-top:12px;padding-top:10px;border-top:1px solid #2A2E35">
         <b>Чего это не обещает.</b> Дохода в растущем рынке — его у этой
         семьи нет. Устойчивости порога 100 дней — он оптимистичен. И вообще

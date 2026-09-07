@@ -502,6 +502,46 @@ def test_split_boundary_pinned():
           "холдоут перекрыт окном отбора v12 более чем на 90% — он не невиданный")
 
 
+def test_adx_gate_reaches_evaluation():
+    """ADX-гейт (ген волны v12) обязан доезжать до оценки и устойчивости.
+
+    ГДЕ БЫЛА ДЫРА. all_configs_honest строил фильтр через e8.make_filter8 и
+    ряды через e8.make_aux_builder — ни тот, ни другой про ADX не знают.
+    Конфиг с adx_gate=1 витрина считала бы БЕЗ гейта, а живой бот и
+    симуляция на сайте — с ним. Ни один конфиг гейт пока не включает, поэтому
+    числа не пострадали, но дыра была настоящей. Теперь оценка идёт через
+    v12; при выключенном гейте он тождественен v8 — это проверяется здесь
+    на каждом десятом баре холдоута, а при включённом строгом гейте решения
+    обязаны отличаться.
+    """
+    import all_configs_honest as ach
+    import evolution8 as e8
+    import ext_data as xd
+
+    sym, mode = "LTCUSDT", "final_wf"
+    if mode not in config.SYMBOL_PARAMS.get(sym, {}):
+        print("     пропуск: нет %s/%s" % (sym, mode))
+        return
+    g = ach.with_defaults(e7.cfg_to_genome(config.SYMBOL_PARAMS[sym][mode], mode))
+    part = ach.halves(sym, g, xd.fetch_daily_pct5())["hold"]
+    check("adx" in part["aux"] and len(part["aux"]["adx"]) == 4,
+          "ряды ADX по всем периодам есть в aux оценки")
+    f12 = ach.build_filter(part, g)
+    f8 = e8.make_filter8(g, part["aux"])
+    n = len(part["candles"])
+    same = all(f12("S", i) == f8("S", i) and f12("L", i) == f8("L", i)
+               for i in range(0, n, 10))
+    check(same, "при adx_gate=0 фильтр оценки тождественен v8")
+    g2 = dict(g, adx_gate=1, adx_idx=1, adx_max=15.0)
+    f_strict = ach.build_filter(part, g2)
+    blocked = sum(1 for i in range(0, n, 10) if f8("S", i) and not f_strict("S", i))
+    check(blocked > 0, "строгий ADX-гейт меняет решения оценки (заблокировано %d)" % blocked)
+    import numpy as np
+    ng = ach.perturb(g2, np.random.default_rng(1))
+    check(ng.get("adx_gate") == 1 and ng.get("adx_max") == 15.0,
+          "сосед генома сохраняет гены ADX (clamp их выбрасывал)")
+
+
 def main():
     print("Проверки конфигов")
     for fn in (test_index_sets, test_genome_roundtrip, test_all_modes_evaluable,
@@ -510,7 +550,7 @@ def main():
                test_funding_series_units, test_vol_gate_reaches_site,
                test_genome_decides_outcome, test_trend_gate_one_definition,
                test_trend_gate_reaches_everyone, test_trend_gate_blocks_shorts,
-               test_split_boundary_pinned):
+               test_split_boundary_pinned, test_adx_gate_reaches_evaluation):
         fn()
     if FAILED:
         print("\nПРОВАЛЕНО: %d" % len(FAILED))
