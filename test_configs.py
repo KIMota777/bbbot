@@ -459,6 +459,49 @@ def test_trend_gate_blocks_shorts():
           % (n, bad))
 
 
+def test_split_boundary_pinned():
+    """Граница раскола обучение/холдоут закреплена датой, а не долей.
+
+    bh.HOLD_FRAC = 0.72 от окна, которое отсчитывается от «сегодня»: стоит
+    обновить кэш свечей — и граница поедет молча, а холдоут LTC/final менялся
+    от такого сдвига в 12 раз. Здесь граница закреплена числом: первый бар
+    холдоута LTC — 2025-09-26 14:15 UTC. Если тест упал после обновления
+    данных — это не ошибка теста, а сигнал: все числа витрины считались на
+    другом окне, их надо пересчитать и осознанно переписать дату здесь.
+
+    Заодно закреплён факт, который проект узнал 08.09.2026: волна v12 (окно
+    до 31.07.2026) обучалась до 21.11.2025 и сдавала приёмочный экзамен на
+    21.11.2025 — 31.07.2026, то есть холдоут витрины перекрыт её окном на
+    ~96%. Холдоут — не невиданные данные; невиданные — до 2023-06-21 и
+    после 31.07.2026.
+    """
+    import datetime as _dt
+
+    import bots_honest as bh
+    import evolution as ev
+    import evolution4 as e4
+
+    check(bh.DAYS == 1150 and abs(bh.HOLD_FRAC - 0.72) < 1e-9,
+          "DAYS=1150, HOLD_FRAC=0.72 не изменились")
+    c = ev.fetch("LTCUSDT", "15", bh.DAYS)
+    h = int(len(c) * bh.HOLD_FRAC)
+    t = _dt.datetime.fromtimestamp(int(c[h][0]) / 1000, _dt.UTC)
+    check(t == _dt.datetime(2025, 9, 26, 14, 15, tzinfo=_dt.UTC),
+          "первый бар холдоута LTC = 2025-09-26 14:15 UTC (сейчас %s)"
+          % t.strftime("%Y-%m-%d %H:%M"))
+    wave_end = _dt.datetime(2026, 7, 31, tzinfo=_dt.UTC)
+    n = bh.DAYS * 96
+    folds = e4.fold_bounds_3y(n)
+    ex_start = wave_end - _dt.timedelta(minutes=15 * (n - folds[-1][1]))
+    hold1 = _dt.datetime.fromtimestamp(int(c[-1][0]) / 1000, _dt.UTC)
+    overlap = ((min(wave_end, hold1) - t).total_seconds()
+               / (hold1 - t).total_seconds())
+    print("     экзамен v12 с %s; перекрытие холдоута окном v12: %.0f%%"
+          % (ex_start.strftime("%Y-%m-%d"), 100 * overlap))
+    check(overlap > 0.9,
+          "холдоут перекрыт окном отбора v12 более чем на 90% — он не невиданный")
+
+
 def main():
     print("Проверки конфигов")
     for fn in (test_index_sets, test_genome_roundtrip, test_all_modes_evaluable,
@@ -466,7 +509,8 @@ def main():
                test_funding_sign, test_funding_reaches_every_caller,
                test_funding_series_units, test_vol_gate_reaches_site,
                test_genome_decides_outcome, test_trend_gate_one_definition,
-               test_trend_gate_reaches_everyone, test_trend_gate_blocks_shorts):
+               test_trend_gate_reaches_everyone, test_trend_gate_blocks_shorts,
+               test_split_boundary_pinned):
         fn()
     if FAILED:
         print("\nПРОВАЛЕНО: %d" % len(FAILED))
