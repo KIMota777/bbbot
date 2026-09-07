@@ -542,6 +542,46 @@ def test_adx_gate_reaches_evaluation():
           "сосед генома сохраняет гены ADX (clamp их выбрасывал)")
 
 
+def test_fresh_candles_tail():
+    """Догрузка хвоста: добавляет только завершённые бары и пишет файл атомарно.
+
+    Окно отбора (1150 дней) остаётся вечным нарочно — его граница закреплена
+    датой. Но всё, что обязано быть свежим (дневные закрытия для гейта,
+    отрезок «после витрины»), идёт через fresh.fresh_candles. Здесь биржа
+    подменена: кэш выдуманной монеты кончается два часа назад, «биржа»
+    отдаёт хвост вплоть до незавершённого бара — он обязан отсеяться.
+    """
+    import json as _json
+    import os
+    import time as _t
+
+    import fresh
+
+    sym, step = "ZZZTESTUSDT", 900000
+    path = fresh.cache_path(sym, "15", 3)
+    now = int(_t.time() * 1000)
+    last_complete = (now - step) // step * step
+    old = [[last_complete - k * step, 1.0, 1.0, 1.0, 1.0] for k in range(20, 8, -1)]
+    with open(path, "w") as fh:
+        _json.dump(old, fh)
+    fake = [[old[-1][0] + k * step, 2.0, 2.0, 2.0, 2.0] for k in range(1, 12)]
+    orig = fresh.fetch_tail
+    fresh.fetch_tail = lambda *a, **k: fake            # хвост «с биржи»
+    try:
+        rows = fresh.fresh_candles(sym, "15", 3, max_age_s=60)
+        again = fresh.fresh_candles(sym, "15", 3, max_age_s=60)
+    finally:
+        fresh.fetch_tail = orig
+        if os.path.exists(path):
+            os.remove(path)
+    check(len(rows) > len(old) and rows[-1][0] <= last_complete,
+          "хвост догружен, незавершённый бар отброшен (%d -> %d баров)"
+          % (len(old), len(rows)))
+    check(all(rows[i][0] - rows[i - 1][0] == step for i in range(1, len(rows))),
+          "шаг между барами ровный")
+    check(len(again) == len(rows), "повторный вызов ничего не дублирует")
+
+
 def main():
     print("Проверки конфигов")
     for fn in (test_index_sets, test_genome_roundtrip, test_all_modes_evaluable,
@@ -550,7 +590,8 @@ def main():
                test_funding_series_units, test_vol_gate_reaches_site,
                test_genome_decides_outcome, test_trend_gate_one_definition,
                test_trend_gate_reaches_everyone, test_trend_gate_blocks_shorts,
-               test_split_boundary_pinned, test_adx_gate_reaches_evaluation):
+               test_split_boundary_pinned, test_adx_gate_reaches_evaluation,
+               test_fresh_candles_tail):
         fn()
     if FAILED:
         print("\nПРОВАЛЕНО: %d" % len(FAILED))

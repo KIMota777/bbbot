@@ -32,10 +32,16 @@ EXTRA_DAYS = 400          # запас дневной истории до нач
 OFF = dict(trend_days=0)  # «выключено» — для with_defaults и rand_core
 
 
-def daily_closes(symbol, days):
-    """[(начало_дня_мс, close)] по завершённым дням, по возрастанию."""
-    import evolution as ev
-    return [(int(r[0]), float(r[4])) for r in ev.fetch(symbol, "D", days)]
+def daily_closes(symbol, days, max_age_s=3600):
+    """[(начало_дня_мс, close)] по завершённым дням, по возрастанию.
+
+    Хвост догружается (fresh.fresh_candles): кэш evolution.fetch вечный, и
+    без догрузки режим «сегодня» на сайте считался бы по закрытиям той даты,
+    когда кэш впервые появился. Живой бот дневные свечи берёт у биржи сам.
+    """
+    import fresh
+    return [(int(r[0]), float(r[4]))
+            for r in fresh.fresh_candles(symbol, "D", days, max_age_s)]
 
 
 def regime_last(closes, n):

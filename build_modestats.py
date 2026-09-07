@@ -87,7 +87,11 @@ def half_events(evs, candles):
     return out
 
 
-def half_stats(part, g, lev):
+FWD_DAYS = 600      # свежий ряд для отрезка «после витрины»: покрывает начало
+                    # холдоута (26.09.2025) с запасом больше полугода
+
+
+def half_stats(part, g, lev, entry_after=None, entry_before=None):
     """Разбор одной половины: месяцы, годы, итог, просадка, винрейт.
 
     Копеечные циклы обнуляются, но НЕ выбрасываются из счёта сделок отдельной
@@ -100,8 +104,27 @@ def half_stats(part, g, lev):
     # карточка уровня — настоящими, и суммы месяцев перестали бы сходиться с
     # числом на карточке. Ровно это и случилось после правки знака фандинга —
     # поймала сверка «сумма месяцев == итог половины», 27 расхождений из 38.
-    bh.run_at(part["candles"], part["pre"], g, part["filt"], lev, events=evs,
-              funding=part.get("funding"))
+    bh.run_at(part["candles"], part["pre"], g, ach.build_filter(part, g), lev,
+              events=evs, funding=part.get("funding"))
+    # Отбор циклов по времени ВХОДА: так один прогон от начала холдоута до
+    # последнего свежего бара делится на «холдоут» (вошли до конца окна) и
+    # «после витрины» (вошли после). Цикл — от входа до закрытия, между ними
+    # только докупки того же цикла.
+    if entry_after is not None or entry_before is not None:
+        kept, cur = [], None
+        for e in sorted(evs, key=lambda x: x["t"]):
+            if e["type"] == "entry" and cur is None:
+                cur = int(e["t"])
+            ok = cur is not None
+            if ok and entry_after is not None and cur <= entry_after:
+                ok = False
+            if ok and entry_before is not None and cur > entry_before:
+                ok = False
+            if ok:
+                kept.append(e)
+            if e["type"] == "close":
+                cur = None
+        evs = kept
     closes = [e for e in evs if e["type"] == "close" and e["pnl"] is not None]
     if not closes:
         return None
@@ -157,6 +180,58 @@ def half_stats(part, g, lev):
         months=fmt(months), years=fmt(years))
 
 
+def when(ts):
+    return dt.datetime.fromtimestamp(ts / 1000.0, dt.UTC).strftime("%Y-%m-%d")
+
+
+def forward_stats(sym, g, pct5, parts, lev):
+    """Отрезок ПОСЛЕ витрины: от последнего бара окна до последнего завершённого
+    бара биржи. Возвращает (блок, замечание).
+
+    ЗАЧЕМ. Окно витрины закреплено (граница 2025-09-26 — датой, тест), и это
+    правильно для уровней. Но карточка и график при этом обрывались на 14.08:
+    последних недель у ботов просто не существовало — а именно там LTC/final_wf
+    потерял 26.8%. Здесь тем же движком считается всё, что случилось ПОСЛЕ
+    окна, по свежим свечам (fresh.fresh_candles — хвост догружается), отдельным
+    отрезком: он не смешивается ни с обучением, ни с холдоутом.
+
+    КАК. Прогон идёт одним куском от начала холдоута (тот же разогрев, что у
+    холдоута витрины) до последнего завершённого бара; в отрезок попадают
+    циклы, ВОШЕДШИЕ после последнего бара окна. Сверка: холдоут этим же
+    прогоном обязан сойтись с холдоутом витрины — расхождение печатается.
+    """
+    import evolution12 as e12
+    import fresh
+    hold = parts["hold"]
+    t_hold0, t_cut = int(hold["candles"][0][0]), int(hold["candles"][-1][0])
+    deep = fresh.fresh_candles(sym, "15", FWD_DAYS, max_age_s=900)
+    ts = [int(c[0]) for c in deep]
+    if not ts or ts[0] > t_hold0:
+        return None, "вперёд: свежий ряд не покрывает начало холдоута"
+    if ts[-1] <= t_cut:
+        return None, None
+    i0 = next(i for i, t in enumerate(ts) if t >= t_hold0)
+    aux = e12.make_aux_builder(pct5, 96)(sym, deep)
+    c = deep[i0:]
+    part = dict(candles=c, pre=e2.prep(c), reg=None, sym=sym, daily=None,
+                funding=bh.funding_series(aux, i0, len(deep)),
+                months=(c[-1][0] - c[0][0]) / (30 * 86400000),
+                aux=dict((k, bh.slice_aux(v, i0, len(deep)))
+                         for k, v in aux.items()))
+    note = None
+    chk = half_stats(part, g, lev, entry_before=t_cut)
+    ref = parts.get("hold") and (half_stats(parts["hold"], g, lev) or {})
+    if chk and ref and abs(chk["ret"] - ref.get("ret", 0.0)) > 0.5:
+        note = ("вперёд: холдоут сквозным прогоном %+.2f%% против %+.2f%% у "
+                "витрины" % (chk["ret"], ref["ret"]))
+    fw = half_stats(part, g, lev, entry_after=t_cut) or dict(
+        events=[], ret=0.0, dd=0.0, trades=0, tiny=0, tiny_share=0.0, wr=None,
+        months=[], years=[])
+    fw.update(since=when(t_cut), till=when(ts[-1]),
+              days=round((ts[-1] - t_cut) / 86400000.0, 1))
+    return fw, note
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     pct5 = xd.fetch_daily_pct5()
@@ -165,6 +240,7 @@ def main():
     # уже однажды съел 62 отказа из 63, и отчёт бодро посчитался по одному
     # конфигу — так что теперь провал виден и он не «ноль сделок».
     problems = []
+    notes = []          # замечания, которые не отменяют результат
 
     for sym, modes in config.SYMBOL_PARAMS.items():
         for mode, p in modes.items():
@@ -182,12 +258,20 @@ def main():
                     problems.append("%s/%s: ни одной сделки" % (sym, mode))
                     failed += 1
                     continue
+                fw, fw_note = None, None
+                try:
+                    fw, fw_note = forward_stats(sym, g, pct5, parts, LEV)
+                except Exception as exc:           # noqa: BLE001
+                    fw_note = ("вперёд не посчитан: %s: %s"
+                               % (type(exc).__name__, exc))
+                if fw_note:
+                    notes.append("%s/%s: %s" % (sym, mode, fw_note))
                 blob = dict(
                     symbol=sym, mode=mode, lev=LEV,
                     own_lev=p.get("lev", 5),
                     retired=bool(config.retire_reason(sym, mode))
                     if hasattr(config, "retire_reason") else False,
-                    train=res["train"], hold=res["hold"],
+                    train=res["train"], hold=res["hold"], fwd=fw,
                     generated=dt.datetime.now(dt.UTC).strftime(
                         "%Y-%m-%d %H:%M UTC"))
                 with open(os.path.join(OUT_DIR, "%s_%s.json" % (sym, mode)),
@@ -196,10 +280,12 @@ def main():
                 t = res["train"] or {}
                 h = res["hold"] or {}
                 print("%-8s %-10s обуч %+7.1f%% (%2d мес) | холд %+7.1f%% "
-                      "(%2d мес) | сделок %3d/%3d | копеек %.0f%%"
+                      "(%2d мес) | вперёд %s | сделок %3d/%3d | копеек %.0f%%"
                       % (sym.replace("USDT", ""), mode,
                          t.get("ret", 0.0), len(t.get("months", [])),
                          h.get("ret", 0.0), len(h.get("months", [])),
+                         ("%+.1f%% (%d сд., по %s)" % (fw["ret"], fw["trades"], fw["till"])
+                          if fw else "—"),
                          t.get("trades", 0), h.get("trades", 0),
                          max(t.get("tiny_share", 0), h.get("tiny_share", 0))))
                 done += 1
@@ -211,6 +297,8 @@ def main():
     print("\nпосчитано: %d, не вышло: %d" % (done, failed))
     for pr in problems:
         print("  ! %s" % pr)
+    for n_ in notes:
+        print("  ~ %s" % n_)
     print("-> %s" % OUT_DIR)
     return 1 if failed and not done else 0
 
