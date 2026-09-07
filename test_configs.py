@@ -338,13 +338,135 @@ def test_genome_decides_outcome():
           + ("" if not bad else " — " + "; ".join(bad)))
 
 
+def test_trend_gate_one_definition():
+    """Живой бот и бэктест обязаны считать режим ОДНОЙ арифметикой.
+
+    У vol_gate определение жило в трёх местах, и четвёртый потребитель его не
+    знал. Здесь regime_last (бот: список закрытий -> режим завтрашнего дня) и
+    regime_series (бэктест: режим на каждый бар) сверяются на каждом дне
+    случайного ряда, для трёх окон. Плюс контракт гейта: неизвестный режим
+    запрещает ОБЕ стороны, рост запрещает шорт, падение — лонг.
+    """
+    import random
+
+    import trend_gate as tg
+
+    rnd = random.Random(3)
+    price, daily = 100.0, []
+    t0 = 1_600_000_000_000 // tg.DAY * tg.DAY
+    for k in range(400):
+        price *= 1 + rnd.uniform(-0.05, 0.05)
+        daily.append((t0 + k * tg.DAY, price))
+    closes = [c for _, c in daily]
+    bad = 0
+    for n in (20, 100, 200):
+        bar_ts = [t + tg.DAY + 7 * 900000 for t, _ in daily]   # бар в дне k+1
+        series = tg.regime_series(bar_ts, daily, n)
+        bad += sum(1 for k in range(len(daily))
+                   if series[k] != tg.regime_last(closes[:k + 1], n))
+    check(bad == 0, "regime_series (бэктест) и regime_last (живой бот) "
+          "совпадают на каждом дне" + ("" if not bad else " — расхождений %d" % bad))
+    f = tg.gate(lambda side, i: side, [0, 1, -1])
+    check(f("S", 0) is None and f("L", 0) is None,
+          "неизвестный режим запрещает обе стороны")
+    check(f("S", 1) is None and f("L", 1) == "L",
+          "в росте шорт запрещён, лонг разрешён")
+    check(f("S", 2) == "S" and f("L", 2) is None,
+          "в падении лонг запрещён, шорт разрешён")
+
+
+def test_trend_gate_reaches_everyone():
+    """Ген trend_days обязан доезжать до КАЖДОГО потребителя генома.
+
+    Список потребителей — тот же, на котором терялся vol_gate: геном, оценка,
+    симуляция на странице бота, живой бот, и отдельно — возмущение соседей,
+    где clamp из e4.ga_tools молча выбрасывал гены вне GENES8.
+    """
+    import io as _io
+    import os
+
+    import numpy as np
+
+    import all_configs_honest as ach
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path, needle, what in (
+            ("evolution7.py", 'g["trend_days"]', "геном (cfg_to_genome)"),
+            ("all_configs_honest.py", "tg.gate(", "оценка (build_filter)"),
+            (os.path.join("webapp", "app.py"), "_tg.gate(", "симуляция на странице бота"),
+            ("bot_rsi.py", "get_trend_regime", "живой бот (entry_allowed)"),
+            ("bots_honest.py", '"trend_days"', "возмущение соседей (perturb)")):
+        src = _io.open(os.path.join(here, path), encoding="utf-8").read()
+        check(needle in src, "trend_days доезжает до: %s" % what)
+    mm = config.SYMBOL_PARAMS.get("LTCUSDT", {})
+    if "final_wft" not in mm:
+        print("     пропуск: нет LTCUSDT/final_wft")
+        return
+    g = ach.with_defaults(e7.cfg_to_genome(mm["final_wft"], "final_wft"))
+    check(g["trend_days"] == 100 and g["direction"] == 2,
+          "final_wft: trend_days=100, direction=2 в геноме")
+    rng = np.random.default_rng(1)
+    vals = [ach.perturb(g, rng).get("trend_days") for _ in range(30)]
+    check(all(v is not None and 80 <= v <= 120 for v in vals),
+          "сосед генома сохраняет и возмущает trend_days (было: clamp выбрасывал)")
+    g0 = ach.with_defaults(e7.cfg_to_genome(mm["final_wf"], "final_wf"))
+    check(g0["trend_days"] == 0, "у конфига без ключа гейт выключен")
+
+
+def test_trend_gate_blocks_shorts():
+    """Гейт режет то, что обещает, и не трогает остального.
+
+    На барах роста фильтр обязан не пускать шорт вовсе; на барах падения —
+    решать ровно так же, как базовый фильтр без гейта. И режим, который на
+    тот же день посчитал бы живой бот по списку закрытий, обязан совпасть с
+    серией бэктеста.
+    """
+    import all_configs_honest as ach
+    import evolution8 as e8
+    import ext_data as xd
+    import trend_gate as tg
+
+    sym, mode = "LTCUSDT", "final_wft"
+    if mode not in config.SYMBOL_PARAMS.get(sym, {}):
+        print("     пропуск: нет %s/%s" % (sym, mode))
+        return
+    g = ach.with_defaults(e7.cfg_to_genome(config.SYMBOL_PARAMS[sym][mode], mode))
+    part = ach.halves(sym, g, xd.fetch_daily_pct5())["hold"]
+    f = ach.build_filter(part, g)
+    reg = part["trend_cache"][g["trend_days"]]
+    base = e8.make_filter8(g, part["aux"])
+    up = [i for i, r in enumerate(reg) if r > 0]
+    dn = [i for i, r in enumerate(reg) if r < 0]
+    print("     холдоут: баров роста %d, падения %d, неизвестно %d"
+          % (len(up), len(dn), len(reg) - len(up) - len(dn)))
+    check(up and dn, "на холдоуте есть и рост, и падение")
+    check(not any(f("S", i) for i in up), "на барах роста шорт запрещён")
+    check(all(f("S", i) == base("S", i) for i in dn),
+          "на барах падения гейт не меняет решение базового фильтра")
+    daily = part["daily"]
+    closes = [c for _, c in daily]
+    idx = {t // tg.DAY: k for k, (t, _) in enumerate(daily)}
+    n = bad = 0
+    for i in range(0, len(part["candles"]), 96 * 7):
+        k = idx.get(int(part["candles"][i][0]) // tg.DAY - 1)
+        if k is None:
+            continue
+        n += 1
+        if tg.regime_last(closes[:k + 1], g["trend_days"]) != reg[i]:
+            bad += 1
+    check(n > 20 and bad == 0,
+          "режим живого бота совпадает с серией бэктеста (%d дней, расхождений %d)"
+          % (n, bad))
+
+
 def main():
     print("Проверки конфигов")
     for fn in (test_index_sets, test_genome_roundtrip, test_all_modes_evaluable,
                test_retired_not_offered, test_legacy_kept_intact,
                test_funding_sign, test_funding_reaches_every_caller,
                test_funding_series_units, test_vol_gate_reaches_site,
-               test_genome_decides_outcome):
+               test_genome_decides_outcome, test_trend_gate_one_definition,
+               test_trend_gate_reaches_everyone, test_trend_gate_blocks_shorts):
         fn()
     if FAILED:
         print("\nПРОВАЛЕНО: %d" % len(FAILED))

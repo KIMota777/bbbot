@@ -75,6 +75,7 @@ MODE_NAMES = {"normal": "Обычный", "turbo": "Турбо", "bear": "Мед
     "final_w": "финальный, уровни раздвинуты",
     "bear_w": "медвежий, уровни раздвинуты",
     "final_wf": "уровни раздвинуты + мягкий гейт шорта",
+    "final_wft": "уровни раздвинуты + гейт шорта + запрет шорта в росте",
 }
 
 # Все режимы из конфига, по порядку. Нужен именно полный список: разделы
@@ -556,6 +557,24 @@ def gated_bots():
             and not (b.get("tier") and b["tier"]["tier"] in ("A", "B"))]
 
 
+def trend_bots():
+    """Конфиги с гейтом тренда (trend_days) — новые, показываются отдельно.
+
+    Не «лучшие»: по правилам уровней они получают C — устойчивость обучения
+    отрицательна, потому что гейт срезает подогнанные сделки роста и оставляет
+    хрупкий остаток. Показываются потому, что цель у них другая — не доход,
+    а ровный месяц, и без раздела они не были бы видны на витрине вовсе:
+    уровень C не попадает ни к прошедшим, ни к гейтованным, ни к final.
+    """
+    modes = tuple(sorted({m for mm in config.SYMBOL_PARAMS.values()
+                          for m, p in mm.items()
+                          if isinstance(p, dict) and p.get("trend_days")}))
+    if not modes:
+        return []
+    return [b for b in list_bots(modes)
+            if not (b.get("tier") and b["tier"]["tier"] in ("A", "B"))]
+
+
 def retired_running():
     """Отставленные конфиги, которые ВСЁ ЕЩЁ запущены. Пустой список — норма."""
     return [b for b in list_bots(("final",), include_retired=True)
@@ -683,7 +702,8 @@ def index():
     finals = final_bot_list()
     return render_template("index.html", bots=finals, dry_run=config.DRY_RUN,
                            passed=passed_bots(), failed=failed_bots(),
-                           gated=gated_bots(), retired_live=retired_running(),
+                           gated=gated_bots(), trend=trend_bots(),
+                           retired_live=retired_running(),
                            has_final=bool(finals), news=news_panel())
 
 
@@ -1508,6 +1528,13 @@ def build_sim(symbol, mode):
         import adaptive_ltc as _al
         import all_configs_honest as _ach
         filt = _ach._gate_filter(filt, _al.regimes(candles), _thr)
+    # Гейт по дневной средней — тем же модулем, что оценка и живой бот.
+    _td = int(g.get("trend_days", 0) or 0)
+    if _td > 0:
+        import trend_gate as _tg
+        _daily = _tg.daily_closes(symbol, _tg.EXTRA_DAYS + 200)
+        filt = _tg.gate(filt, _tg.regime_series([int(c[0]) for c in candles],
+                                                _daily, _td))
     events = []
     old_lev, old_bpd = e2.LEV, e2.BARS_PER_DAY
     e2.LEV = p.get("lev", 5)

@@ -43,6 +43,7 @@ import evolution5 as e5
 import evolution7 as e7
 import evolution8 as e8
 import ext_data as xd
+import trend_gate as tg
 
 e2.BARS_PER_DAY = 96
 OUT = os.path.join("webapp", "data", "all_configs_honest.json")
@@ -63,7 +64,7 @@ def with_defaults(g):
     ранние одинаково.
     """
     out = dict(g)
-    for off in (e4.OFF4, e5.OFF5, e7.OFF7, e8.OFF8):
+    for off in (e4.OFF4, e5.OFF5, e7.OFF7, e8.OFF8, tg.OFF):
         for k, v in off.items():
             out.setdefault(k, v)
     return out
@@ -194,6 +195,23 @@ def build_filter(part, g):
             import adaptive_ltc as _al
             part["reg"] = _al.regimes(part["candles"])
         filt = _gate_filter(filt, part["reg"], thr)
+    # Гейт по дневной средней. Дневной ряд берётся лениво и один раз на part,
+    # серия режима кэшируется по n: у соседей генома n гуляет в 90..110, и
+    # каждому нужна своя серия.
+    n_tr = int(g.get("trend_days", 0) or 0)
+    if n_tr > 0:
+        if part.get("daily") is None:
+            if not part.get("sym"):
+                raise ValueError("part без символа и дневного ряда: "
+                                 "собирайте его через halves()")
+            part["daily"] = tg.daily_closes(part["sym"], bh.DAYS + tg.EXTRA_DAYS)
+        cache = part.setdefault("trend_cache", {})
+        reg = cache.get(n_tr)
+        if reg is None:
+            reg = tg.regime_series([int(c[0]) for c in part["candles"]],
+                                   part["daily"], n_tr)
+            cache[n_tr] = reg
+        filt = tg.gate(filt, reg)
     return filt
 
 
@@ -220,7 +238,7 @@ def halves(sym, g, pct5):
         part = dict(
             candles=c, pre=e2.prep(c),
             months=(c[-1][0] - c[0][0]) / (30 * 86400000),
-            funding=fnd, reg=None,
+            funding=fnd, reg=None, sym=sym, daily=None,
             aux=dict((k, bh.slice_aux(v, a, b)) for k, v in aux.items()))
         # filt оставлен для тех, кто зовёт run_at напрямую С ТЕМ ЖЕ геномом
         # (tierlist, build_modestats, тесты). Кто меняет геном — обязан звать

@@ -233,6 +233,13 @@ def main():
     # заявленную глубину рядов. До правки первый же кэш неожиданной формы
     # ронял его с KeyError: 0, и остальные файлы оставались неописанными.
     shutil.copy(os.path.join(REPO, "funding_BTCUSDT.json"), work)
+    # Число точек читается из самого файла: раньше здесь стояло «3800», и
+    # тест падал от углубления ряда (фандинг BTC дотянут до 2020 года —
+    # 6673 точки), хотя проверяемое свойство — «отчёт не оборван» — не
+    # изменилось. Утверждение про данные не должно жить константой в тесте.
+    import json as _json
+    with open(os.path.join(REPO, "funding_BTCUSDT.json"), encoding="utf-8") as fh:
+        n_btc = len(_json.load(fh))
     write_cache([1, 2, 3])          # и daily_pct5.json тоже негодной формы
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
@@ -240,7 +247,7 @@ def main():
     out = buf.getvalue()
     check("НЕГОДНАЯ ФОРМА" in out,
           "describe_cache: негодный кэш описан строкой, а не исключением")
-    check("funding_BTCUSDT.json" in out and "3800 точек" in out,
+    check("funding_BTCUSDT.json" in out and f"{n_btc} точек" in out,
           "и годный файл ПОСЛЕ негодного всё равно описан (отчёт не оборван)")
     check(out.count("НЕГОДНАЯ ФОРМА") == 3,
           f"негодными названы все три: funding-словарь, oi-строка и "

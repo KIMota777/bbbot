@@ -146,7 +146,117 @@
     </div>
   </div>
 
-  {% if tier.audit %}
+  {% if tier.audit and tier.audit.kind == 'trend' %}
+  {# ------------------------------------------------------------------
+     КОНФИГ С ГЕЙТОМ ТРЕНДА. Цель — ровный месяц, не максимум дохода.
+     Числа — из четырёхотрезочной проверки (scratchpad stable.py) и среза
+     по 30 монетам; они лежат в tierlist.json -> audit.
+     ------------------------------------------------------------------ #}
+  {% set A = tier.audit %}
+  <div style="background:#181B20;border:1px solid #22362A;border-radius:12px;padding:14px 18px;margin:14px 0">
+    <div style="font-weight:700;margin-bottom:8px;color:#5fb37a">
+      Что это за конфиг и зачем он
+    </div>
+    <div style="color:#C9CCD3;font-size:12.5px;line-height:1.65">
+      Это <b>{{ A.parent }}</b> с одним добавленным правилом: <b>шорт только
+      когда вчерашнее закрытие ниже дневной средней за {{ A.trend_days }}
+      дней</b>, и явным «только шорт». Цель — не максимум дохода, а ровный
+      месяц. Правило появилось не из перебора, а из проверки вперёд: на
+      22 днях, которых не существовало при отборе, LTC вырос на 22%, и
+      родитель потерял 26.8%. В его геноме нет фильтра длиннее шести дней —
+      многонедельный рост он увидеть не мог.
+
+      <div style="margin-top:10px"></div>
+      <b>Четыре отрезка, было → стало.</b> Невиданные дни (2020-10 —
+      2023-06) ни для какого отбора не использовались — это экзамен.
+      Просадка — в долларах на счёте $20. Месяцы: прибыльных / нулевых /
+      убыточных.
+      <div style="overflow-x:auto;margin-top:6px">
+      <table style="border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">
+        <tr style="color:#9A9DA6"><th style="text-align:left;padding:2px 10px 2px 0">отрезок</th>
+          <th style="text-align:right;padding:2px 10px">итог</th>
+          <th style="text-align:right;padding:2px 10px">просадка $</th>
+          <th style="text-align:right;padding:2px 10px">месяцы +/0/−</th>
+          <th style="text-align:right;padding:2px 10px">худший месяц</th></tr>
+        {% for key, name in (('unseen','невиданные 973 дня (экзамен)'), ('train','обучение'), ('hold','холдоут'), ('fwd','вперёд, 22 дня')) %}
+        {% set o = A.old[key] %}{% set n = A.new[key] %}
+        <tr><td style="padding:2px 10px 2px 0">{{ name }}</td>
+          <td style="text-align:right;padding:2px 10px">{{ '%+.1f'|format(o.ret) }}% → <b>{{ '%+.1f'|format(n.ret) }}%</b></td>
+          <td style="text-align:right;padding:2px 10px">{{ '%.2f'|format(o.dd) }} → <b>{{ '%.2f'|format(n.dd) }}</b></td>
+          <td style="text-align:right;padding:2px 10px">{{ o.months.pos }}/{{ o.months.zero }}/{{ o.months.neg }} → <b>{{ n.months.pos }}/{{ n.months.zero }}/{{ n.months.neg }}</b></td>
+          <td style="text-align:right;padding:2px 10px">{{ '%+.0f'|format(o.months.worst) }}% → <b>{{ '%+.0f'|format(n.months.worst) }}%</b></td></tr>
+        {% endfor %}
+      </table>
+      </div>
+      <div style="color:#9A9DA6;font-size:12px;margin-top:4px">
+        Вперёд — {{ A.new.fwd.n }} сделка у нового против {{ A.old.fwd.n }}
+        у родителя: направление, не проверка.
+      </div>
+
+      <div style="margin-top:10px"></div>
+      <b>Как читать месяцы.</b> Прибыльных месяцев стало не больше, а
+      меньше — потому что в росте (около {{ A.idle_share }}% времени) бот
+      не торгует, и такие месяцы дают ноль. Стало вдвое меньше
+      <b>убыточных</b> месяцев на экзамене и втрое меньше худший месяц.
+      Обучение упало вчетверо — это ушла подгонка, а не доход: именно на
+      этой половине родителю подбирали порог. Ликвидаций с правилом —
+      ни одной. Это снижение риска, а не источник дохода.
+
+      <div style="margin-top:10px"></div>
+      <b>То же правило на {{ A.wide30.n }} монетах.</b> Лучше по итогу у
+      {{ A.wide30.better_train }} из {{ A.wide30.n }} на обучении и у
+      {{ A.wide30.better_hold }} на холдоуте (медиана
+      {{ '%+.1f'|format(A.wide30.med_train) }} и
+      {{ '%+.1f'|format(A.wide30.med_hold) }} п.п.), монет в плюсе на
+      холдоуте {{ A.wide30.pos_hold_plain }} → {{ A.wide30.pos_hold_gate }}.
+      Это свойство режима, но слабое: около половины монет, небольшой плюс.
+
+      <div style="margin-top:10px"></div>
+      <b>Что подобрано, а что нет.</b> Окно {{ A.trend_days }} дней —
+      учебное, но лучшее из четырёх проверенных (50 / 100 / 200 и штатный
+      гейт режима); все четыре уменьшают потерю на невиданных днях, так что
+      это свойство класса, а число оптимистично. Порог фандинга родителя
+      оставлен: без него экзамен хуже, и он осмыслен — шорт входит только
+      когда фандинг ему платит. Лонг в росте проверен на LTC, BTC и ETH
+      тремя учебными правилами и провален везде: на перпетуалах лонг платит
+      фандинг за тренд.
+
+      <div style="margin-top:10px"></div>
+      <b>Уровень {{ tier.tier }}: {{ tier.why }}.</b> Устойчивость — это
+      медиана 40 соседей генома (каждое число сдвинуто на ±10%). На обучении
+      она {{ '%+.1f'|format(tier.rob_train) }}%: с гейтом в плюсе только
+      {{ A.rob.train_pos }}% соседей. Хрупко не окно гейта — при 90…110 днях
+      в плюсе {{ A.rob.gate_pos_train }}% соседей на обучении и
+      {{ A.rob.gate_pos_hold }}% на холдоуте, — а сетка: гейт срезал сделки,
+      которые были устойчиво прибыльны при подгонке, и оставил хрупкий
+      остаток. На экзамене соседи нового в среднем
+      {{ '%+.1f'|format(A.rob.new_ret) }}% (в плюсе {{ A.rob.new_pos }}%),
+      соседи родителя {{ '%+.1f'|format(A.rob.old_ret) }}% (в плюсе
+      {{ A.rob.old_pos }}%). Собственные {{ '%+.1f'|format(A.new.unseen.ret) }}%
+      стоят выше медианы соседей — <b>доход не на плато</b>.
+
+      <div style="margin-top:10px"></div>
+      <b>А риск — на плато.</b> У 40 соседей нового на экзамене просадка
+      в среднем {{ '%.2f'|format(A.rob.new_dd) }}$ (у худшей десятой части
+      {{ '%.2f'|format(A.rob.new_dd90) }}$), худший месяц
+      {{ '%+.1f'|format(A.rob.new_worst) }}%, ликвидаций
+      {{ A.rob.new_liq90 }}. У соседей родителя: {{ '%.2f'|format(A.rob.old_dd) }}$
+      (худшие {{ '%.2f'|format(A.rob.old_dd90) }}$), худший месяц
+      {{ '%+.1f'|format(A.rob.old_worst) }}%, ликвидаций у худших —
+      {{ A.rob.old_liq90 }}. Снижение риска — свойство правила, а не одной
+      точки. Доход — нет.
+
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid #2A2E35">
+        <b>Чего это не обещает.</b> Дохода в растущем рынке — его у этой
+        семьи нет. Устойчивости порога 100 дней — он оптимистичен. И вообще
+        ничего на {{ A.new.fwd.n }} сделке вперёд. Проверка настоящая одна:
+        время. DRY_RUN остаётся включённым.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if tier.audit and tier.audit.kind is not defined %}
   {# ------------------------------------------------------------------
      РАЗБОР ОДНОГО КОНФИГА.
      Уровень A — это три формальных условия, а не вывод «работает». Ниже

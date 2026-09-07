@@ -36,6 +36,7 @@ import gridlib
 import indicators
 import patterns
 import smc
+import trend_gate
 
 # Ставки издержек — те же, что в честном бэктесте (evolution2), чтобы
 # виртуальный DRY_RUN не расходился с симуляцией. Константы дублируются
@@ -373,6 +374,9 @@ class RsiGridBot:
         # 2=запрещать только явное противоречие (мягкий вариант)
         self.pattern_gate = self.p.get("pattern_gate", 0)
         self._regime_cache = (0, None)  # (day, "bull"|"range"|"bear")
+        # Гейт по дневной средней (trend_gate.py): ключа нет = выключен.
+        self.trend_days = int(self.p.get("trend_days", 0) or 0)
+        self._trend_cache = (0, 0)      # (day, режим); сбой НЕ кэшируется
         self._macro_needed = (self.spx_long_min > -900 or
                               self.dxy_long_max < 900 or
                               self.gold_long_max < 900)
@@ -837,6 +841,34 @@ class RsiGridBot:
         self._regime_cache = (day, regime)
         return regime
 
+    def get_trend_regime(self):
+        """Режим для гейта trend_days: +1 рост, -1 падение, 0 неизвестно.
+
+        Считается ТЕМ ЖЕ trend_gate.regime_last, что и бэктест, по закрытым
+        дневным свечам, один раз в день. Сбой запроса даёт 0 и НЕ кэшируется:
+        при 0 вход запрещён (фейл-клоуз, как у фандинга), а следующий бар
+        спросит биржу снова.
+        """
+        import time as _t
+        day = int(_t.time()) // 86400
+        if self._trend_cache[0] == day:
+            return self._trend_cache[1]
+        try:
+            r = self.session.get_kline(category="linear", symbol=self.symbol,
+                                       interval="D", limit=self.trend_days + 5)
+            rows = r["result"]["list"][::-1][:-1]   # закрытые дни, от старых
+            closes = [float(x[4]) for x in rows]
+            regime = trend_gate.regime_last(closes, self.trend_days)
+        except Exception as e:      # noqa: BLE001
+            self.log.warning("Гейт тренда: дневные свечи недоступны (%s) — "
+                             "режим неизвестен, вход запрещён", e)
+            return 0
+        if regime != self._trend_cache[1]:
+            self.log.info("Режим по SMA%d: %s", self.trend_days,
+                          {1: "рост", -1: "падение", 0: "неизвестно"}[regime])
+        self._trend_cache = (day, regime)
+        return regime
+
     def vol_rank(self, cs):
         """Место текущей волатильности среди своих последних баров, 0..1.
 
@@ -888,6 +920,14 @@ class RsiGridBot:
             if adx is not None and adx > self.adx_max:
                 self.log.info("Фильтр ADX: %.1f > %.1f (тренд слишком силён) "
                               "— вход отменён", adx, self.adx_max)
+                return False
+        if self.trend_days > 0:
+            r = self.get_trend_regime()
+            if r == 0 or (side == "S" and r > 0) or (side == "L" and r < 0):
+                self.log.info("Гейт тренда SMA%d: режим «%s» — %s отменён",
+                              self.trend_days,
+                              {1: "рост", -1: "падение", 0: "неизвестен"}[r],
+                              "шорт" if side == "S" else "лонг")
                 return False
         f = self.get_funding() if (self.fund_long_max < 900 or
                                    self.fund_short_min > -900) else None

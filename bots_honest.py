@@ -123,7 +123,12 @@ NUMERIC_GENES = ["rsi_os", "zone_l", "zone_s", "window", "step", "mult", "tp",
                  "sweep", "max_bars", "cooldown", "knife",
                  "fund_long_max", "fund_short_min", "spx_long_min",
                  "dxy_long_max", "gold_long_max",
-                 "aroon_long_min", "aroon_short_min"]
+                 "aroon_long_min", "aroon_short_min",
+                 "trend_days"]      # окно дневной средней: ±10% = 90..110 дней
+# Гены, которых нет в GENES8. clamp из e4.ga_tools собирает словарь ТОЛЬКО из
+# ключей genes, то есть всё остальное выбрасывает молча — сосед оценивался
+# без vol_gate, и без trend_days оценивался бы так же. См. perturb.
+EXTRA_GENES = ("trend_days", "vol_gate")
 # Не возмущаются: переключатели (0/1/2), индексы наборов и число колен сетки —
 # у них нет «на 10% больше», сдвиг такого гена это уже ДРУГАЯ стратегия.
 DISCRETE_GENES = ["rsi_idx", "levels", "be_move", "oi_gate", "ema_mode",
@@ -422,6 +427,11 @@ def perturb(g, genes, rng, frac):
     for k in DISCRETE_GENES:            # clamp мог округлить — вернём как было
         if k in g:
             fixed[k] = g[k]
+    for k in EXTRA_GENES:               # clamp их выбросил — вернём (возмущёнными)
+        if k in out:
+            fixed[k] = out[k]
+    if fixed.get("trend_days"):
+        fixed["trend_days"] = int(round(min(400.0, max(1.0, fixed["trend_days"]))))
     return fixed
 
 

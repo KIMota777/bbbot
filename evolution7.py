@@ -150,6 +150,10 @@ def cfg_to_genome(p, mode):
     _adx_set = [7, 14, 21, 28]   # = evolution12.ADX_SET (без циклич. импорта)
     g["adx_idx"] = nearest_idx(p.get("adx_n", 14), _adx_set)
     g["adx_max"] = p.get("adx_max", 30.0)
+    # Гейт по дневной средней (trend_gate.py): ключа нет = выключен. Ген едет
+    # в геноме ЗДЕСЬ, а не у каждого потребителя отдельно — vol_gate этот путь
+    # не прошёл, и четвёртый потребитель считал конфиг без гейта.
+    g["trend_days"] = int(p.get("trend_days", 0) or 0)
     return g
 
 
