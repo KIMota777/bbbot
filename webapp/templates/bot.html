@@ -143,7 +143,7 @@
     </div>
     <div style="color:#9A9DA6;font-size:12px;margin-top:8px">
       {{ tier.why }}.
-      {% if tier.audit %}
+      {% if tier.audit and tier.audit.bonferroni is defined %}
       Порог значимости с поправкой на число проверенных конфигов
       (их {{ tier.audit.n_checked }}) — {{ '%.5f'|format(tier.audit.bonferroni) }}.
       {% else %}
@@ -326,7 +326,7 @@
   </div>
   {% endif %}
 
-  {% if tier.audit and tier.audit.kind is not defined %}
+  {% if tier.audit and tier.audit.kind is not defined and tier.audit.dd_usd is defined %}
   {# ------------------------------------------------------------------
      РАЗБОР ОДНОГО КОНФИГА.
      Уровень A — это три формальных условия, а не вывод «работает». Ниже
