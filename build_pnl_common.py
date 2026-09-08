@@ -250,6 +250,10 @@ def main():
         # (build_modestats, блок fwd), чтобы график и карточка не расходились.
         # Капитал продолжается с конца холдоута; в окно эти точки не входят и
         # на dd / final_pct не влияют: они про другой период.
+        # числа ОКНА фиксируются ДО дописывания отрезка после витрины: итог,
+        # доля холдоута и подпись твина считаются от конца окна, а не от
+        # конца кривой (первая сборка занижала итог ровно на отрезок вперёд)
+        end_eq, end_len = pts[-1][1], len(pts)
         fwd_pct, fwd_usd, fwd_trades, fwd_till = None, None, 0, None
         ms_path = os.path.join("webapp", "data", "modestats",
                                "%s_%s.json" % (sym, mode))
@@ -280,7 +284,7 @@ def main():
         # получаться тождественной. Рисовать её дважды значит показывать две
         # стратегии там, где она одна; вместо этого второй записывается
         # псевдонимом к первой.
-        sig = (round(pts[-1][1], 4), dd, n_real, len(pts))
+        sig = (round(end_eq, 4), dd, n_real, end_len)
         twin = next((x for x in series if x["_sig"] == sig), None)
         if twin is not None:
             twin.setdefault("same_as", []).append(w["label"])
@@ -295,10 +299,10 @@ def main():
             group="live" if kind == "работает" else "passed",
             kind=kind, tier=tier,
             dashed=(kind != "работает"),
-            final_usd=round(pts[-1][1], 2),
-            final_pct=round((pts[-1][1] / e2.START - 1) * 100, 1),
+            final_usd=round(end_eq, 2),
+            final_pct=round((end_eq / e2.START - 1) * 100, 1),
             # доля холдоута отдельно: именно она проверочная
-            hold_pct=round((pts[-1][1] / start_ho - 1) * 100, 1)
+            hold_pct=round((end_eq / start_ho - 1) * 100, 1)
             if start_ho else 0.0,
             dd=dd, dd_train=dd_tr, dd_hold=dd_ho,
             dd_float=dd_float, dd_float_train=ddf_tr, dd_float_hold=ddf_ho,
