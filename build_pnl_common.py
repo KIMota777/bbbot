@@ -89,33 +89,22 @@ def run_halves(sym, g, lev, pct5):
     График обязан говорить то же, что карточка рядом с ним. Поэтому здесь тот
     же раздельный способ, и база та же — e2.START, а не своя.
     """
-    candles = ev.fetch(sym, "15", bh.DAYS)
-    aux = e8.make_aux_builder(pct5, 96)(sym, candles)
-    n = len(candles)
-    h = int(n * bh.HOLD_FRAC)
+    # Половины и фильтр — ТОЛЬКО через all_configs_honest: halves даёт те же
+    # срезы, что у карточек, а build_filter — тот же фильтр (фандинг, OI,
+    # макро, гейт волатильности, ADX, гейт тренда). До этой правки сборщик
+    # строил фильтр сам, через v8, и знал только гейт волатильности: конфиг с
+    # гейтом тренда (final_wft) рисовался бы здесь кривой БЕЗ гейта — та же
+    # «четвёртая копия», на которой уже терялись фандинг и vol_gate.
+    hs = ach.halves(sym, g, pct5)
     out = []
-    for a, b in ((0, h), (h, n)):
-        c = candles[a:b]
-        filt = e8.make_filter8(
-            g, dict((k, bh.slice_aux(v, a, b)) for k, v in aux.items()))
-        # Гейт применяется ТЕМ ЖЕ определением, что и в оценке и в боевом боте.
-        # Без этого конфиг с гейтом рисовался бы кривой конфига БЕЗ гейта — и
-        # график молча показывал бы не то, что подписано. Так и случилось при
-        # первой сборке: LTC final_g совпал с LTC final до последней точки.
-        thr = float(g.get("vol_gate", 0.0) or 0.0)
-        if thr > 0:
-            filt = ach._gate_filter(filt, _al.regimes(c), thr)
-        # Ряд настоящих ставок фандинга для этой половины. В файлах проекта
-        # он в ПРОЦЕНТАХ — делим на 100. Без него график считался бы плоской
-        # ставкой, а карточка рядом — настоящими, и подпись «график говорит то
-        # же, что карточка» перестала бы быть правдой.
-        _f = aux.get("fund")
-        _f = ([(v / 100.0 if v is not None else 0.0)
-               for v in bh.slice_aux(_f, a, b)] if _f is not None else None)
+    for name in ("train", "hold"):
+        part = hs[name]
         evs = []
-        bh.run_at(c, e2.prep(c), g, filt, lev, events=evs, funding=_f)
+        bh.run_at(part["candles"], part["pre"], g, ach.build_filter(part, g),
+                  lev, events=evs, funding=part.get("funding"))
         out.append(evs)
-    return out[0], out[1], int(candles[h][0]), int(candles[0][0])
+    return (out[0], out[1], int(hs["hold"]["candles"][0][0]),
+            int(hs["train"]["candles"][0][0]), int(hs["hold"]["candles"][-1][0]))
 
 
 def curve(evs, sleeve=None):
@@ -126,18 +115,23 @@ def curve(evs, sleeve=None):
     капитал равен нулю — чем он фактически и является.
     """
     sleeve = e2.START if sleeve is None else sleeve
-    pts, eq, peak, dd = [], sleeve, sleeve, 0.0
+    pts, eq, peak, dd, ddf = [], sleeve, sleeve, 0.0, 0.0
     closes = [e for e in evs
               if e.get("type") == "close" and e.get("pnl") is not None]
     for e in closes:
+        # плавающая просадка: худшая переоценка ВНУТРИ цикла (поле worst),
+        # ровно как на карточке; закрытая занижала риск флагмана в 2.6 раза
+        if e.get("worst") is not None and peak > 0:
+            ddf = max(ddf, (peak - (eq + float(e["worst"]))) / peak)
         pnl = 0.0 if bh.is_tiny(e["pnl"]) else float(e["pnl"])
         eq += pnl
         peak = max(peak, eq)
         if peak > 0:
             dd = max(dd, (peak - eq) / peak)
+            ddf = max(ddf, (peak - eq) / peak)
         pts.append([int(e["t"]), round(eq, 4)])
-    return pts, round(dd * 100, 1), len([e for e in closes
-                                         if not bh.is_tiny(e["pnl"])])
+    return (pts, round(dd * 100, 1), round(ddf * 100, 1),
+            len([e for e in closes if not bh.is_tiny(e["pnl"])]))
 
 
 def thin(points, cap=MAX_POINTS):
@@ -200,7 +194,8 @@ def main():
     _KIND = {"final": "работает", "normal_g": "с гейтом", "final_g": "с гейтом",
              "normal_w": "уровни раздвинуты", "final_w": "уровни раздвинуты",
              "bear_w": "уровни раздвинуты",
-             "final_wf": "раздвинуты + мягкий гейт шорта"}
+             "final_wf": "раздвинуты + мягкий гейт шорта",
+             "final_wft": "раздвинуты + гейт шорта + запрет шорта в росте"}
     for sym, modes in config.SYMBOL_PARAMS.items():
         for mode, kind in _KIND.items():
             prm = modes.get(mode)
@@ -227,7 +222,7 @@ def main():
                                  rec["src"].replace("_winners", "")
                                  .replace("_final", ""))))
 
-    series, hold_ts, first_ts = [], None, None
+    series, hold_ts, first_ts, cut_ts = [], None, None, None
     for w in wanted:
         sym, mode, kind = w["sym"], w["mode"], w["kind"]
         if w["g"] is not None:
@@ -236,19 +231,49 @@ def main():
             p = config.SYMBOL_PARAMS[sym][mode]
             g = with_defaults(__import__("evolution7").cfg_to_genome(p, mode))
         print("%s/%s (%s)..." % (sym, w["src"], kind))
-        evs_tr, evs_ho, h_ts, f_ts = run_halves(sym, g, a.lev, pct5)
+        evs_tr, evs_ho, h_ts, f_ts, c_ts = run_halves(sym, g, a.lev, pct5)
         hold_ts = hold_ts or h_ts
         first_ts = first_ts or f_ts
+        cut_ts = cut_ts or c_ts
         # склейка: холдоут продолжается с того капитала, чем кончилось обучение
-        pts_tr, dd_tr, n_tr = curve(evs_tr)
+        pts_tr, dd_tr, ddf_tr, n_tr = curve(evs_tr)
         start_ho = pts_tr[-1][1] if pts_tr else e2.START
-        pts_ho, dd_ho, n_ho = curve(evs_ho, sleeve=start_ho)
+        pts_ho, dd_ho, ddf_ho, n_ho = curve(evs_ho, sleeve=start_ho)
         pts = pts_tr + pts_ho
         dd = max(dd_tr, dd_ho)
+        dd_float = max(ddf_tr, ddf_ho)
         n_real = min(n_tr, n_ho)
         if not pts:
             print("   сделок нет — пропуск")
             continue
+        # Отрезок ПОСЛЕ витрины — из той же статистики, что на карточке
+        # (build_modestats, блок fwd), чтобы график и карточка не расходились.
+        # Капитал продолжается с конца холдоута; в окно эти точки не входят и
+        # на dd / final_pct не влияют: они про другой период.
+        fwd_pct, fwd_usd, fwd_trades, fwd_till = None, None, 0, None
+        ms_path = os.path.join("webapp", "data", "modestats",
+                               "%s_%s.json" % (sym, mode))
+        if w["src"] == "config.py" and os.path.exists(ms_path):
+            try:
+                fw = json.load(open(ms_path, encoding="utf-8")).get("fwd") or {}
+            except Exception:                      # noqa: BLE001
+                fw = {}
+            eq = pts[-1][1]
+            base_eq = eq
+            unit = 1000 if pts[-1][0] > 1e11 else 1   # единицы времени как у кривой
+            for e in fw.get("events") or []:
+                if e.get("type") != "close" or e.get("pnl") is None:
+                    continue
+                eq += float(e["pnl"])
+                pts.append([int(e["t"]) * unit, round(eq, 4)])
+                fwd_trades += 0 if e.get("tiny") else 1
+            if fw.get("till"):
+                fwd_till = fw["till"]
+                # от той же базы, что на карточке ($20), и в долларах — иначе одно
+                # и то же выглядело бы двумя разными числами (-10% от капитала
+                # на конце окна против -26% от базы)
+                fwd_pct = round((eq - base_eq) / e2.START * 100, 1)
+                fwd_usd = round(eq - base_eq, 2)
         tier = tier_full.get((sym, w["src"], mode), "?")
         # Отсев по РЕЗУЛЬТАТУ, а не по геному. Геномы могут отличаться
         # округлением записи в config.py и парой безразличных генов, а кривая
@@ -276,7 +301,10 @@ def main():
             hold_pct=round((pts[-1][1] / start_ho - 1) * 100, 1)
             if start_ho else 0.0,
             dd=dd, dd_train=dd_tr, dd_hold=dd_ho,
+            dd_float=dd_float, dd_float_train=ddf_tr, dd_float_hold=ddf_ho,
             trades=n_real, trades_train=n_tr, trades_hold=n_ho,
+            fwd_pct=fwd_pct, fwd_usd=fwd_usd, fwd_trades=fwd_trades,
+            fwd_till=fwd_till,
             points=thin(pts)))
         print("   итог %+.1f%% | просадка %.1f%% | настоящих сделок %d"
               % (series[-1]["final_pct"], dd, n_real))
@@ -287,7 +315,11 @@ def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as fh:
         json.dump(dict(sleeve=e2.START, lev=a.lev, series=series,
-                       holdout_ts=hold_ts, first_ts=first_ts), fh,
+                       holdout_ts=hold_ts, first_ts=first_ts, fwd_ts=cut_ts,
+                       hold_note=("холдоут не невиданный: 96% его — обучение "
+                                  "и экзамен волны v12 (до 31.07.2026); "
+                                  "невиданное — до 2023-06-21 и после "
+                                  "31.07.2026")), fh,
                   ensure_ascii=False)
     print("\nвсего кривых: %d, плечо x%g у всех, копеечные обнулены"
           % (len(series), a.lev))

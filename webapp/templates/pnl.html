@@ -165,7 +165,10 @@ const fmtDate = t => new Date(t * 1000).toLocaleDateString("ru");
 const SOURCES = {
   common: { url: "/api/pnl_common",
     note: "все конфиги на ОДНОМ плече x5, копеечные выходы обнулены — " +
-          "кривые сравнимы между собой. ★ — прошёл честную переоценку." },
+          "кривые сравнимы между собой. ★ — прошёл честную переоценку. " +
+          "Квадрат на линии — граница витрины (14.08.2026): правее — отрезок " +
+          "«после витрины» по свежим свечам, в итог и просадку окна он не входит. " +
+          "Холдоут не невиданный: 96% его видела волна отбора v12." },
   legacy: { url: "/api/pnl_curves",
     note: "каждый бот на СВОЁМ плече и вместе с копеечными выходами — " +
           "числа выше, но между собой несравнимы." },
@@ -210,8 +213,17 @@ async function load(which) {
     // точка на конце линии: без неё обрыв кривой (у BTC сделки кончаются
     // раньше всех, у SOL — на сливе) читается как «график не дорисовался»
     if (s._till !== null) {
-      line.setMarkers([{ time: s._till, position: "inBar",
-        color: s.color, shape: "circle" }]);
+      const mk = [{ time: s._till, position: "inBar", color: s.color, shape: "circle" }];
+      // граница витрины: правее неё — отрезок «после витрины», посчитанный
+      // по свежим свечам отдельно; в числа окна (итог, просадка) он не входит
+      if (d.fwd_ts && s._till > d.fwd_ts / (d.fwd_ts > 1e11 ? 1000 : 1)) {
+        const ft = Math.round(d.fwd_ts / (d.fwd_ts > 1e11 ? 1000 : 1));
+        const near = pts.reduce((b, p) => Math.abs(p[0] - ft) < Math.abs(b - ft) ? p[0] : b, pts[0][0]);
+        mk.unshift({ time: near, position: "inBar", color: "#9A9DA6", shape: "square",
+                     text: "витрина →" });
+      }
+      mk.sort((a, b) => a.time - b.time);
+      line.setMarkers(mk);
     }
 
     const chip = document.createElement("div");
@@ -224,6 +236,7 @@ async function load(which) {
       <span>${s.label}</span>${isRuined(s) ? '<span class="skull">💀 СЧЁТ СЛИТ</span>' : ""}
       <span class="dd">DD ${s.dd}% / <i>${s.dd_float == null ? "н/д" : s.dd_float + "%"}</i></span>
       <span class="till">${s._till === null ? "" : "по " + fmtDate(s._till)}</span>
+      ${s.fwd_pct == null ? "" : `<span class="dd">после витрины <i>${s.fwd_pct >= 0 ? "+" : ""}${s.fwd_pct}%</i> от $${d.sleeve} (${s.fwd_usd >= 0 ? "+" : ""}$${Math.abs(s.fwd_usd).toFixed(2)}, ${s.fwd_trades} сд.)</span>`}
       <b class="${s.final_pct >= 0 ? "pos" : "neg"}"></b>`;
     const valEl = chip.querySelector("b");
     valEl.textContent = fmtUsd(s.final_usd);
