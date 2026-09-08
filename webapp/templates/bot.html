@@ -400,6 +400,54 @@
       сделок на этом отрезке в {{ (tier.audit.unseen.real // 47) }} с лишним
       раза больше, чем на проверочной половине.
 
+      {% if tier.audit.blind %}
+      {% set B = tier.audit.blind %}
+      <div style="margin-top:10px"></div>
+      <b>Сколько из +{{ '%.1f'|format(B.seen_hold) }}% на холдоуте — подглядывание?</b>
+      Холдоут видела волна отбора v12 (обучение до 21.11.2025, экзамен-приёмка
+      до 31.07.2026). Чтобы измерить цену этого, 08.09.2026 тот же отбор
+      проведён <b>вслепую</b>: та же волна v12, тот же генетический алгоритм,
+      те же фолды и правила приёмки, но данные — только до 26.09.2025, а старт —
+      ручные дефолты сетки из шапки config.py, которые никакой алгоритм не
+      подбирал. {{ B.n }} прогона с разными зёрнами; холдоут и «вперёд» новый
+      отбор не видел.
+      <div style="overflow-x:auto;margin-top:6px">
+      <table style="border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">
+        <tr style="color:#9A9DA6"><th style="text-align:left;padding:2px 10px 2px 0">прогон</th>
+          <th style="text-align:right;padding:2px 10px">экзамен внутри обучения</th>
+          <th style="text-align:right;padding:2px 10px">принят бы по правилам v12</th>
+          <th style="text-align:right;padding:2px 10px">обучение</th>
+          <th style="text-align:right;padding:2px 10px">холдоут (не видел)</th>
+          <th style="text-align:right;padding:2px 10px">невиданные</th>
+          <th style="text-align:right;padding:2px 10px">вперёд</th></tr>
+        {% for r in B.runs %}
+        <tr><td style="padding:2px 10px 2px 0">зерно {{ r.seed }}</td>
+          <td style="text-align:right;padding:2px 10px">{{ '%+.2f'|format(r.exam) }}</td>
+          <td style="text-align:right;padding:2px 10px">{{ 'да' if r.accepted else 'нет' }}</td>
+          <td style="text-align:right;padding:2px 10px">{{ '%+.1f'|format(r.train) }}%</td>
+          <td style="text-align:right;padding:2px 10px"><b>{{ '%+.1f'|format(r.hold) }}%</b> ({{ r.hold_n }} сд.)</td>
+          <td style="text-align:right;padding:2px 10px">{{ '%+.1f'|format(r.unseen) }}%</td>
+          <td style="text-align:right;padding:2px 10px">{{ '%+.1f'|format(r.fwd) }}% ({{ r.fwd_n }})</td></tr>
+        {% endfor %}
+        <tr style="color:#9A9DA6"><td style="padding:2px 10px 2px 0">этот конфиг (отбор видел холдоут)</td>
+          <td></td><td></td><td style="text-align:right;padding:2px 10px">+104.7%</td>
+          <td style="text-align:right;padding:2px 10px"><b>+{{ '%.1f'|format(B.seen_hold) }}%</b></td>
+          <td style="text-align:right;padding:2px 10px">−26.6%</td>
+          <td style="text-align:right;padding:2px 10px">−26.4%</td></tr>
+      </table>
+      </div>
+      Слепой холдоут этой семьи — от {{ '%+.1f'|format(B.hold_min) }}% до
+      {{ '%+.1f'|format(B.hold_max) }}%, медиана {{ '%+.1f'|format(B.hold_med) }}%.
+      Разница с +{{ '%.1f'|format(B.seen_hold) }}% и есть цена подглядывания.
+      {% if B.accepted_holds %}Единственные кандидаты, которые прошли бы
+      приёмку проекта (экзамен внутри обучения больше нуля), на холдоуте дали
+      {{ B.accepted_holds|map('string')|join('% / ') }}% — приёмка отбирает
+      не то, что работает дальше.{% else %}Ни один слепой кандидат не прошёл
+      бы приёмку проекта (экзамен внутри обучения больше нуля): по своим же
+      правилам волна не выпустила бы для LTC ни одного конфига.{% endif %}
+      Слепые победители в конфиг не добавлены: на невиданных днях они в минусе.
+      {% endif %}
+
       {% if tier.rob_method %}
       <div style="margin-top:10px"></div>
       <b>Устойчивость пересчитана.</b> Прежде проверка возмущала геном, но
