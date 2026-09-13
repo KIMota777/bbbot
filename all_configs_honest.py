@@ -217,6 +217,9 @@ def build_filter(part, g):
                                    part["daily"], n_tr)
             cache[n_tr] = reg
         filt = tg.gate(filt, reg)
+        mode = int(g.get("trend_exit", 0) or 0)
+        if mode > 0:
+            filt = tg.with_pause(filt, reg, mode)
     return filt
 
 

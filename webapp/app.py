@@ -1533,8 +1533,11 @@ def build_sim(symbol, mode):
     if _td > 0:
         import trend_gate as _tg
         _daily = _tg.daily_closes(symbol, _tg.EXTRA_DAYS + 200)
-        filt = _tg.gate(filt, _tg.regime_series([int(c[0]) for c in candles],
-                                                _daily, _td))
+        _reg = _tg.regime_series([int(c[0]) for c in candles], _daily, _td)
+        filt = _tg.gate(filt, _reg)
+        _te = int(g.get("trend_exit", 0) or 0)
+        if _te > 0:
+            filt = _tg.with_pause(filt, _reg, _te)   # пауза колен — как в оценке
     events = []
     old_lev, old_bpd = e2.LEV, e2.BARS_PER_DAY
     e2.LEV = p.get("lev", 5)
@@ -1544,7 +1547,8 @@ def build_sim(symbol, mode):
         # Без него симуляция на этой же странице считалась бы плоской ставкой,
         # и два блока одной страницы говорили бы разное.
         e2.run5(candles, pre, g, entry_filter=filt, events=events,
-                funding=bh.funding_series(aux))
+                funding=bh.funding_series(aux),
+                pause=getattr(filt, "pause", None))
     finally:
         e2.LEV, e2.BARS_PER_DAY = old_lev, old_bpd
     chart_start = int(time.time()) - CANDLE_DAYS * 86400

@@ -141,8 +141,17 @@ def liq_price(avg, mused, q, sgn):
     return (avg + d) / (1.0 + MMR)
 
 
-def run5(candles, pre, g, entry_filter=None, events=None, funding=None):
+def run5(candles, pre, g, entry_filter=None, events=None, funding=None,
+         pause=None):
     """entry_filter(side, i) -> side|None — внешний фильтр входов (F&G, BTC...).
+
+    pause(i, side) -> 0 | 1 | 2 — необязательная ПАУЗА открытого цикла по
+    внешнему режиму (гейт тренда). Фильтр входа решает только, открывать ли
+    цикл; уже открытый цикл при развороте режима продолжал докупаться сеткой в
+    неблагоприятный рынок — ровно там шортовая сетка теряет больше всего.
+      1 — не докупать колена, пока режим неблагоприятен (тейк/стоп работают);
+      2 — закрыть цикл по рынку на этой свече (reason="regime").
+    None — прежнее поведение, без единого изменения.
     events: если передан список — в него пишутся сделки (вход/сетка/выход).
     funding: необязательный ряд ставок фандинга ПО БАРАМ, В ДОЛЯХ, со знаком
     биржи (плюс = лонги платят шортам). Не передан — плоская FUND_8H.
@@ -327,6 +336,12 @@ def run5(candles, pre, g, entry_filter=None, events=None, funding=None):
             # с верным знаком.
             fund_rate = FUND_8H if funding is None else funding[i]
             pos["fees"] += sgn * q_pre * c * fund_rate / BARS_8H
+            pv = pause(i, pos["side"]) if pause else 0
+            if pv >= 2:
+                close_pos(pos, c, ts, i, taker_exit=True, reason="regime",
+                          bar_lo=l, bar_hi=h)
+                pos = None
+                continue
             stop = pos["stop"]
             tp_pre = avg_pre * (1 + sgn * pos["tp_eff"])
 
@@ -358,7 +373,7 @@ def run5(candles, pre, g, entry_filter=None, events=None, funding=None):
                     (nxt > danger) if sgn == 1 else (nxt < danger))
                 leg_reached = nxt is not None and (
                     (l <= nxt) if sgn == 1 else (h >= nxt))
-                if leg_first and leg_reached:
+                if leg_first and leg_reached and not pv:
                     ap, aq = pos["adds"].pop(0)
                     pos["fees"] += aq * ap * MAKER
                     pos["fills"].append((ap, aq))
@@ -408,8 +423,9 @@ def run5(candles, pre, g, entry_filter=None, events=None, funding=None):
                           reason="tp", bar_lo=l, bar_hi=h)
                 pos = None
             else:
-                # обычные доливки (без стопа в этой свече)
-                while pos["adds"]:
+                # обычные доливки (без стопа в этой свече); на паузе колена
+                # не исполняются — сетка не растёт в неблагоприятный режим
+                while pos["adds"] and not pv:
                     ap, aq = pos["adds"][0]
                     if (l <= ap) if sgn == 1 else (h >= ap):
                         pos["fees"] += aq * ap * MAKER

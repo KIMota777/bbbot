@@ -582,6 +582,66 @@ def test_fresh_candles_tail():
     check(len(again) == len(rows), "повторный вызов ничего не дублирует")
 
 
+def test_trend_exit_pause():
+    """Пауза колен (ген trend_exit=1) доезжает до движка, оценки, сайта и бота.
+
+    Гейт тренда запрещал только ОТКРЫВАТЬ цикл; открытый шорт при развороте
+    вверх продолжал докупаться сеткой в растущий рынок. Здесь проверяется:
+    движок с паузой не исполняет колена на неблагоприятном режиме, обёртка
+    run_at передаёт паузу с фильтра, и ни один потребитель генома её не
+    потерял (в тестах уже дважды ловили «четвёртую копию»).
+    """
+    import io as _io
+    import os
+
+    import all_configs_honest as ach
+    import bots_honest as bh
+    import ext_data as xd
+    import trend_gate as tg
+
+    sym, mode = "LTCUSDT", "final_wft"
+    mm = config.SYMBOL_PARAMS.get(sym, {})
+    if mode not in mm:
+        print("     пропуск: нет %s/%s" % (sym, mode))
+        return
+    g = ach.with_defaults(e7.cfg_to_genome(mm[mode], mode))
+    check(g.get("trend_exit") == 1, "final_wft: trend_exit=1 в геноме")
+    part = ach.halves(sym, g, xd.fetch_daily_pct5())["train"]
+    t2i = {int(c[0]): i for i, c in enumerate(part["candles"])}
+
+    def adds_on_uptrend(gg):
+        f = ach.build_filter(part, gg)
+        reg = part["trend_cache"][gg["trend_days"]]
+        evs = []
+        bh.run_at(part["candles"], part["pre"], gg, f, 5.0, events=evs,
+                  funding=part.get("funding"))
+        n_add = sum(1 for e in evs if e["type"] == "add")
+        n_up = sum(1 for e in evs if e["type"] == "add"
+                   and reg[t2i.get(int(e["t"]), 0)] > 0)
+        return n_add, n_up, hasattr(f, "pause")
+
+    n0, up0, has0 = adds_on_uptrend(dict(g, trend_exit=0))
+    n1, up1, has1 = adds_on_uptrend(g)
+    print("     без паузы: колен %d, из них в росте %d | с паузой: колен %d, в росте %d"
+          % (n0, up0, n1, up1))
+    check(not has0 and has1, "пауза приклеена к фильтру только при trend_exit>0")
+    check(up0 > 0, "без паузы колена в росте исполняются (дыра существовала)")
+    check(up1 == 0, "с паузой в росте не исполнено ни одного колена")
+    check(n1 <= n0, "пауза не добавляет колен")
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path, needle, what in (
+            ("evolution2.py", "pause(i, pos[\"side\"])", "движок (run5)"),
+            ("bots_honest.py", 'getattr(filt, "pause", None)', "обёртка run_at"),
+            ("all_configs_honest.py", "tg.with_pause(", "оценка (build_filter)"),
+            (os.path.join("webapp", "app.py"), "_tg.with_pause(", "симуляция на сайте"),
+            ("bot_rsi.py", "apply_grid_pause", "живой бот")):
+        src = _io.open(os.path.join(here, path), encoding="utf-8").read()
+        check(needle in src, "пауза колен доезжает до: %s" % what)
+    f = tg.with_pause(lambda s, i: s, [1, -1, 0], 1)
+    check(f.pause(0, "S") == 1 and f.pause(1, "S") == 0 and f.pause(2, "S") == 0
+          and f.pause(1, "L") == 1, "пауза: рост против шорта, падение против лонга, неизвестно — нет")
+
+
 def main():
     print("Проверки конфигов")
     for fn in (test_index_sets, test_genome_roundtrip, test_all_modes_evaluable,
@@ -591,7 +651,7 @@ def main():
                test_genome_decides_outcome, test_trend_gate_one_definition,
                test_trend_gate_reaches_everyone, test_trend_gate_blocks_shorts,
                test_split_boundary_pinned, test_adx_gate_reaches_evaluation,
-               test_fresh_candles_tail):
+               test_fresh_candles_tail, test_trend_exit_pause):
         fn()
     if FAILED:
         print("\nПРОВАЛЕНО: %d" % len(FAILED))

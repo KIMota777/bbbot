@@ -128,7 +128,7 @@ NUMERIC_GENES = ["rsi_os", "zone_l", "zone_s", "window", "step", "mult", "tp",
 # Гены, которых нет в GENES8. clamp из e4.ga_tools собирает словарь ТОЛЬКО из
 # ключей genes, то есть всё остальное выбрасывает молча — сосед оценивался
 # без vol_gate, и без trend_days оценивался бы так же. См. perturb.
-EXTRA_GENES = ("trend_days", "vol_gate", "adx_gate", "adx_idx", "adx_max")
+EXTRA_GENES = ("trend_days", "trend_exit", "vol_gate", "adx_gate", "adx_idx", "adx_max")
 # Не возмущаются: переключатели (0/1/2), индексы наборов и число колен сетки —
 # у них нет «на 10% больше», сдвиг такого гена это уже ДРУГАЯ стратегия.
 DISCRETE_GENES = ["rsi_idx", "levels", "be_move", "oi_gate", "ema_mode",
@@ -169,6 +169,15 @@ def slice_aux(v, a, b):
     if isinstance(v, list) and v and isinstance(v[0], (list, tuple)):
         return [slice_aux(x, a, b) for x in v]
     return v[a:b]
+
+
+def _run5_takes_pause():
+    """Знает ли движок этой ветки параметр pause (пауза цикла по режиму)."""
+    import inspect
+    try:
+        return "pause" in inspect.signature(e2.run5).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _run5_takes_storm():
@@ -224,11 +233,18 @@ def run_at(candles, pre, g, filt, lev, storm=None, events=None, funding=None):
     old = e2.LEV
     e2.LEV = lev
     try:
+        # пауза цикла по режиму едет ВМЕСТЕ с фильтром (атрибут pause у
+        # функции фильтра, см. all_configs_honest.build_filter): у run_at
+        # шесть вызывающих, и отдельный параметр потерялся бы в одном из них
+        extra = {}
+        pause = getattr(filt, "pause", None)
+        if pause is not None and _run5_takes_pause():
+            extra["pause"] = pause
         if _RUN5_STORM:
             return e2.run5(candles, pre, g, entry_filter=filt, events=events,
-                           storm=storm, funding=funding)
+                           storm=storm, funding=funding, **extra)
         return e2.run5(candles, pre, g, entry_filter=filt, events=events,
-                       funding=funding)
+                       funding=funding, **extra)
     finally:
         e2.LEV = old
 

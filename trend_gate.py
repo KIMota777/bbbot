@@ -29,7 +29,7 @@ test_configs.test_trend_gate_one_definition требует их совпаден
 """
 DAY = 86400000
 EXTRA_DAYS = 400          # запас дневной истории до начала 15м-окна
-OFF = dict(trend_days=0)  # «выключено» — для with_defaults и rand_core
+OFF = dict(trend_days=0, trend_exit=0)   # «выключено» — with_defaults, rand_core
 
 
 def daily_closes(symbol, days, max_age_s=3600):
@@ -87,6 +87,30 @@ def regime_series(bar_ts, daily, n):
         k = idx.get(int(t) // DAY - 1)
         out.append(after[k] if k is not None else 0)
     return out
+
+
+def adverse(r, side):
+    """Режим неблагоприятен для стороны: рост для шорта, падение для лонга."""
+    return (side == "S" and r > 0) or (side == "L" and r < 0)
+
+
+def with_pause(filt, reg, mode):
+    """Приклеить к фильтру паузу открытого цикла (ген trend_exit).
+
+    Гейт решает только, ОТКРЫВАТЬ ли цикл. Уже открытый шорт при развороте
+    вверх продолжал бы докупаться сеткой в растущий рынок. mode=1 — на
+    неблагоприятном режиме колена не докупаются; mode=2 — цикл закрывается
+    по рынку. Пауза едет атрибутом функции фильтра, чтобы дойти до движка
+    через любую из обёрток (bots_honest.run_at читает filt.pause).
+    """
+    def pause(i, side):
+        r = reg[i] if i < len(reg) else 0
+        return mode if adverse(r, side) else 0
+
+    def f(side, i):
+        return filt(side, i)
+    f.pause = pause
+    return f
 
 
 def gate(filt, reg):

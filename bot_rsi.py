@@ -377,6 +377,11 @@ class RsiGridBot:
         # Гейт по дневной средней (trend_gate.py): ключа нет = выключен.
         self.trend_days = int(self.p.get("trend_days", 0) or 0)
         self._trend_cache = (0, 0)      # (day, режим); сбой НЕ кэшируется
+        # Пауза колен по режиму (ген trend_exit=1): гейт решает, открывать ли
+        # цикл, а открытый цикл при развороте режима иначе докупался бы сеткой
+        # против рынка. Колена снимаются на неблагоприятном режиме и
+        # возвращаются на благоприятном — ровно как pause в evolution2.run5.
+        self.trend_exit = int(self.p.get("trend_exit", 0) or 0)
         self._macro_needed = (self.spx_long_min > -900 or
                               self.dxy_long_max < 900 or
                               self.gold_long_max < 900)
@@ -1302,6 +1307,58 @@ class RsiGridBot:
             f"вход {'LONG' if side == 'L' else 'SHORT'} x{self.p['lev']} "
             f"{qty0} по {self.rp(price)}, стоп {self.rp(sl)}, тейк {self.rp(tp)}")
 
+    def place_legs(self, adds, why):
+        """Выставить колена сетки лимитками; вернуть те, что реально стоят."""
+        if config.DRY_RUN:
+            return [(ap, aq) for ap, aq in adds
+                    if self.order_ok(aq, ap, "Колено сетки")]
+        order_side = "Buy" if self.pos["side"] == "L" else "Sell"
+        placed = []
+        for ap, aq in adds:
+            if not self.order_ok(aq, ap, "Колено сетки"):
+                continue
+            try:
+                r = self.session.place_order(
+                    category="linear", symbol=self.symbol, side=order_side,
+                    orderType="Limit", qty=str(aq), price=self.rp(ap))
+                self.pos["add_ids"].append(r["result"]["orderId"])
+                placed.append((ap, aq))
+            except Exception as e:      # noqa: BLE001
+                self.log.exception("Колено сетки по %s не выставлено (%s)",
+                                   self.rp(ap), why)
+                self.notifier.send(f"колено сетки не выставлено: {e}",
+                                   key="leg_fail")
+        return placed
+
+    def apply_grid_pause(self):
+        """Пауза колен по режиму тренда (ген trend_exit=1).
+
+        Неблагоприятный режим (рост для шорта, падение для лонга): колена
+        снимаются с биржи, но остаются в ведении — цены и объёмы помнятся.
+        Режим вернулся: колена выставляются заново на свои цены. Тейк и стоп
+        живут всё время. Неизвестный режим (0) паузой не считается — так же,
+        как в движке.
+        """
+        r = self.get_trend_regime()
+        adverse = trend_gate.adverse(r, self.pos["side"])
+        paused = bool(self.pos.get("paused"))
+        if adverse and not paused:
+            if self.pos["adds"]:
+                self.cancel_own_orders("пауза сетки: режим против позиции")
+            self.pos["paused"] = True
+            self.log.info("Пауза сетки: режим по SMA%d против позиции — "
+                          "колена сняты (%d), тейк и стоп на месте",
+                          self.trend_days, len(self.pos["adds"]))
+            self.save_state()
+        elif not adverse and paused:
+            self.pos["paused"] = False
+            if self.pos["adds"]:
+                self.pos["adds"] = self.place_legs(self.pos["adds"],
+                                                   "возврат колен после паузы")
+            self.log.info("Пауза сетки снята: режим благоприятен — колена "
+                          "возвращены (%d)", len(self.pos["adds"]))
+            self.save_state()
+
     def retune_grid(self, atr_now=None, atr_ref=None):
         """Перевыставить неисполненные лимитки сетки под текущую обстановку.
 
@@ -1576,7 +1633,7 @@ class RsiGridBot:
                                              else (nxt < danger))
             leg_reached = nxt is not None and ((l <= nxt) if sgn == 1
                                                else (h >= nxt))
-            if leg_first and leg_reached:
+            if leg_first and leg_reached and not p.get("paused"):
                 ap, aq = p["adds"].pop(0)
                 p["fees"] += aq * ap * MAKER
                 p["fills"].append((ap, aq))
@@ -1610,8 +1667,9 @@ class RsiGridBot:
             # триггеру — значит тейкерская комиссия и проскальзывание
             self.paper_close(tp_exec, "[DRY_RUN] ТЕЙК", "tp")
             return
-        # остальные колена (стоп в этой свече не задет)
-        while p["adds"]:
+        # остальные колена (стоп в этой свече не задет); на паузе колен на
+        # бирже нет — и в бумажном режиме они не исполняются
+        while p["adds"] and not p.get("paused"):
             ap, aq = p["adds"][0]
             if (l <= ap if sgn == 1 else h >= ap):
                 p["fees"] += aq * ap * MAKER
@@ -1999,7 +2057,10 @@ class RsiGridBot:
                     self.push_sl_tp()
             # подвижная сетка: неисполненные колена пересчитываются от
             # сегодняшнего стопа и перевыставляются на бирже
-            if self.pos and self.grid_retune and self.pos["adds"]:
+            if self.pos and self.trend_exit >= 1 and self.trend_days > 0:
+                self.apply_grid_pause()
+            if (self.pos and self.grid_retune and self.pos["adds"]
+                    and not self.pos.get("paused")):
                 self.retune_grid(*self.atr_norm(cs))
             if self.pos:
                 bars = (int(time.time() * 1000) - self.pos["opened_ts"]) // self.interval_ms
