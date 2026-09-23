@@ -1,0 +1,5 @@
+# Метки адресов: адрес,метка,тип. Тип: cex | dex | bridge | team | fund | other.
+# Скопируйте в wsa_labels.csv (корень bbbot) и дополняйте: переводы кошелька на адреса с типом cex
+# попадут в профиль как «вывел на биржу», с cex — «завёл с биржи».
+# Адреса бирж проверяйте по эксплореру (метки Solscan/Arkham), не по памяти.
+# пример: 5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1,Raydium Authority,dex

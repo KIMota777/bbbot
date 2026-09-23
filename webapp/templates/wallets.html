@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кошельки DEX</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ctext y=%2714%27 font-size=%2714%27%3E%F0%9F%91%9B%3C/text%3E%3C/svg%3E">
+<style>
+  :root { --bg:#131518; --card:#1B1E23; --ink:#E7E5DF; --muted:#9A9DA6;
+    --accent:#E3A83E; --up:#46C186; --down:#E06B5E; --line:#2A2E35; }
+  body { background:var(--bg); color:var(--ink); margin:0;
+    font:15px/1.5 "Segoe UI", system-ui, sans-serif; padding:32px 18px 60px; }
+  .wrap { max-width:1060px; margin:0 auto; }
+  h1 { font-size:26px; margin:0 0 4px; text-wrap:balance; }
+  h2 { font-size:15px; color:var(--muted); margin:30px 0 12px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.04em; }
+  .sub { color:var(--muted); margin:0 0 20px; max-width:78ch; }
+  nav { display:flex; gap:16px; margin-bottom:20px; flex-wrap:wrap; row-gap:8px; }
+  nav a { color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:600; }
+  nav a.active { color:var(--accent); }
+  nav a:hover { color:var(--ink); }
+  a { color:var(--accent); }
+  .banner { background:#2a2313; border:1px solid #5a4a1a; color:var(--accent);
+    border-radius:8px; padding:10px 14px; margin-bottom:18px; font-size:14px; }
+  .note { border-left:3px solid #46C186; padding-left:12px; color:#8fd4b8; font-size:14px; max-width:80ch; }
+  .funnel { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:6px 0 4px; }
+  .cell { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+  .cell b { display:block; font-size:21px; font-variant-numeric:tabular-nums; }
+  .cell span { color:var(--muted); font-size:12.5px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.05em; font-weight:700;
+    text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  td { padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; }
+  .pos { color:var(--up); } .neg { color:var(--down); } .mut { color:var(--muted); }
+  .b { font-size:11px; border-radius:99px; padding:2px 9px; font-weight:600; white-space:nowrap;
+    line-height:1.5; display:inline-block; margin:1px 3px 1px 0; }
+  .b.hard { background:#3a1c1c; color:#f08080; }
+  .b.soft { background:#3a3216; color:#e0bc55; }
+  .b.ok { background:#1d3a2c; color:var(--up); }
+  .b.watch { background:#1e2a3a; color:#8fb8e8; }
+  .b.plain { background:var(--line); color:var(--muted); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
+  .card { padding:16px 18px; display:flex; flex-direction:column; gap:8px; }
+  .card .addr { font-family:ui-monospace, Menlo, monospace; font-size:12px; color:var(--muted); word-break:break-all; }
+  .kv { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12.5px; }
+  .kv span { color:var(--muted); } .kv b { font-weight:700; }
+  .detect { font-size:13px; color:#cfcdc6; border-top:1px solid var(--line); padding-top:8px; }
+  details { margin:8px 0; }
+  summary { cursor:pointer; color:var(--accent); font-weight:600; font-size:14px; }
+  .steps { color:#cfcdc6; font-size:14px; max-width:80ch; }
+  .steps li { margin:4px 0; }
+  .foot { color:var(--muted); font-size:12px; margin-top:34px; border-top:1px solid var(--line); padding-top:12px; }
+  .empty { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:22px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/">Боты</a><a href="/signals">Сигналы BTC</a><a href="/pnl">PnL-график</a><a href="/evolution">Эволюция</a><a href="/archive">Архив</a><a href="/research">Исследование</a><a class="active" href="/wallets">Кошельки</a></nav>
+  <h1>👛 Умные кошельки DEX → стратегия для {{ d.exchange|title if d else 'Bybit' }}</h1>
+  <p class="sub">Ищем на DEX кошельки с устойчиво прибыльной торговлей монетами, которые есть и на
+    бирже, восстанавливаем, <b>какие активы и в какой момент</b> они покупают, и проверяем, работает ли
+    это на свечах биржи. Только после проверки на отложенных данных стратегия может торговать.</p>
+
+  {% if not d %}
+  <div class="empty">Снимок анализатора ещё не собран: на машине с анализатором выполните
+    <span class="mono">./wsa.sh site</span> и закоммитьте <span class="mono">webapp/data/wallets.json</span>.</div>
+  {% else %}
+  {% set c = d.counts %}
+  {% if not d.strategy or not d.strategy.accepted %}
+  <div class="banner">⏳ Идёт отбор. Стратегия {{ 'пока не прошла проверку на отложенных данных' if d.strategy else 'ещё не собрана' }} —
+    торговли нет, только наблюдение. Сделки по сигналам, если включены, — бумажные (paper).</div>
+  {% endif %}
+
+  <div class="funnel">
+    <div class="cell"><b>{{ c.get('candidate', 0) }}</b><span>кандидатов в очереди</span></div>
+    <div class="cell"><b>{{ c.get('scanned', 0) + c.get('watch', 0) + c.get('bot', 0) }}</b><span>проверено</span></div>
+    <div class="cell"><b>{{ c.get('bot', 0) }}</b><span>отсеяно ботов</span></div>
+    <div class="cell"><b>{{ c.get('watch', 0) }}</b><span>в наблюдении</span></div>
+    <div class="cell"><b>{{ '{:,}'.format(d.parsed_tx).replace(',', ' ') }}</b><span>транзакций разобрано</span></div>
+  </div>
+  <p class="sub" style="font-size:12.5px;margin-top:8px">Снимок от {{ d.generated_at|wts }} UTC.
+    {% if d.bot_median_tx_per_day %}Типичный отсеянный бот делает {{ '{:,.0f}'.format(d.bot_median_tx_per_day).replace(',', ' ') }} транзакций в сутки.{% endif %}</p>
+
+  <details>
+    <summary>Как отбираем кошельки</summary>
+    <ol class="steps">
+      <li><b>Кандидаты</b> — крупные сделки в пулах токенов, которые торгуются и на DEX, и на {{ d.exchange|title }} (сверка цены DEX и биржи, иначе это другой токен с тем же тикером).</li>
+      <li><b>Отсев ботов до загрузки истории</b> — по частоте транзакций; затем HFT (удержание &lt; 5 мин) и MEV (циклы за секунды). За такими кошельками с биржи не успеть.</li>
+      <li><b>История → сделки</b>: каждая транзакция разбирается по изменению балансов, покупки и продажи собираются в циклы FIFO. Продажа токенов, которых кошелёк не покупал (эйрдроп, раздача команде), прибылью не считается.</li>
+      <li><b>Метрики</b>: PnL, ROI, win rate с поправкой на малую выборку, profit factor, просадка, удержание, окна 30/90/180/365 дней, доля прибыли с одной монеты, доля оборота в монетах с листингом на бирже.</li>
+      <li><b>Профиль</b>: что было на рынке в момент каждой покупки (изменение цены за 1ч–30д, объём, пробой, возраст и капитализация токена, сектор, был ли уже листинг) и что было с ценой потом.</li>
+      <li><b>Стратегия группы</b>: правила ищутся на первых 70% истории и проверяются на последних 30% по заранее заданным критериям; бэктест на свечах биржи сравнивается со случайными входами в те же монеты.</li>
+    </ol>
+  </details>
+
+  <h2>Рейтинг кошельков</h2>
+  {% if d.wallets %}
+  <div class="box scroll"><table>
+    <thead><tr><th>Кошелёк</th><th>Статус</th><th class="n">Балл</th><th class="n">Сделок</th><th class="n">Win rate</th>
+      <th class="n">PF</th><th class="n">PnL</th><th class="n">Просадка</th><th class="n">Удержание</th><th class="n">На бирже</th><th>Флаги</th></tr></thead>
+    <tbody>
+    {% for w in d.wallets %}
+      <tr><td class="mono" title="{{ w.address }}">{{ w.short }}{% if w.label %} <span class="mut">{{ w.label }}</span>{% endif %}</td>
+        <td><span class="b {{ 'watch' if w.status == 'watch' else 'plain' }}">{{ {'watch': 'наблюдение', 'scanned': 'проверен', 'rejected': 'отклонён'}.get(w.status, w.status) }}</span>
+          {% if w.depth == 'deep' %}<span class="b plain">глубоко</span>{% endif %}</td>
+        <td class="n">{{ '%.0f'|format(w.score or 0) }}</td>
+        <td class="n">{{ w.closed or 0 }}</td>
+        <td class="n">{{ w.win_rate|wpct }}</td>
+        <td class="n">{{ '∞' if w.pf is not none and w.pf >= 99 else ('%.2f'|format(w.pf) if w.pf is not none else '—') }}</td>
+        <td class="n {{ 'pos' if (w.realized or 0) > 0 else ('neg' if (w.realized or 0) < 0 else '') }}">{{ w.realized|wusd }}</td>
+        <td class="n">{{ w.dd|wpct }}</td>
+        <td class="n">{{ w.hold|wdur }}</td>
+        <td class="n">{{ w.cex_share|wpct }}</td>
+        <td>{% for f in w.flags %}<span class="b {{ f.level }}" title="{{ f.msg }}">{{ f.msg|truncate(34, True, '…') }}</span>{% else %}<span class="b ok">без замечаний</span>{% endfor %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}
+  <div class="empty">Пока ни один кошелёк не проверен.</div>
+  {% endif %}
+
+  {% set profiled = d.wallets | selectattr('detected') | list %}
+  {% if profiled %}
+  <h2>Профили стратегий</h2>
+  <div class="grid">
+    {% for w in profiled[:6] %}
+    <div class="box card">
+      <div><b>{{ (w.style or 'стиль не определён')|capitalize }}</b> · балл {{ '%.0f'|format(w.score or 0) }}</div>
+      <div class="addr">{{ w.address }}</div>
+      <div class="kv"><span>PnL <b class="{{ 'pos' if (w.realized or 0) > 0 else 'neg' }}">{{ w.realized|wusd }}</b></span>
+        <span>сделок <b>{{ w.closed or 0 }}</b></span><span>удержание <b>{{ w.hold|wdur }}</b></span>
+        <span>на бирже при входе <b>{{ w.cex_at_entry|wpct }}</b></span>
+        <span>цена через 24ч <b>{{ w.after_24h|wpct(True) }}</b></span></div>
+      {% if w.types %}<div class="kv">{% for k, v in w.types.items() %}<span>{{ {'early':'ранний','breakout':'пробой','momentum':'моментум','mean_reversion':'на падении','neutral':'нейтрально','unknown':'нет данных'}.get(k, k) }} <b>{{ v|wpct }}</b></span>{% endfor %}</div>{% endif %}
+      <div class="detect">{{ w.detected }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <h2>Сводная стратегия группы</h2>
+  {% if d.strategy %}
+  {% set s = d.strategy %}
+  <p class="sub">{% if s.accepted %}<span class="b ok">принята</span>{% else %}<span class="b hard">не принята</span>{% endif %}
+    горизонт {{ s.horizon }}, группа из {{ s.cohort }} кошельков ({{ s.entities }} независимых владельцев), собрана {{ s.built_at|wts }}.</p>
+  <p class="sub">{{ s.summary_ru }}</p>
+  {% if s.rules %}
+  <div class="box scroll"><table>
+    <thead><tr><th>Правило</th><th></th><th class="n">n обуч.</th><th class="n">обучение</th><th class="n">n пров.</th><th class="n">проверка</th><th class="n">прибыльных</th><th>Почему нет</th></tr></thead>
+    <tbody>{% for r in s.rules %}
+      <tr><td>{{ r.text }}</td><td>{% if r.accepted %}<span class="b ok">принято</span>{% else %}<span class="b plain">нет</span>{% endif %}</td>
+        <td class="n">{{ r.train.n }}</td><td class="n">{{ r.train.mean|wpct(True) }}</td>
+        <td class="n">{{ r.test.n or 0 }}</td><td class="n">{{ r.test.mean|wpct(True) }}</td><td class="n">{{ r.test.hit|wpct }}</td>
+        <td class="mut">{{ '' if r.accepted else r.reason }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% endif %}
+  {% else %}
+  <div class="empty">Стратегия собирается, когда в наблюдении наберётся хотя бы три кошелька, прошедших глубокую проверку.</div>
+  {% endif %}
+
+  {% if d.backtest %}
+  {% set b = d.backtest %}
+  <h2>Бэктест на свечах {{ d.exchange|title }}</h2>
+  <div class="funnel">
+    <div class="cell"><b>{{ b.summary.n }}</b><span>сделок</span></div>
+    <div class="cell"><b>{{ b.summary.win_rate|wpct }}</b><span>прибыльных</span></div>
+    <div class="cell"><b class="{{ 'pos' if (b.summary.total_return or 0) > 0 else 'neg' }}">{{ b.summary.total_return|wpct(True) }}</b><span>итог</span></div>
+    <div class="cell"><b>{{ b.summary.max_dd|wpct }}</b><span>макс. просадка</span></div>
+    <div class="cell"><b>{{ b.beats_random_share|wpct }}</b><span>лучше случайных входов</span></div>
+  </div>
+  {% endif %}
+
+  {% if d.signals %}
+  <h2>Последние сигналы</h2>
+  <div class="box scroll"><table>
+    <thead><tr><th>Время</th><th>Источник</th><th>Лидер</th><th>Тикер</th><th>Статус</th><th>Причина</th></tr></thead>
+    <tbody>{% for s in d.signals %}
+      <tr><td class="mono">{{ s.ts|wts }}</td><td>{{ s.kind }}</td><td class="mono">{{ s.wallet or '—' }}</td><td class="mono">{{ s.symbol or '—' }}</td>
+        <td><span class="b {{ 'ok' if s.status == 'executed' else 'plain' }}">{{ s.status }}</span></td><td class="mut">{{ s.reason }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% endif %}
+
+  {% if d.bots %}
+  <h2>Отсеяно: боты и HFT</h2>
+  <p class="sub" style="font-size:13px">Главный вывод первого прогона: ликвидные пулы (например, SOL/USDC на Orca) почти целиком заняты
+    арбитражными ботами. Кошельки, замеченные сразу в нескольких пулах, тоже оказались арбитражем.</p>
+  <div class="box scroll"><table>
+    <thead><tr><th>Кошелёк</th><th>Почему</th></tr></thead>
+    <tbody>{% for b in d.bots[:10] %}<tr><td class="mono" title="{{ b.address }}">{{ b.short }}</td><td class="mut">{{ b.why }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+
+  {% if d.universe %}
+  <h2>Монеты DEX + {{ d.exchange|title }}, где ищем кандидатов</h2>
+  <p class="sub" style="font-size:13px">{% for u in d.universe %}<span class="b plain">{{ u.symbol }}</span>{% endfor %}</p>
+  {% endif %}
+  {% endif %}
+
+  <div class="foot">Данные: GeckoTerminal, DexScreener, Solana RPC, CoinGecko, свечи биржи через ccxt. Код — пакет
+    <span class="mono">wsa/</span> в этом репозитории. Не является финансовой рекомендацией: прошлые результаты
+    кошельков и бэктеста не гарантируют будущих.</div>
+</div>
+</body>
+</html>

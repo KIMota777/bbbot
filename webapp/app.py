@@ -923,6 +923,60 @@ def clean_active(act):
     return out
 
 
+@app.route("/wallets")
+def wallets_page():
+    """Анализатор умных кошельков DEX (пакет wsa/) — снимок webapp/data/wallets.json.
+
+    Сам анализатор на сервере не запускается: он работает там, где есть
+    доступ к RPC и время на скан, и выкладывает снимок командой
+    `./wsa.sh site`, как остальные webapp/data/*.json.
+    """
+    path = os.path.join(BOT_DIR, "webapp", "data", "wallets.json")
+    data = None
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    return render_template("wallets.html", d=data)
+
+
+@app.template_filter("wusd")
+def _f_wusd(x):
+    if x is None:
+        return "—"
+    a = abs(x)
+    s = f"${a / 1e6:.2f}M" if a >= 1e6 else (f"${a / 1e3:.1f}k" if a >= 1e3 else f"${a:.0f}")
+    return ("−" if x < 0 else ("+" if x > 0 else "")) + s
+
+
+@app.template_filter("wpct")
+def _f_wpct(x, signed=False):
+    if x is None:
+        return "—"
+    s = f"{x * 100:.1f}%"
+    return ("+" + s if signed and x > 0 else s).replace("-", "−")
+
+
+@app.template_filter("wdur")
+def _f_wdur(sec):
+    if sec is None:
+        return "—"
+    sec = float(sec)
+    if sec < 60:
+        return f"{sec:.0f}с"
+    if sec < 3600:
+        return f"{sec / 60:.0f}м"
+    if sec < 86400:
+        return f"{sec / 3600:.1f}ч"
+    return f"{sec / 86400:.1f}д"
+
+
+@app.template_filter("wts")
+def _f_wts(ts):
+    if not ts:
+        return "—"
+    return time.strftime("%Y-%m-%d %H:%M", time.gmtime(int(ts)))
+
+
 @app.route("/signals")
 def signals_page():
     # оба файла читаем через read_json: страница со списком сетапов не должна

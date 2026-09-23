@@ -1,0 +1,1060 @@
+{
+ "generated_at": 1790186236,
+ "exchange": "bybit",
+ "market": "spot",
+ "counts": {
+  "bot": 40,
+  "candidate": 1029,
+  "scanned": 15
+ },
+ "parsed_tx": 6157,
+ "legs": 3394,
+ "bot_median_tx_per_day": 69789.98384491116,
+ "universe": [
+  {
+   "symbol": "BTC",
+   "cex_symbol": "BTC/USDT",
+   "liquidity_usd": 440545426.84,
+   "vol24": 44.46,
+   "cex_turnover_24h": 666495484.6678338
+  },
+  {
+   "symbol": "USDC",
+   "cex_symbol": "USDC/USDT",
+   "liquidity_usd": 1979819.71,
+   "vol24": 40047.95,
+   "cex_turnover_24h": 226123957.896872
+  },
+  {
+   "symbol": "XRP",
+   "cex_symbol": "XRP/USDT",
+   "liquidity_usd": 1499841189.45,
+   "vol24": 0.54,
+   "cex_turnover_24h": 94301717.070939
+  },
+  {
+   "symbol": "NEAR",
+   "cex_symbol": "NEAR/USDT",
+   "liquidity_usd": 1460210.49,
+   "vol24": 4208036.81,
+   "cex_turnover_24h": 76087514.943577
+  },
+  {
+   "symbol": "HYPE",
+   "cex_symbol": "HYPE/USDT",
+   "liquidity_usd": 584518.64,
+   "vol24": 9852202.69,
+   "cex_turnover_24h": 47386834.67592
+  },
+  {
+   "symbol": "DOGE",
+   "cex_symbol": "DOGE/USDT",
+   "liquidity_usd": 1121922.98,
+   "vol24": 44.31,
+   "cex_turnover_24h": 34719516.298649
+  },
+  {
+   "symbol": "AVAX",
+   "cex_symbol": "AVAX/USDT",
+   "liquidity_usd": 85954.47,
+   "vol24": 252050.5,
+   "cex_turnover_24h": 26137552.547364
+  },
+  {
+   "symbol": "UNI",
+   "cex_symbol": "UNI/USDT",
+   "liquidity_usd": 137448.98,
+   "vol24": 322546.31,
+   "cex_turnover_24h": 24961235.382612
+  },
+  {
+   "symbol": "SUI",
+   "cex_symbol": "SUI/USDT",
+   "liquidity_usd": 19001506.9,
+   "vol24": 44.31,
+   "cex_turnover_24h": 21379387.450099
+  },
+  {
+   "symbol": "RLUSD",
+   "cex_symbol": "RLUSD/USDT",
+   "liquidity_usd": 1000010451.93,
+   "vol24": 44.31,
+   "cex_turnover_24h": 19986806.399858
+  },
+  {
+   "symbol": "LIT",
+   "cex_symbol": "LIT/USDT",
+   "liquidity_usd": 800206.37,
+   "vol24": 1755039.57,
+   "cex_turnover_24h": 19136592.36359
+  },
+  {
+   "symbol": "LTC",
+   "cex_symbol": "LTC/USDT",
+   "liquidity_usd": 1212683519.25,
+   "vol24": 44.31,
+   "cex_turnover_24h": 16530934.4990502
+  },
+  {
+   "symbol": "ENA",
+   "cex_symbol": "ENA/USDT",
+   "liquidity_usd": 27306.77,
+   "vol24": 50291.1,
+   "cex_turnover_24h": 15538536.8073957
+  },
+  {
+   "symbol": "PENGU",
+   "cex_symbol": "PENGU/USDT",
+   "liquidity_usd": 4250481.71,
+   "vol24": 15824136.39,
+   "cex_turnover_24h": 14647329.204339
+  },
+  {
+   "symbol": "ADA",
+   "cex_symbol": "ADA/USDT",
+   "liquidity_usd": 1864339.11,
+   "vol24": 40047.95,
+   "cex_turnover_24h": 13548686.257468
+  },
+  {
+   "symbol": "AAVE",
+   "cex_symbol": "AAVE/USDT",
+   "liquidity_usd": 74225.02,
+   "vol24": 424243.32,
+   "cex_turnover_24h": 13205278.855762
+  },
+  {
+   "symbol": "AAVE",
+   "cex_symbol": "AAVE/USDT",
+   "liquidity_usd": 2233370234.76,
+   "vol24": 0.54,
+   "cex_turnover_24h": 12936356.829762
+  },
+  {
+   "symbol": "TRUMP",
+   "cex_symbol": "TRUMP/USDT",
+   "liquidity_usd": 6197187.58,
+   "vol24": 11205687.77,
+   "cex_turnover_24h": 11474866.59804
+  },
+  {
+   "symbol": "USDE",
+   "cex_symbol": "USDE/USDT",
+   "liquidity_usd": 2504683.03,
+   "vol24": 4114833.22,
+   "cex_turnover_24h": 11174689.726782
+  },
+  {
+   "symbol": "ONDO",
+   "cex_symbol": "ONDO/USDT",
+   "liquidity_usd": 403843139.55,
+   "vol24": 0.86,
+   "cex_turnover_24h": 9843010.0542385
+  },
+  {
+   "symbol": "WLD",
+   "cex_symbol": "WLD/USDT",
+   "liquidity_usd": 304563.85,
+   "vol24": 85758.3,
+   "cex_turnover_24h": 9506613.788244
+  },
+  {
+   "symbol": "MON",
+   "cex_symbol": "MON/USDT",
+   "liquidity_usd": 45838.85,
+   "vol24": 113500.04,
+   "cex_turnover_24h": 8966346.464253
+  },
+  {
+   "symbol": "XLM",
+   "cex_symbol": "XLM/USDT",
+   "liquidity_usd": 449580312.26,
+   "vol24": 44.62,
+   "cex_turnover_24h": 8722035.127799
+  },
+  {
+   "symbol": "PUMP",
+   "cex_symbol": "PUMP/USDT",
+   "liquidity_usd": 21891607.54,
+   "vol24": 8284468.51,
+   "cex_turnover_24h": 8130851.5227806
+  },
+  {
+   "symbol": "XAUT",
+   "cex_symbol": "XAUT/USDT",
+   "liquidity_usd": 891043767.5,
+   "vol24": 150225.4,
+   "cex_turnover_24h": 7978357.915848
+  },
+  {
+   "symbol": "ASTER",
+   "cex_symbol": "ASTER/USDT",
+   "liquidity_usd": 518955002.48,
+   "vol24": 44.3,
+   "cex_turnover_24h": 7972351.819166
+  },
+  {
+   "symbol": "GRAM",
+   "cex_symbol": "GRAM/USDT",
+   "liquidity_usd": 1387761998.44,
+   "vol24": 127982.73,
+   "cex_turnover_24h": 7800001.25812
+  },
+  {
+   "symbol": "BNB",
+   "cex_symbol": "BNB/USDT",
+   "liquidity_usd": 102790939.29,
+   "vol24": 0.3,
+   "cex_turnover_24h": 6959083.7571385
+  },
+  {
+   "symbol": "USD1",
+   "cex_symbol": "USD1/USDT",
+   "liquidity_usd": 9901098.66,
+   "vol24": 1547345.08,
+   "cex_turnover_24h": 6855341.386776
+  },
+  {
+   "symbol": "FLOCK",
+   "cex_symbol": "FLOCK/USDT",
+   "liquidity_usd": 22884.87,
+   "vol24": 33044.74,
+   "cex_turnover_24h": 6787101.6376375
+  }
+ ],
+ "wallets": [
+  {
+   "address": "CBFUCk21NcTpjtBzgFRjum8YbN61QVZVaE3ez1r3dTKV",
+   "short": "CBFUC…3dTKV",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 16.3,
+   "depth": "quick",
+   "closed": 2,
+   "win_rate": 1.0,
+   "win_rate_lb": 0.3423719528896193,
+   "pf": 99.0,
+   "realized": 2108.102993321569,
+   "unrealized": -92.36324998599957,
+   "roi": 0.08415580811662951,
+   "dd": 0.0,
+   "hold": 107556.374209386,
+   "cex_share": 0.3341983632003159,
+   "history_days": 3.943923611111111,
+   "n_tokens": 6,
+   "volume": 78499.759286,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 2"
+    },
+    {
+     "code": "one_hit",
+     "level": "soft",
+     "msg": "100% прибыли — один токен"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 4 дн."
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "9CXFCpaJSP8f9FKZsbL6YXHxoVDSzUXZ6AgoA8JzDYMe",
+   "short": "9CXFC…zDYMe",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 13.6,
+   "depth": "deep",
+   "closed": 2,
+   "win_rate": 0.5,
+   "win_rate_lb": 0.09452865480086611,
+   "pf": 3.2490548700046245,
+   "realized": 4532.868041855565,
+   "unrealized": 3131.711365121966,
+   "roi": 0.044086547828719486,
+   "dd": 0.002759897446496778,
+   "hold": 282432.363685599,
+   "cex_share": 0.6492884019373858,
+   "history_days": 10.724166666666667,
+   "n_tokens": 15,
+   "volume": 439103.52240476897,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 2"
+    },
+    {
+     "code": "one_hit",
+     "level": "soft",
+     "msg": "100% прибыли — один токен"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "65% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 11 дн."
+    }
+   ],
+   "style": "свинг-трейдер",
+   "detected": "Свинг-трейдер: медианное удержание 3.3д (P25–P75: 1.9д–4.7д), ~7 сделок в месяц. Выбирает активы: капитализация на входе $85.8k–$922.35M; возраст токена 338–2660 дн.; сектора: Infrastructure 33%, L1 33%. В момент входа 83% токенов уже торговались на CEX. Чаще всего входит: моментум (83%); медиана изменения цены за 24ч до входа +7.3%, объём к среднему ×1.3. Входит обычно одной покупкой (100%). Выход: выходит частями (50%), первая фиксация прибыли на +20.6% (медиана), убыточные сделки закрывает около −4.6%. После его входов цена через 24ч: медиана +9.6%, рост в 75% случаев; через 7д медиана +22.6%; движение ≥+30% за неделю после 50% входов.",
+   "types": {
+    "momentum": 0.8333333333333334,
+    "breakout": 0.16666666666666666
+   },
+   "sectors": {
+    "Infrastructure": 0.3333333333333333,
+    "L1": 0.3333333333333333,
+    "Unknown": 0.16666666666666666,
+    "Other": 0.16666666666666666
+   },
+   "after_24h": 0.09554021646810917,
+   "after_7d": 0.2256081069476652,
+   "cex_at_entry": 0.8333333333333334
+  },
+  {
+   "address": "BXYdXPCM3upYkbZiitiB3TSsmQChoFDAcsh3YKtPaLgq",
+   "short": "BXYdX…PaLgq",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 11.5,
+   "depth": "quick",
+   "closed": 0,
+   "win_rate": null,
+   "win_rate_lb": 0.0,
+   "pf": null,
+   "realized": 113.12068243067279,
+   "unrealized": 246.1136022990695,
+   "roi": null,
+   "dd": 0.0,
+   "hold": null,
+   "cex_share": 0.7125899171721589,
+   "history_days": 0.0882986111111111,
+   "n_tokens": 3,
+   "volume": 37851.21594539333,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 0"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "78% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 0 дн."
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "Bwb2R7Yhc8kKia389imEjZLi5SYhL1xFJU3jbCtBLL7p",
+   "short": "Bwb2R…BLL7p",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 7.5,
+   "depth": "quick",
+   "closed": 1,
+   "win_rate": 1.0,
+   "win_rate_lb": 0.20654329147389294,
+   "pf": 99.0,
+   "realized": 1625.2001550370014,
+   "unrealized": 0.0,
+   "roi": null,
+   "dd": 0.0,
+   "hold": 14.33229090008366,
+   "cex_share": 0.2204931626626031,
+   "history_days": 3.729074074074074,
+   "n_tokens": 4,
+   "volume": 114214.143631,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 1"
+    },
+    {
+     "code": "one_hit",
+     "level": "soft",
+     "msg": "100% прибыли — один токен"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "78% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 4 дн."
+    },
+    {
+     "code": "cex_irrelevant",
+     "level": "soft",
+     "msg": "лишь 22% оборота в токенах с листингом на CEX"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "BJbRjyVoca7Rvy5JawW1kza7Tsmu4KFpc9bvS72jGRQg",
+   "short": "BJbRj…jGRQg",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 6.1,
+   "depth": "quick",
+   "closed": 13,
+   "win_rate": 0.23076923076923078,
+   "win_rate_lb": 0.08179379092465712,
+   "pf": 0.06800610554723067,
+   "realized": -1856.897510079271,
+   "unrealized": -2800.592291128759,
+   "roi": -0.007108422487606203,
+   "dd": 0.007491311395590401,
+   "hold": 9065.655562218546,
+   "cex_share": 0.8245352145676333,
+   "history_days": 5.102349537037037,
+   "n_tokens": 24,
+   "volume": 1318346.943029,
+   "flags": [
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "45% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 5 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "G5rfkJGzWztf5LKuC37PjUHKudhxVDhx8dr3rsDbWtBb",
+   "short": "G5rfk…bWtBb",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 5.9,
+   "depth": "quick",
+   "closed": 6,
+   "win_rate": 0.16666666666666666,
+   "win_rate_lb": 0.030052585871730285,
+   "pf": 0.16289653828392386,
+   "realized": -102.17913414652259,
+   "unrealized": -6.167944130410007,
+   "roi": -0.020678984837383715,
+   "dd": 0.005245454327821094,
+   "hold": 85.0,
+   "cex_share": 0.9893680877589393,
+   "history_days": 1.1869907407407407,
+   "n_tokens": 4,
+   "volume": 43089.81688241372,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 6"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 1 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "3uNhsBPmpy3FxjVSvzqWmwb3CHxox4U3BNVgJwpFGuZw",
+   "short": "3uNhs…FGuZw",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 5.5,
+   "depth": "quick",
+   "closed": 5,
+   "win_rate": 0.4,
+   "win_rate_lb": 0.11761823115925325,
+   "pf": 0.06490135996588253,
+   "realized": -516.5365699461967,
+   "unrealized": 1521.4852821599989,
+   "roi": -0.010672461506079926,
+   "dd": 0.00217009856333672,
+   "hold": 7257.0,
+   "cex_share": 1.0,
+   "history_days": 42.553518518518516,
+   "n_tokens": 3,
+   "volume": 364651.8871720902,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 5"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "44% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "8YYYe1wLN5d9CzBLd25Z1Mvfmi8tjqQQDhKgV65T4ohG",
+   "short": "8YYYe…T4ohG",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 5.2,
+   "depth": "quick",
+   "closed": 2,
+   "win_rate": 0.0,
+   "win_rate_lb": 0.0,
+   "pf": 0.0,
+   "realized": -221.74282087012125,
+   "unrealized": -473.21368440104754,
+   "roi": -0.0032866020975752135,
+   "dd": 0.00293310709466299,
+   "hold": 1131.0,
+   "cex_share": 0.7486085401205074,
+   "history_days": 17.708842592592593,
+   "n_tokens": 4,
+   "volume": 105547.83267241974,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 2"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 18 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "47Fxthm53Yq6nKSuRSvApHGTR7YCYB6k8WiwqCBpeBga",
+   "short": "47Fxt…peBga",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 4.5,
+   "depth": "quick",
+   "closed": 0,
+   "win_rate": null,
+   "win_rate_lb": 0.0,
+   "pf": null,
+   "realized": 0,
+   "unrealized": 0.0,
+   "roi": null,
+   "dd": 0.0,
+   "hold": null,
+   "cex_share": 1.0,
+   "history_days": 0.08090277777777778,
+   "n_tokens": 3,
+   "volume": 53698.32669338948,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 0"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "100% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 0 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "24FGkQH8r8U7KjcX8yFMVEYQScGxzsA2h6QRQALGGjtu",
+   "short": "24FGk…GGjtu",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 4.0,
+   "depth": "quick",
+   "closed": 0,
+   "win_rate": null,
+   "win_rate_lb": 0.0,
+   "pf": null,
+   "realized": 0,
+   "unrealized": -555.1336252352801,
+   "roi": 0.0,
+   "dd": 0.0,
+   "hold": null,
+   "cex_share": 0.7086847207229824,
+   "history_days": 0.7104166666666667,
+   "n_tokens": 5,
+   "volume": 31168.497806,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 0"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "100% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 1 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "HidNKmbYcrdsByVdKY3xGJwhP6US4sGVuBoUMpsJaFpy",
+   "short": "HidNK…JaFpy",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 3.5,
+   "depth": "quick",
+   "closed": 0,
+   "win_rate": null,
+   "win_rate_lb": 0.0,
+   "pf": null,
+   "realized": 0,
+   "unrealized": 0.0,
+   "roi": null,
+   "dd": 0.0,
+   "hold": null,
+   "cex_share": null,
+   "history_days": 0.0,
+   "n_tokens": 0,
+   "volume": 0,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 0"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 0 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "0x323c0a430ad398258e9260da0cf1ddf28badd87b",
+   "short": "0x323…dd87b",
+   "chain": "base",
+   "label": null,
+   "status": "scanned",
+   "score": 3.5,
+   "depth": "quick",
+   "closed": 0,
+   "win_rate": null,
+   "win_rate_lb": 0.0,
+   "pf": null,
+   "realized": 0,
+   "unrealized": 0.0,
+   "roi": null,
+   "dd": 0.0,
+   "hold": null,
+   "cex_share": null,
+   "history_days": 0.0,
+   "n_tokens": 0,
+   "volume": 0,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 0"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 0 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "6eneig2euX3vJF2XJ2iCzBLNohgeTNWmPrUFrWxprCmf",
+   "short": "6enei…prCmf",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 2.8,
+   "depth": "quick",
+   "closed": 5,
+   "win_rate": 0.4,
+   "win_rate_lb": 0.11761823115925325,
+   "pf": 0.8935724784045843,
+   "realized": -27.813785267710045,
+   "unrealized": 0.0,
+   "roi": -0.00041314341886524147,
+   "dd": 0.001239432792285957,
+   "hold": 244.526298248361,
+   "cex_share": 0.2916292195848759,
+   "history_days": 12.011296296296296,
+   "n_tokens": 16,
+   "volume": 446093.5549473334,
+   "flags": [
+    {
+     "code": "custom_program",
+     "level": "soft",
+     "msg": "82% свопов через неизвестный контракт — возможно, бот"
+    },
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 5"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "68% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 12 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "975XfASFWKY58NquzvgC6oN1tmUyfMzxHW7Bykm9wBfC",
+   "short": "975Xf…9wBfC",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 2.5,
+   "depth": "quick",
+   "closed": 0,
+   "win_rate": null,
+   "win_rate_lb": 0.0,
+   "pf": null,
+   "realized": 0,
+   "unrealized": 3986.2849854683795,
+   "roi": 0.0,
+   "dd": 0.0,
+   "hold": null,
+   "cex_share": 0.17314156909542716,
+   "history_days": 0.2683564814814815,
+   "n_tokens": 3,
+   "volume": 306.15799652790906,
+   "flags": [
+    {
+     "code": "low_sample",
+     "level": "soft",
+     "msg": "мало закрытых сделок: 0"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "100% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 0 дн."
+    },
+    {
+     "code": "cex_irrelevant",
+     "level": "soft",
+     "msg": "лишь 17% оборота в токенах с листингом на CEX"
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  },
+  {
+   "address": "HAUEC7A27Ad1EawVP1RWpW7ZGsQsL5DxfdiQR4aENrk",
+   "short": "HAUEC…aENrk",
+   "chain": "solana",
+   "label": null,
+   "status": "scanned",
+   "score": 2.4,
+   "depth": "quick",
+   "closed": 15,
+   "win_rate": 0.13333333333333333,
+   "win_rate_lb": 0.037360469891359285,
+   "pf": 0.5615826481718246,
+   "realized": -5075.353499799089,
+   "unrealized": -1304.3311037779054,
+   "roi": -0.0434782478090763,
+   "dd": 0.31204172119856877,
+   "hold": 4056.9999999999995,
+   "cex_share": 0.4382689207939467,
+   "history_days": 1.8767361111111112,
+   "n_tokens": 20,
+   "volume": 604723.3370663881,
+   "flags": [
+    {
+     "code": "custom_program",
+     "level": "soft",
+     "msg": "75% свопов через неизвестный контракт — возможно, бот"
+    },
+    {
+     "code": "unmatched",
+     "level": "soft",
+     "msg": "41% продаж без покупки в истории — эйрдроп/инсайд/перевод"
+    },
+    {
+     "code": "short_history",
+     "level": "soft",
+     "msg": "история 2 дн."
+    },
+    {
+     "code": "unprofitable",
+     "level": "soft",
+     "msg": "реализованный PnL ≤ 0"
+    }
+   ],
+   "style": null,
+   "detected": null,
+   "types": null,
+   "sectors": {},
+   "after_24h": null,
+   "after_7d": null,
+   "cex_at_entry": null
+  }
+ ],
+ "bots": [
+  {
+   "short": "Hxjwd…zwr6b",
+   "address": "HxjwdF326ZunmUwC1iXhfgL3ku78YsksN6n7Rfxzwr6b",
+   "why": "69677 транзакций в сутки — бот"
+  },
+  {
+   "short": "9UHta…kxiwy",
+   "address": "9UHtad9FfbhkJXMNdUgEJkd3BjCGJL5XvK8nEQKkxiwy",
+   "why": "23003 транзакций в сутки — бот"
+  },
+  {
+   "short": "Edsds…nqTUA",
+   "address": "EdsdsfTxpN64YcDBFf3HDwGwoVDfKyMZux38GhXnqTUA",
+   "why": "81 свопов в активный день — бот/скальпер; мало закрытых сделок: 1; 99% продаж без покупки в истории — эйрдроп/инсайд/перевод; история 1 дн.; лишь 2% оборота в токенах с листингом на CEX; реализованный PnL ≤ 0"
+  },
+  {
+   "short": "J1oDr…PNL9j",
+   "address": "J1oDrea2UsU92bchKbuGHGRHQz7z4jTyqZaqViSPNL9j",
+   "why": "медианное удержание 55с — HFT/арбитраж; мало закрытых сделок: 11; история 1 дн.; реализованный PnL ≤ 0"
+  },
+  {
+   "short": "5CEbu…bSPAG",
+   "address": "5CEbueQnq1Ym2uSSx2xXds3jQAqT1BDnkA59RZobSPAG",
+   "why": "61495 транзакций в сутки — бот"
+  },
+  {
+   "short": "C2wez…1GWas",
+   "address": "C2wezAHikMgfvXJRqPuDvS7KZwLvKRr6xNR3U431GWas",
+   "why": "29199 транзакций в сутки — бот"
+  },
+  {
+   "short": "gtagy…XWNdd",
+   "address": "gtagyESa99t49VmUqnnfsuowYnigSNKuYXdXWyXWNdd",
+   "why": "69790 транзакций в сутки — бот"
+  },
+  {
+   "short": "CQwT1…WxcWt",
+   "address": "CQwT1byuHgjKnL6vzmuNaAywKfDBVxDmFVgsQDBWxcWt",
+   "why": "195918 транзакций в сутки — бот"
+  },
+  {
+   "short": "CodeS…62XHT",
+   "address": "CodeSYDfrMqGgsdR6kbR4cygPSgWcmi7ysUoiYL62XHT",
+   "why": "64382 транзакций в сутки — бот"
+  },
+  {
+   "short": "CreQJ…kbNft",
+   "address": "CreQJ2t94QK5dsxUZGXfPJ8Nx7wA9LHr5chxjSMkbNft",
+   "why": "65060 транзакций в сутки — бот"
+  },
+  {
+   "short": "H4arx…kXZDb",
+   "address": "H4arxkST9m8UaASkLxEKrAT7RrfvayBBWV9oYpVkXZDb",
+   "why": "34839 транзакций в сутки — бот"
+  },
+  {
+   "short": "FrhLf…K5oMN",
+   "address": "FrhLfj81LRpMR3EwSSCGPzHmxsnoq8h628ne68vK5oMN",
+   "why": "42942 транзакций в сутки — бот"
+  },
+  {
+   "short": "Mriya…PQu7X",
+   "address": "MriyaNN8TMp6qRWjfr723PK7xgQK7yCt7Kg2v2PQu7X",
+   "why": "41419 транзакций в сутки — бот"
+  },
+  {
+   "short": "8StkT…juyGD",
+   "address": "8StkTM9BXnsWwWcbihCL8pUn9xBePvjQfXHqTkNjuyGD",
+   "why": "98518 транзакций в сутки — бот"
+  },
+  {
+   "short": "A8A9G…w29sL",
+   "address": "A8A9GoxfmcjY2QAQ8tYS98SqDBF6hUFDmxAKBsLw29sL",
+   "why": "490909 транзакций в сутки — бот"
+  }
+ ],
+ "strategy": null,
+ "backtest": null,
+ "signals": [],
+ "paper": {
+  "open": 0,
+  "closed": 0,
+  "realized": 0
+ }
+}

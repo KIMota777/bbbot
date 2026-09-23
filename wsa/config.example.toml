@@ -1,0 +1,65 @@
+# Wallet Strategy Analyzer — настройки. Скопируйте в config.toml (./wsa.sh init делает это сам).
+# Здесь только то, что обычно меняют; полный список значений по умолчанию — в wsa/config.py.
+# Ключи API сюда НЕ пишутся — только в .env или переменные окружения.
+
+[cex]
+exchange = "bybit"          # любая биржа ccxt: bybit, binance, okx, bitget, gate, kucoin...
+market = "spot"             # spot — покупка монеты; linear — USDT-перпетуалы (лонг)
+quote = "USDT"
+min_turnover_24h_usd = 1000000   # не торговать тикеры с оборотом меньше
+reference_exchange = "bybit"     # откуда брать исторические свечи для анализа
+
+[discovery]
+min_trade_usd = 1000        # минимальный размер сделки при поиске кандидатов в пулах
+minutes = 20                # сколько минут опрашивать пул
+universe_min_dex_vol = 100000
+
+[scan]
+quick_max_tx = 250          # быстрый скан: последние N транзакций
+deep_max_tx = 4000          # глубокий скан
+deep_days = 180
+
+[filters]
+# отсев: за кем НЕ следовать
+min_closed_trades = 12
+max_swaps_per_day = 60      # больше — бот/скальпер
+min_median_hold_sec = 300   # медианное удержание короче 5 минут — HFT/арбитраж
+max_top1_pnl_share = 0.6    # >60% прибыли с одной монеты — «повезло»
+max_unmatched_share = 0.35  # продажи токенов, которые кошелёк не покупал (эйрдроп/инсайд)
+min_cex_volume_share = 0.25 # доля оборота в токенах, которые есть на нашей CEX
+
+[strategy]
+horizons = ["6h", "24h", "3d", "7d"]
+train_frac = 0.7            # правила ищутся на первых 70% истории, проверяются на последних 30%
+min_support = 15            # минимум входов под правилом
+fee_roundtrip = 0.003       # комиссии + проскальзывание туда-обратно
+[strategy.acceptance]
+# правила приёмки задаются ДО прогона и не подгоняются под результат
+min_oos_trades = 12
+min_oos_mean = 0.0
+min_oos_hit = 0.5
+max_degradation = 0.75
+
+[trading]
+mode = "paper"              # paper | demo | testnet | live (live — только флагом и подтверждением)
+paper_equity = 1000.0
+risk_per_trade = 0.01       # риск на сделку: 1% капитала до стопа
+max_position_pct = 0.10     # но не больше 10% капитала в одной позиции
+max_open_positions = 5
+max_total_exposure = 0.5
+daily_loss_limit = 0.03     # −3% за сутки — новых входов нет до конца дня
+max_drawdown_halt = 0.15    # −15% от пика — полная остановка до `wsa trade reset`
+max_consecutive_losses = 4
+pause_hours_after_losses = 12
+cooldown_hours = 12         # пауза по тикеру после сделки
+min_consensus = 1           # сколько независимых лидеров должны купить токен за 24ч
+min_wallet_score = 55       # сигналы только от кошельков с баллом не ниже
+exit_on_leader_sell = true  # выходить, когда лидер продал ≥ leader_sell_fraction позиции
+leader_sell_fraction = 0.5
+max_spread = 0.004
+max_chase = 0.03            # не входить, если цена CEX уже на 3% выше цены лидера
+leverage = 1                # для market = "linear": плечо перпетуала (размер позиции считается от риска)
+
+[tracking]
+poll_sec = 20
+rescore_hours = 24
